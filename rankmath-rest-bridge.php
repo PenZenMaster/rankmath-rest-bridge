@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.1.2
+ * Version:      2.1.3
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.1.2' );
+define( 'RMB_VERSION',      '2.1.3' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -552,7 +552,9 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
         'robots'         => 'rank_math_robots',
         'og_title'       => 'rank_math_og_title',
         'og_description' => 'rank_math_og_description',
+        'og_image'       => 'rank_math_og_image',
     ];
+    $url_fields = [ 'og_image' ];
     $results = [];
     foreach ( $updates as $upd ) {
         $post_id = intval( $upd['post_id'] ?? 0 );
@@ -563,7 +565,8 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
         $updated = [];
         foreach ( $fields as $param => $meta_key ) {
             if ( isset( $upd[ $param ] ) && $upd[ $param ] !== '' ) {
-                update_post_meta( $post_id, $meta_key, sanitize_text_field( $upd[ $param ] ) );
+                $sanitized = in_array( $param, $url_fields ) ? esc_url_raw( $upd[ $param ] ) : sanitize_text_field( $upd[ $param ] );
+                update_post_meta( $post_id, $meta_key, $sanitized );
                 $updated[ $meta_key ] = $upd[ $param ];
             }
         }
