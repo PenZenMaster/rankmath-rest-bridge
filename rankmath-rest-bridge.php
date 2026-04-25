@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.4
+ * Version:      2.0.5
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,20 +11,25 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.4' );
+define( 'RMB_VERSION',      '2.0.5' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
 define( 'RMB_UPDATE_URL',   'https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/update-manifest.json' );
 
-// ── Flush rewrite rules on activation (needed for /llms.txt rewrite) ─────────
-register_activation_hook( RMB_PLUGIN_FILE, function () {
-    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
-    flush_rewrite_rules();
-} );
-
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
 add_action( 'init', function () {
+    // Register llms.txt rewrite rule on every init (safe — WP dedupes rules)
+    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
+
+    // Flush rewrite rules once per version upgrade (NOT on activation hook — causes WSOD on some hosts)
+    $flushed = get_option( 'rmb_rewrite_flushed', '' );
+    if ( $flushed !== RMB_VERSION ) {
+        flush_rewrite_rules( false );
+        update_option( 'rmb_rewrite_flushed', RMB_VERSION );
+    }
+
+    // Plugin update checker
     $puc_loader = RMB_PLUGIN_DIR . 'vendor/plugin-update-checker/plugin-update-checker.php';
     if ( file_exists( $puc_loader ) ) {
         require_once $puc_loader;
@@ -132,10 +137,7 @@ function rmb_resolve_tokens( $str, $post_id ) {
 
 
 // ── llms.txt generator ────────────────────────────────────────────────────────
-// Register rewrite rule + query var so WP routes /llms.txt cleanly
-add_action( 'init', function () {
-    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
-} );
+// Rewrite rule is registered in the init hook above (consolidated)
 
 add_filter( 'query_vars', function ( $vars ) {
     $vars[] = 'rmb_llms';

@@ -1,17 +1,14 @@
 {
   "name": "RankRocket SEO",
-  "slug": "rankrocket-seo",
-  "version": "2.0.4",
-  "download_url": "https://github.com/PenZenMaster/rankmath-rest-bridge/raw/main/releases/v2.0.4/rankmath-rest-bridge.zip",
+  "slug": "rankmath-rest-bridge",
+  "version": "2.0.5",
+  "download_url": "https://github.com/PenZenMaster/rankmath-rest-bridge/releases/download/v2.0.5/rankmath-rest-bridge.zip",
   "requires": "5.9",
-  "tested": "6.9",
+  "tested": "6.7",
   "requires_php": "7.4",
-  "last_updated": "2026-04-25 22:20:00",
-  "homepage": "https://github.com/PenZenMaster/rankmath-rest-bridge",
-  "author": "Rank Rocket Co.",
+  "last_updated": "2026-04-25",
   "sections": {
-    "description": "<p>Full SEO remediation bridge: title/meta, snippet injection, image ALT text, llms.txt, XML sitemap, and cache purge. RankMath is optional &mdash; the bridge handles all SEO meta output natively when RankMath is inactive.</p><p>All snippets stored in wp_options and output via wp_head/wp_footer. Fully API-driven.</p>",
-    "installation": "<ol><li>Upload the plugin zip via Plugins &rarr; Add New &rarr; Upload.</li><li>Activate the plugin.</li><li>Create an Application Password for an Administrator user (Users &rarr; Profile &rarr; Application Passwords).</li><li>Use the REST endpoints at <code>/wp-json/rankmath-bridge/v1/</code> with HTTP Basic Auth.</li></ol>",
-    "changelog": "<h4>2.0.4</h4><ul><li>Fix: llms.txt now uses WP rewrite rule + template_redirect instead of wp hook \u2014 resolves 500 on all hosts</li><li>Add: flush_rewrite_rules on plugin activation</li></ul><h4>2.0.3</h4><ul><li>Rename: plugin is now RankRocket SEO (RankMath not required)</li><li>Fix: llms.txt and sitemap hooks moved from parse_request to wp \u2014 resolves 500 on Cloudways/LiteSpeed</li><li>Fix: self-update now removes stale deactivated plugin copies before installing</li></ul><h4>2.0.2</h4><ul><li>Add: /self-update endpoint \u2014 bridge can update itself from GitHub via REST API, no wp-admin login required</li></ul><h4>2.0.1</h4><ul><li>Fix: sitemap preview + serve use mysql2date() instead of get_the_modified_date() \u2014 avoids WP 6.9 object-vs-ID mismatch 500</li><li>Fix: noindex check uses is_string/is_array guards for serialized postmeta</li></ul><h4>2.0.0 &mdash; April 2026</h4><ul><li>Native SEO meta output (title, description, robots, og:) when RankMath is inactive</li><li>Image ALT text endpoints: list, single set, bulk-alt</li><li>Dynamic llms.txt generator at /llms.txt with REST config endpoint</li><li>Dynamic XML sitemap at /rmb-sitemap.xml, respects noindex postmeta</li><li>Sitemap preview endpoint (/sitemap/preview) returns included/excluded entries</li><li>Bulk meta read/write endpoints (/meta/bulk-get, /meta/bulk-update)</li><li>Status endpoint now reports rankmath_active, sitemap_url, llms_url</li></ul><h4>1.2.2</h4><ul><li>Fix: register replace-all route before wildcard id route to prevent 404 collision</li></ul><h4>1.2.1</h4><ul><li>Added /snippets/replace-all endpoint for atomic full-store rewrite</li></ul><h4>1.2.0 &mdash; April 2026</h4><ul><li>Removed HFCM dependency entirely</li><li>Snippet store via wp_options</li><li>Cache purge (LiteSpeed, SiteGround, WP Rocket, W3TC)</li><li>WordPress auto-update via GitHub</li></ul><h4>1.0.0</h4><ul><li>Initial release</li></ul>"
+    "description": "Full-stack SEO management plugin. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.",
+    "changelog": "<h4>2.0.5</h4><p>Fix WSOD on Cloudways/LiteSpeed: removed register_activation_hook flush. Rewrite rule registration and one-time flush now handled safely in init hook via version-keyed option.</p><h4>2.0.4</h4><p>Fix llms.txt 500: use WP rewrite rule + template_redirect + query_vars. Flush rewrite rules on activation.</p><h4>2.0.3</h4><p>Rename to RankRocket SEO. Fix llms.txt + sitemap hooks. Self-update removes stale plugin copies.</p>"
   }
 }
