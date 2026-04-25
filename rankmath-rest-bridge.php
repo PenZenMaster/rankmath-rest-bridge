@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.1.1
+ * Version:      2.1.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.1.1' );
+define( 'RMB_VERSION',      '2.1.2' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -103,11 +103,18 @@ add_action( 'wp_head', function () {
         }
     }
 
-    // og:title / og:description
+    // og:title / og:description / og:image
     $og_title = get_post_meta( $post_id, 'rank_math_og_title', true );
     $og_desc  = get_post_meta( $post_id, 'rank_math_og_description', true );
+    $og_image = get_post_meta( $post_id, 'rank_math_og_image', true );
+    if ( ! $og_image ) {
+        // Fall back to featured image
+        $thumb_id = get_post_thumbnail_id( $post_id );
+        if ( $thumb_id ) $og_image = wp_get_attachment_image_url( $thumb_id, 'large' );
+    }
     if ( $og_title ) echo '<meta property="og:title" content="'       . esc_attr( rmb_resolve_tokens( $og_title, $post_id ) ) . '">' . "\n";
     if ( $og_desc  ) echo '<meta property="og:description" content="' . esc_attr( rmb_resolve_tokens( $og_desc,  $post_id ) ) . '">' . "\n";
+    if ( $og_image ) echo '<meta property="og:image" content="'       . esc_url( $og_image ) . '">' . "\n";
 
 }, 1 ); // priority 1 — before most plugins
 
@@ -306,6 +313,7 @@ add_action( 'rest_api_init', function () {
             'robots'         => [ 'required' => false, 'type' => 'string'  ],
             'og_title'       => [ 'required' => false, 'type' => 'string'  ],
             'og_description' => [ 'required' => false, 'type' => 'string'  ],
+            'og_image'       => [ 'required' => false, 'type' => 'string'  ],
         ],
     ] );
 
@@ -467,13 +475,16 @@ function rmb_update_meta( WP_REST_Request $request ) {
         'robots'         => 'rank_math_robots',
         'og_title'       => 'rank_math_og_title',
         'og_description' => 'rank_math_og_description',
+        'og_image'       => 'rank_math_og_image',
     ];
 
     foreach ( $fields as $param => $meta_key ) {
         $value = $request->get_param( $param );
         if ( $value !== null && $value !== '' ) {
-            update_post_meta( $post_id, $meta_key, sanitize_text_field( $value ) );
-            $updated[ $meta_key ] = $value;
+            // og_image stores a URL — esc_url_raw instead of sanitize_text_field
+            $sanitized = ( $param === 'og_image' ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
+            update_post_meta( $post_id, $meta_key, $sanitized );
+            $updated[ $meta_key ] = $sanitized;
         }
     }
 
@@ -492,13 +503,17 @@ function rmb_get_meta( WP_REST_Request $request ) {
     $meta_keys = [
         'rank_math_title', 'rank_math_description', 'rank_math_focus_keyword',
         'rank_math_robots', 'rank_math_og_title', 'rank_math_og_description',
-        'rank_math_seo_score',
+        'rank_math_og_image', 'rank_math_seo_score',
     ];
 
     $meta = [];
     foreach ( $meta_keys as $key ) {
         $meta[ $key ] = get_post_meta( $post_id, $key, true );
     }
+
+    // Also include featured image URL for reference
+    $thumb_id = get_post_thumbnail_id( $post_id );
+    $meta['_featured_image_url'] = $thumb_id ? wp_get_attachment_image_url( $thumb_id, 'large' ) : '';
 
     return rest_ensure_response( [ 'post_id' => $post_id, 'meta' => $meta ] );
 }
