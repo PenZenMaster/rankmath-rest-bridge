@@ -15,7 +15,7 @@ define( 'RMB_VERSION',      '1.2.0' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
-define( 'RMB_UPDATE_URL',   'https://raw.githubusercontent.com/rankrocket-co/rankmath-rest-bridge/main/update-manifest.json' );
+define( 'RMB_UPDATE_URL',   'https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/update-manifest.json' );
 
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
 add_action( 'init', function () {
