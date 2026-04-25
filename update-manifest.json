@@ -1,17 +1,17 @@
 {
   "name": "RankMath REST Bridge",
   "slug": "rankmath-rest-bridge",
-  "version": "1.2.0",
-  "download_url": "https://github.com/PenZenMaster/rankmath-rest-bridge/raw/main/releases/v1.2.0/rankmath-rest-bridge.zip",
+  "version": "1.2.1",
+  "download_url": "https://github.com/PenZenMaster/rankmath-rest-bridge/raw/main/releases/v1.2.1/rankmath-rest-bridge.zip",
   "requires": "5.9",
   "tested": "6.7",
   "requires_php": "7.4",
-  "last_updated": "2026-04-25 20:00:00",
+  "last_updated": "2026-04-25 21:00:00",
   "homepage": "https://github.com/PenZenMaster/rankmath-rest-bridge",
   "author": "Rank Rocket Co.",
   "sections": {
     "description": "<p>Exposes REST endpoints for the SEO Remediation Agent: RankMath title/meta updates, head/footer script injection (schema, analytics tags, etc.), and cache purge. No HFCM dependency required.</p><p>All snippets are stored in wp_options and output via wp_head/wp_footer hooks. Fully manageable via the REST API.</p>",
     "installation": "<ol><li>Upload the plugin zip via Plugins &rarr; Add New &rarr; Upload.</li><li>Activate the plugin.</li><li>Create an Application Password for an Administrator user (Users &rarr; Profile &rarr; Application Passwords).</li><li>Use the REST endpoints at <code>/wp-json/rankmath-bridge/v1/</code> with HTTP Basic Auth.</li></ol>",
-    "changelog": "<h4>1.2.0 &mdash; April 2026</h4><ul><li>Removed HFCM dependency entirely &mdash; snippets now stored in wp_options</li><li>Added snippet create/update/delete/list endpoints</li><li>Added cache purge endpoint (LiteSpeed, SiteGround, WP Rocket, W3TC)</li><li>Added WordPress auto-update support via GitHub</li></ul><h4>1.1.0</h4><ul><li>Added HFCM bridge endpoints (deprecated)</li><li>Added cache purge endpoint</li></ul><h4>1.0.0</h4><ul><li>Initial release &mdash; RankMath title/meta/robots/focus keyword update + verify</li></ul>"
+    "changelog": "<h4>1.2.1</h4><ul><li>Added /snippets/replace-all endpoint for atomic full-store rewrite</li><li>Fixes duplicate snippet cleanup issue</li></ul><h4>1.2.0 &mdash; April 2026</h4><ul><li>Removed HFCM dependency entirely &mdash; snippets now stored in wp_options</li><li>Added snippet create/update/delete/list endpoints</li><li>Added cache purge endpoint (LiteSpeed, SiteGround, WP Rocket, W3TC)</li><li>Added WordPress auto-update support via GitHub</li></ul><h4>1.1.0</h4><ul><li>Added HFCM bridge endpoints (deprecated)</li><li>Added cache purge endpoint</li></ul><h4>1.0.0</h4><ul><li>Initial release &mdash; RankMath title/meta/robots/focus keyword update + verify</li></ul>"
   }
 }
