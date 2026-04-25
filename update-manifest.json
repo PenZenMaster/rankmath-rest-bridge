@@ -1,14 +1,14 @@
 {
   "name": "RankRocket SEO",
   "slug": "rankmath-rest-bridge",
-  "version": "2.0.5",
-  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.0.5/rankmath-rest-bridge.zip",
+  "version": "2.0.6",
+  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.0.6/rankmath-rest-bridge.zip",
   "requires": "5.9",
   "tested": "6.7",
   "requires_php": "7.4",
   "last_updated": "2026-04-25",
   "sections": {
     "description": "Full-stack SEO management plugin. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.",
-    "changelog": "<h4>2.0.5</h4><p>Fix WSOD on Cloudways/LiteSpeed: removed register_activation_hook flush. Rewrite rule + flush now handled safely in init via version-keyed option.</p><h4>2.0.4</h4><p>Fix llms.txt 500: use WP rewrite rule + template_redirect. Flush on activation.</p><h4>2.0.3</h4><p>Rename to RankRocket SEO. Fix llms.txt + sitemap hooks. Self-update removes stale copies.</p>"
+    "changelog": "<h4>2.0.6</h4><p>Fix llms.txt 301 trailing-slash redirect loop: switch from rewrite rule to wp hook + REQUEST_URI (same pattern as sitemap). Remove unused add_rewrite_rule from init.</p><h4>2.0.5</h4><p>Fix WSOD on Cloudways/LiteSpeed: removed register_activation_hook flush.</p>"
   }
 }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.5
+ * Version:      2.0.6
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.5' );
+define( 'RMB_VERSION',      '2.0.6' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -19,16 +19,6 @@ define( 'RMB_UPDATE_URL',   'https://raw.githubusercontent.com/PenZenMaster/rank
 
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
 add_action( 'init', function () {
-    // Register llms.txt rewrite rule on every init (safe — WP dedupes rules)
-    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
-
-    // Flush rewrite rules once per version upgrade (NOT on activation hook — causes WSOD on some hosts)
-    $flushed = get_option( 'rmb_rewrite_flushed', '' );
-    if ( $flushed !== RMB_VERSION ) {
-        flush_rewrite_rules( false );
-        update_option( 'rmb_rewrite_flushed', RMB_VERSION );
-    }
-
     // Plugin update checker
     $puc_loader = RMB_PLUGIN_DIR . 'vendor/plugin-update-checker/plugin-update-checker.php';
     if ( file_exists( $puc_loader ) ) {
@@ -137,18 +127,16 @@ function rmb_resolve_tokens( $str, $post_id ) {
 
 
 // ── llms.txt generator ────────────────────────────────────────────────────────
-// Rewrite rule is registered in the init hook above (consolidated)
-
-add_filter( 'query_vars', function ( $vars ) {
-    $vars[] = 'rmb_llms';
-    return $vars;
-} );
-
-// template_redirect fires after WP query is set — safe to call get_pages() etc.
-add_action( 'template_redirect', function () {
-    if ( ! get_query_var( 'rmb_llms' ) ) return;
-    rmb_serve_llms_txt();
-    exit;
+// Use the same wp hook + REQUEST_URI pattern as the sitemap — fires before
+// WP canonical redirect (which would add a trailing slash and cause a 500).
+add_action( 'wp', function () {
+    if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
+    $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
+    $uri = rtrim( $uri, '/' );
+    if ( $uri === '/llms.txt' ) {
+        rmb_serve_llms_txt();
+        exit;
+    }
 } );
 
 function rmb_serve_llms_txt() {
