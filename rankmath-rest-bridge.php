@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.1.0
+ * Version:      2.1.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.1.0' );
+define( 'RMB_VERSION',      '2.1.1' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -209,9 +209,8 @@ function rmb_serve_llms_txt() {
 }
 
 
-// ── XML Sitemap (replaces RankMath sitemap) ───────────────────────────────────
+// ── XML Sitemap ───────────────────────────────────────────────────────────────
 add_action( 'wp', function () {
-    if ( class_exists( 'RankMath' ) ) return; // RankMath handles it when active
     if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
     $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
     if ( rtrim( $uri, '/' ) === '/rmb-sitemap.xml' || rtrim( $uri, '/' ) === '/sitemap.xml' ) {
@@ -225,7 +224,8 @@ add_action( 'wp', function () {
 } );
 
 function rmb_serve_sitemap_index() {
-    if ( ob_get_level() ) ob_end_clean();
+    while ( ob_get_level() ) ob_end_clean();
+    status_header( 200 );
     $site_url = rtrim( get_bloginfo( 'url' ), '/' );
     $now      = gmdate( 'Y-m-d\TH:i:s+00:00' );
 
@@ -238,7 +238,8 @@ function rmb_serve_sitemap_index() {
 }
 
 function rmb_serve_sitemap() {
-    if ( ob_get_level() ) ob_end_clean();
+    while ( ob_get_level() ) ob_end_clean();
+    status_header( 200 );
     $entries = [];
 
     // Pages
