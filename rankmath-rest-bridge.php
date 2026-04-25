@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.3
+ * Version:      2.0.4
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,13 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.3' );
+// ── Flush rewrite rules on activation (needed for /llms.txt rewrite) ─────────
+register_activation_hook( RMB_PLUGIN_FILE, function () {
+    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
+    flush_rewrite_rules();
+} );
+
+define( 'RMB_VERSION',      '2.0.4' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -126,23 +132,21 @@ function rmb_resolve_tokens( $str, $post_id ) {
 
 
 // ── llms.txt generator ────────────────────────────────────────────────────────
+// Register rewrite rule + query var so WP routes /llms.txt cleanly
 add_action( 'init', function () {
-    if ( isset( $_SERVER['REQUEST_URI'] ) && rtrim( $_SERVER['REQUEST_URI'], '/' ) === '/llms.txt' ) {
-        // Only serve on exact /llms.txt request
-        if ( ! isset( $_GET['rmb_llms'] ) ) {
-            // Let WP handle it unless we're the generator
-        }
-    }
+    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
 } );
 
-// Serve /llms.txt dynamically
-add_action( 'wp', function () {
-    if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
-    $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
-    if ( rtrim( $uri, '/' ) === '/llms.txt' ) {
-        rmb_serve_llms_txt();
-        exit;
-    }
+add_filter( 'query_vars', function ( $vars ) {
+    $vars[] = 'rmb_llms';
+    return $vars;
+} );
+
+// template_redirect fires after WP query is set — safe to call get_pages() etc.
+add_action( 'template_redirect', function () {
+    if ( ! get_query_var( 'rmb_llms' ) ) return;
+    rmb_serve_llms_txt();
+    exit;
 } );
 
 function rmb_serve_llms_txt() {
