@@ -11,17 +11,17 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-// ── Flush rewrite rules on activation (needed for /llms.txt rewrite) ─────────
-register_activation_hook( RMB_PLUGIN_FILE, function () {
-    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
-    flush_rewrite_rules();
-} );
-
 define( 'RMB_VERSION',      '2.0.4' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
 define( 'RMB_UPDATE_URL',   'https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/update-manifest.json' );
+
+// ── Flush rewrite rules on activation (needed for /llms.txt rewrite) ─────────
+register_activation_hook( RMB_PLUGIN_FILE, function () {
+    add_rewrite_rule( '^llms\.txt$', 'index.php?rmb_llms=1', 'top' );
+    flush_rewrite_rules();
+} );
 
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
 add_action( 'init', function () {
