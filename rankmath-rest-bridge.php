@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.6
+ * Version:      2.0.7
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.6' );
+define( 'RMB_VERSION',      '2.0.7' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -140,6 +140,9 @@ add_action( 'wp', function () {
 } );
 
 function rmb_serve_llms_txt() {
+    // Clean any output already buffered by WP/plugins before we send headers
+    if ( ob_get_level() ) ob_end_clean();
+
     $site_name = get_bloginfo( 'name' );
     $site_url  = get_bloginfo( 'url' );
     $tagline   = get_bloginfo( 'description' );
@@ -217,6 +220,7 @@ add_action( 'wp', function () {
 } );
 
 function rmb_serve_sitemap_index() {
+    if ( ob_get_level() ) ob_end_clean();
     $site_url = rtrim( get_bloginfo( 'url' ), '/' );
     $now      = gmdate( 'Y-m-d\TH:i:s+00:00' );
 
@@ -229,6 +233,7 @@ function rmb_serve_sitemap_index() {
 }
 
 function rmb_serve_sitemap() {
+    if ( ob_get_level() ) ob_end_clean();
     $entries = [];
 
     // Pages
