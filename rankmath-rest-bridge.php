@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankMath REST Bridge
  * Description:  REST endpoints for the SEO Remediation Agent: title/meta, snippet injection, image ALT text, llms.txt, XML sitemap, and cache purge. RankMath optional.
- * Version:      2.0.1
+ * Version:      2.0.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.1' );
+define( 'RMB_VERSION',      '2.0.2' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -883,5 +883,78 @@ function rmb_status( WP_REST_Request $request ) {
         'update_url'     => RMB_UPDATE_URL,
         'php_version'    => PHP_VERSION,
         'wp_version'     => get_bloginfo( 'version' ),
+    ] );
+}
+
+
+// ── Self-Update ───────────────────────────────────────────────────────────────
+// Allows the bridge to pull and install its own update from GitHub without
+// requiring wp-admin login. Uses WP Plugin_Upgrader internally.
+// POST /wp-json/rankmath-bridge/v1/self-update  { "zip_url": "https://..." }
+// zip_url defaults to the latest release from the GitHub manifest.
+
+add_action( 'rest_api_init', function () {
+    $admin_only = function () { return current_user_can( 'manage_options' ); };
+
+    register_rest_route( 'rankmath-bridge/v1', '/self-update', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_self_update',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'zip_url' => [ 'required' => false, 'type' => 'string' ],
+        ],
+    ] );
+} );
+
+function rmb_self_update( WP_REST_Request $request ) {
+    require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+    require_once ABSPATH . 'wp-admin/includes/misc.php';
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+    // Resolve zip URL — use provided or fetch from manifest
+    $zip_url = $request->get_param( 'zip_url' );
+    if ( ! $zip_url ) {
+        $manifest = wp_remote_get( RMB_UPDATE_URL, [ 'timeout' => 15 ] );
+        if ( is_wp_error( $manifest ) ) {
+            return new WP_Error( 'manifest_fetch_failed', $manifest->get_error_message(), [ 'status' => 500 ] );
+        }
+        $manifest_data = json_decode( wp_remote_retrieve_body( $manifest ), true );
+        $zip_url       = $manifest_data['download_url'] ?? null;
+        $remote_ver    = $manifest_data['version']      ?? 'unknown';
+    } else {
+        $remote_ver = 'provided';
+    }
+
+    if ( ! $zip_url ) {
+        return new WP_Error( 'no_zip_url', 'Could not determine zip URL from manifest', [ 'status' => 500 ] );
+    }
+
+    $current_ver = RMB_VERSION;
+
+    $skin     = new WP_Ajax_Upgrader_Skin();
+    $upgrader = new Plugin_Upgrader( $skin );
+    $result   = $upgrader->install( esc_url_raw( $zip_url ), [ 'overwrite_package' => true ] );
+
+    if ( is_wp_error( $result ) ) {
+        return new WP_Error( 'upgrade_failed', $result->get_error_message(), [ 'status' => 500 ] );
+    }
+
+    if ( $result === false ) {
+        return new WP_Error( 'upgrade_failed', 'Upgrader returned false — check filesystem permissions', [ 'status' => 500 ] );
+    }
+
+    // Re-activate plugin after install
+    $plugin_file = 'rankmath-rest-bridge/rankmath-rest-bridge.php';
+    if ( ! is_plugin_active( $plugin_file ) ) {
+        activate_plugin( $plugin_file );
+    }
+
+    return rest_ensure_response( [
+        'success'      => true,
+        'from_version' => $current_ver,
+        'to_version'   => $remote_ver,
+        'zip_url'      => $zip_url,
+        'message'      => "Updated from {$current_ver} to {$remote_ver}. Plugin re-activated.",
     ] );
 }
