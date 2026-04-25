@@ -1,14 +1,14 @@
 {
   "name": "RankRocket SEO",
   "slug": "rankmath-rest-bridge",
-  "version": "2.0.9",
-  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.0.9/rankmath-rest-bridge.zip",
+  "version": "2.1.0",
+  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.1.0/rankmath-rest-bridge.zip",
   "requires": "5.9",
   "tested": "6.7",
   "requires_php": "7.4",
   "last_updated": "2026-04-25",
   "sections": {
-    "description": "Full-stack SEO management plugin. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.",
-    "changelog": "<h4>2.0.9</h4><p>Fix llms.txt 500: intercept at init priority 1 (earliest safe hook with WPDB), handles trailing slash, skips REST/cron contexts.</p>"
+    "description": "Full-stack SEO management plugin.",
+    "changelog": "<h4>2.1.0</h4><p>llms.txt: add status_header(200) + headers_sent() guard + cast fixes for get_permalink/strpos. Switch to init priority 1 hook.</p>"
   }
 }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.9
+ * Version:      2.1.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.9' );
+define( 'RMB_VERSION',      '2.1.0' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -143,60 +143,58 @@ add_action( 'init', function () {
 }, 1 ); // priority 1 — before most plugins, before canonical redirect fires
 
 function rmb_serve_llms_txt() {
-    // Clean any output already buffered by WP/plugins before we send headers
+    // Minimal diagnostic: confirm hook fires and headers can be sent
     while ( ob_get_level() ) ob_end_clean();
-
-    $site_name = get_bloginfo( 'name' );
-    $site_url  = get_bloginfo( 'url' );
-    $tagline   = get_bloginfo( 'description' );
-    $stored    = get_option( 'rmb_llms_config', [] );
-
-    // Safety: if headers already sent, bail gracefully
-    if ( headers_sent() ) {
-        echo "# llms.txt error: headers already sent\n";
+    if ( headers_sent( $hf, $hl ) ) {
+        // Headers already sent — cannot serve plain text properly
+        status_header( 200 );
+        echo "# llms.txt\n# Note: headers already sent from {$hf}:{$hl}\n";
         return;
     }
+    status_header( 200 );
+    header( 'Content-Type: text/plain; charset=UTF-8' );
+    header( 'Cache-Control: no-cache' );
+
+    $site_name = get_bloginfo( 'name' );
+    $tagline   = get_bloginfo( 'description' );
+    $stored    = get_option( 'rmb_llms_config', [] );
 
     $lines   = [];
     $lines[] = "# {$site_name}";
     if ( $tagline ) $lines[] = "> {$tagline}";
     $lines[] = '';
 
-    // Custom intro if set
     if ( ! empty( $stored['intro'] ) ) {
         $lines[] = $stored['intro'];
         $lines[] = '';
     }
 
-    // Published pages
     $pages = get_pages( [ 'post_status' => 'publish', 'sort_column' => 'menu_order' ] );
     if ( $pages ) {
         $lines[] = '## Pages';
         foreach ( $pages as $page ) {
             $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
-            if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
-            $desc  = get_post_meta( $page->ID, 'rank_math_description', true );
-            $desc  = $desc ? rmb_resolve_tokens( $desc, $page->ID ) : '';
-            $lines[] = '- [' . get_the_title( $page ) . '](' . get_permalink( $page ) . ')' . ( $desc ? ': ' . $desc : '' );
+            if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( (string) $noindex, 'noindex' ) !== false ) ) continue;
+            $desc    = get_post_meta( $page->ID, 'rank_math_description', true );
+            $desc    = $desc ? rmb_resolve_tokens( (string) $desc, $page->ID ) : '';
+            $lines[] = '- [' . get_the_title( $page ) . '](' . get_permalink( $page->ID ) . ')' . ( $desc ? ': ' . $desc : '' );
         }
         $lines[] = '';
     }
 
-    // Recent posts (if blog active)
     $posts = get_posts( [ 'numberposts' => 10, 'post_status' => 'publish' ] );
     if ( $posts ) {
         $lines[] = '## Blog Posts';
         foreach ( $posts as $post ) {
             $noindex = get_post_meta( $post->ID, 'rank_math_robots', true );
-            if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+            if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( (string) $noindex, 'noindex' ) !== false ) ) continue;
             $desc    = get_post_meta( $post->ID, 'rank_math_description', true );
-            $desc    = $desc ? rmb_resolve_tokens( $desc, $post->ID ) : wp_trim_words( $post->post_excerpt ?: $post->post_content, 20 );
-            $lines[] = '- [' . get_the_title( $post ) . '](' . get_permalink( $post ) . ')' . ( $desc ? ': ' . $desc : '' );
+            $desc    = $desc ? rmb_resolve_tokens( (string) $desc, $post->ID ) : wp_trim_words( $post->post_excerpt ?: $post->post_content, 20 );
+            $lines[] = '- [' . get_the_title( $post ) . '](' . get_permalink( $post->ID ) . ')' . ( $desc ? ': ' . $desc : '' );
         }
         $lines[] = '';
     }
 
-    // Custom sections from rmb_llms_config
     if ( ! empty( $stored['sections'] ) && is_array( $stored['sections'] ) ) {
         foreach ( $stored['sections'] as $section ) {
             $lines[] = '## ' . ( $section['heading'] ?? 'More' );
@@ -207,8 +205,6 @@ function rmb_serve_llms_txt() {
         }
     }
 
-    header( 'Content-Type: text/plain; charset=UTF-8' );
-    header( 'Cache-Control: public, max-age=3600' );
     echo implode( "\n", $lines );
 }
 
