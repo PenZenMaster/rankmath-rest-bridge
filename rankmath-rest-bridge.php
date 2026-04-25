@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankMath REST Bridge
  * Description:  REST endpoints for the SEO Remediation Agent: RankMath title/meta updates, head/footer script injection (schema, analytics tags, etc.), and cache purge. No HFCM dependency required.
- * Version:      1.2.1
+ * Version:      1.2.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '1.2.1' );
+define( 'RMB_VERSION',      '1.2.2' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -124,6 +124,17 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
+    // ── Snippets: Replace all — MUST be registered BEFORE the {id} wildcard route ───
+    register_rest_route( 'rankmath-bridge/v1', '/snippets/replace-all', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_snippets_replace_all',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'snippets' => [ 'required' => true, 'type' => 'array' ],
+        ],
+    ] );
+
+    // ── Snippets: Update / Delete by ID (wildcard — must come AFTER replace-all) ───
     register_rest_route( 'rankmath-bridge/v1', '/snippets/(?P<id>[a-zA-Z0-9_-]+)', [
         [
             'methods'             => 'POST',
@@ -134,16 +145,6 @@ add_action( 'rest_api_init', function () {
             'methods'             => 'DELETE',
             'callback'            => 'rmb_snippets_delete',
             'permission_callback' => $admin_only,
-        ],
-    ] );
-
-    // ── Snippets: Replace all (atomic full-store rewrite) ─────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/snippets/replace-all', [
-        'methods'             => 'POST',
-        'callback'            => 'rmb_snippets_replace_all',
-        'permission_callback' => $admin_only,
-        'args' => [
-            'snippets' => [ 'required' => true, 'type' => 'array' ],
         ],
     ] );
 
