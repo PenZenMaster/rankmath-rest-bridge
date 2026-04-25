@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.7
+ * Version:      2.0.8
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.7' );
+define( 'RMB_VERSION',      '2.0.8' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -127,9 +127,9 @@ function rmb_resolve_tokens( $str, $post_id ) {
 
 
 // ── llms.txt generator ────────────────────────────────────────────────────────
-// Use the same wp hook + REQUEST_URI pattern as the sitemap — fires before
-// WP canonical redirect (which would add a trailing slash and cause a 500).
-add_action( 'wp', function () {
+// Use parse_request (fires before WP query + before canonical redirect).
+// get_pages()/get_posts() are safe here — WPDB is available, just no queried object.
+add_action( 'parse_request', function () {
     if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
     $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
     $uri = rtrim( $uri, '/' );
