@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankMath REST Bridge
  * Description:  REST endpoints for the SEO Remediation Agent: title/meta, snippet injection, image ALT text, llms.txt, XML sitemap, and cache purge. RankMath optional.
- * Version:      2.0.0
+ * Version:      2.0.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.0' );
+define( 'RMB_VERSION',      '2.0.1' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -241,14 +241,18 @@ function rmb_serve_sitemap() {
     $entries = [];
 
     // Pages
+    $front_page = (int) get_option( 'page_on_front' );
     $pages = get_pages( [ 'post_status' => 'publish' ] );
     foreach ( $pages as $page ) {
         $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
-        if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+        if ( ! empty( $noindex ) && (
+            ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
+            ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
+        ) ) continue;
         $entries[] = [
-            'loc'     => get_permalink( $page ),
-            'lastmod' => get_the_modified_date( 'Y-m-d\TH:i:s+00:00', $page ),
-            'pri'     => ( $page->ID === (int) get_option( 'page_on_front' ) ) ? '1.0' : '0.8',
+            'loc'     => get_permalink( $page->ID ),
+            'lastmod' => mysql2date( 'Y-m-d\TH:i:s+00:00', $page->post_modified ),
+            'pri'     => ( $page->ID === $front_page ) ? '1.0' : '0.8',
         ];
     }
 
@@ -256,10 +260,13 @@ function rmb_serve_sitemap() {
     $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
     foreach ( $posts as $post ) {
         $noindex = get_post_meta( $post->ID, 'rank_math_robots', true );
-        if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+        if ( ! empty( $noindex ) && (
+            ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
+            ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
+        ) ) continue;
         $entries[] = [
-            'loc'     => get_permalink( $post ),
-            'lastmod' => get_the_modified_date( 'Y-m-d\TH:i:s+00:00', $post ),
+            'loc'     => get_permalink( $post->ID ),
+            'lastmod' => mysql2date( 'Y-m-d\TH:i:s+00:00', $post->post_modified ),
             'pri'     => '0.6',
         ];
     }
@@ -672,18 +679,22 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 // ── Sitemap Preview Handler ───────────────────────────────────────────────────
 
 function rmb_sitemap_preview( WP_REST_Request $request ) {
-    $entries = [];
+    $entries    = [];
+    $front_page = (int) get_option( 'page_on_front' );
 
     $pages = get_pages( [ 'post_status' => 'publish' ] );
     foreach ( $pages as $page ) {
-        $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
-        $is_noindex = $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false );
+        $noindex    = get_post_meta( $page->ID, 'rank_math_robots', true );
+        $is_noindex = ! empty( $noindex ) && (
+            ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
+            ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
+        );
         $entries[] = [
             'id'       => $page->ID,
             'type'     => 'page',
-            'loc'      => get_permalink( $page ),
-            'lastmod'  => get_the_modified_date( 'Y-m-d', $page ),
-            'priority' => $page->ID === (int) get_option( 'page_on_front' ) ? '1.0' : '0.8',
+            'loc'      => get_permalink( $page->ID ),
+            'lastmod'  => mysql2date( 'Y-m-d', $page->post_modified ),
+            'priority' => $page->ID === $front_page ? '1.0' : '0.8',
             'noindex'  => $is_noindex,
             'included' => ! $is_noindex,
         ];
@@ -692,20 +703,23 @@ function rmb_sitemap_preview( WP_REST_Request $request ) {
     $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
     foreach ( $posts as $post ) {
         $noindex    = get_post_meta( $post->ID, 'rank_math_robots', true );
-        $is_noindex = $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false );
-        $entries[]  = [
+        $is_noindex = ! empty( $noindex ) && (
+            ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
+            ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
+        );
+        $entries[] = [
             'id'       => $post->ID,
             'type'     => 'post',
-            'loc'      => get_permalink( $post ),
-            'lastmod'  => get_the_modified_date( 'Y-m-d', $post ),
+            'loc'      => get_permalink( $post->ID ),
+            'lastmod'  => mysql2date( 'Y-m-d', $post->post_modified ),
             'priority' => '0.6',
             'noindex'  => $is_noindex,
             'included' => ! $is_noindex,
         ];
     }
 
-    $included = array_filter( $entries, fn( $e ) => $e['included'] );
-    $excluded = array_filter( $entries, fn( $e ) => ! $e['included'] );
+    $included = array_values( array_filter( $entries, function( $e ) { return $e['included']; } ) );
+    $excluded = array_values( array_filter( $entries, function( $e ) { return ! $e['included']; } ) );
 
     return rest_ensure_response( [
         'sitemap_url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
