@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name:  RankMath REST Bridge
- * Description:  REST endpoints for the SEO Remediation Agent: RankMath title/meta updates, head/footer script injection (schema, analytics tags, etc.), and cache purge. No HFCM dependency required.
- * Version:      1.2.2
+ * Description:  REST endpoints for the SEO Remediation Agent: title/meta, snippet injection, image ALT text, llms.txt, XML sitemap, and cache purge. RankMath optional.
+ * Version:      2.0.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '1.2.2' );
+define( 'RMB_VERSION',      '2.0.0' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -27,8 +27,6 @@ add_action( 'init', function () {
             RMB_PLUGIN_FILE,
             'rankmath-rest-bridge'
         );
-        // Optional: set branch to track (default is main)
-        // $checker->setBranch('main');
     }
 } );
 
@@ -44,7 +42,7 @@ function rmb_output_snippets( $location ) {
         if ( ( $snippet['status']   ?? 'active' ) !== 'active'   ) continue;
         if ( ( $snippet['location'] ?? 'footer' ) !== $location   ) continue;
 
-        $display_on = $snippet['display_on'] ?? 'entire_website';
+        $display_on    = $snippet['display_on'] ?? 'entire_website';
         $should_output = false;
 
         switch ( $display_on ) {
@@ -61,9 +59,8 @@ function rmb_output_snippets( $location ) {
                 $should_output = is_single();
                 break;
             default:
-                // page_id:1013 or just a numeric string
                 if ( str_starts_with( $display_on, 'page_id:' ) ) {
-                    $page_id = intval( substr( $display_on, 8 ) );
+                    $page_id       = intval( substr( $display_on, 8 ) );
                     $should_output = ( get_queried_object_id() === $page_id );
                 } elseif ( is_numeric( $display_on ) ) {
                     $should_output = ( get_queried_object_id() === intval( $display_on ) );
@@ -76,12 +73,218 @@ function rmb_output_snippets( $location ) {
     }
 }
 
+// ── SEO meta output (when RankMath is inactive) ───────────────────────────────
+add_action( 'wp_head', function () {
+    if ( class_exists( 'RankMath' ) ) return; // RankMath handles it
+
+    if ( ! is_singular() ) return;
+    $post_id = get_queried_object_id();
+
+    $title = get_post_meta( $post_id, 'rank_math_title', true );
+    $desc  = get_post_meta( $post_id, 'rank_math_description', true );
+    $robots = get_post_meta( $post_id, 'rank_math_robots', true );
+
+    // Resolve tokens (%sitename%, %title%, %sep%)
+    $title = rmb_resolve_tokens( $title, $post_id );
+    $desc  = rmb_resolve_tokens( $desc,  $post_id );
+
+    if ( $title ) {
+        // Replace WP's default <title> tag
+        add_filter( 'pre_get_document_title', function() use ( $title ) { return $title; } );
+    }
+    if ( $desc ) {
+        echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
+    }
+    if ( $robots && ! empty( $robots ) ) {
+        $robots_val = is_array( $robots ) ? implode( ',', $robots ) : $robots;
+        if ( $robots_val ) {
+            echo '<meta name="robots" content="' . esc_attr( $robots_val ) . '">' . "\n";
+        }
+    }
+
+    // og:title / og:description
+    $og_title = get_post_meta( $post_id, 'rank_math_og_title', true );
+    $og_desc  = get_post_meta( $post_id, 'rank_math_og_description', true );
+    if ( $og_title ) echo '<meta property="og:title" content="'       . esc_attr( rmb_resolve_tokens( $og_title, $post_id ) ) . '">' . "\n";
+    if ( $og_desc  ) echo '<meta property="og:description" content="' . esc_attr( rmb_resolve_tokens( $og_desc,  $post_id ) ) . '">' . "\n";
+
+}, 1 ); // priority 1 — before most plugins
+
+
+// ── Token resolver ────────────────────────────────────────────────────────────
+function rmb_resolve_tokens( $str, $post_id ) {
+    if ( ! $str ) return $str;
+    $post   = get_post( $post_id );
+    $tokens = [
+        '%title%'    => $post ? get_the_title( $post ) : '',
+        '%sitename%' => get_bloginfo( 'name' ),
+        '%sep%'      => '|',
+        '%excerpt%'  => $post ? wp_trim_words( $post->post_excerpt ?: $post->post_content, 20 ) : '',
+    ];
+    return str_replace( array_keys( $tokens ), array_values( $tokens ), $str );
+}
+
+
+// ── llms.txt generator ────────────────────────────────────────────────────────
+add_action( 'init', function () {
+    if ( isset( $_SERVER['REQUEST_URI'] ) && rtrim( $_SERVER['REQUEST_URI'], '/' ) === '/llms.txt' ) {
+        // Only serve on exact /llms.txt request
+        if ( ! isset( $_GET['rmb_llms'] ) ) {
+            // Let WP handle it unless we're the generator
+        }
+    }
+} );
+
+// Serve /llms.txt dynamically
+add_action( 'parse_request', function ( $wp ) {
+    if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+        $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
+        if ( rtrim( $uri, '/' ) === '/llms.txt' ) {
+            rmb_serve_llms_txt();
+            exit;
+        }
+    }
+} );
+
+function rmb_serve_llms_txt() {
+    $site_name = get_bloginfo( 'name' );
+    $site_url  = get_bloginfo( 'url' );
+    $tagline   = get_bloginfo( 'description' );
+    $stored    = get_option( 'rmb_llms_config', [] );
+
+    $lines   = [];
+    $lines[] = "# {$site_name}";
+    if ( $tagline ) $lines[] = "> {$tagline}";
+    $lines[] = '';
+
+    // Custom intro if set
+    if ( ! empty( $stored['intro'] ) ) {
+        $lines[] = $stored['intro'];
+        $lines[] = '';
+    }
+
+    // Published pages
+    $pages = get_pages( [ 'post_status' => 'publish', 'sort_column' => 'menu_order' ] );
+    if ( $pages ) {
+        $lines[] = '## Pages';
+        foreach ( $pages as $page ) {
+            $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
+            if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+            $desc  = get_post_meta( $page->ID, 'rank_math_description', true );
+            $desc  = $desc ? rmb_resolve_tokens( $desc, $page->ID ) : '';
+            $lines[] = '- [' . get_the_title( $page ) . '](' . get_permalink( $page ) . ')' . ( $desc ? ': ' . $desc : '' );
+        }
+        $lines[] = '';
+    }
+
+    // Recent posts (if blog active)
+    $posts = get_posts( [ 'numberposts' => 10, 'post_status' => 'publish' ] );
+    if ( $posts ) {
+        $lines[] = '## Blog Posts';
+        foreach ( $posts as $post ) {
+            $noindex = get_post_meta( $post->ID, 'rank_math_robots', true );
+            if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+            $desc    = get_post_meta( $post->ID, 'rank_math_description', true );
+            $desc    = $desc ? rmb_resolve_tokens( $desc, $post->ID ) : wp_trim_words( $post->post_excerpt ?: $post->post_content, 20 );
+            $lines[] = '- [' . get_the_title( $post ) . '](' . get_permalink( $post ) . ')' . ( $desc ? ': ' . $desc : '' );
+        }
+        $lines[] = '';
+    }
+
+    // Custom sections from rmb_llms_config
+    if ( ! empty( $stored['sections'] ) && is_array( $stored['sections'] ) ) {
+        foreach ( $stored['sections'] as $section ) {
+            $lines[] = '## ' . ( $section['heading'] ?? 'More' );
+            foreach ( ( $section['items'] ?? [] ) as $item ) {
+                $lines[] = '- ' . $item;
+            }
+            $lines[] = '';
+        }
+    }
+
+    header( 'Content-Type: text/plain; charset=UTF-8' );
+    header( 'Cache-Control: public, max-age=3600' );
+    echo implode( "\n", $lines );
+}
+
+
+// ── XML Sitemap (replaces RankMath sitemap) ───────────────────────────────────
+add_action( 'parse_request', function ( $wp ) {
+    if ( class_exists( 'RankMath' ) ) return; // RankMath handles it when active
+
+    if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+        $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
+        if ( rtrim( $uri, '/' ) === '/rmb-sitemap.xml' || rtrim( $uri, '/' ) === '/sitemap.xml' ) {
+            rmb_serve_sitemap();
+            exit;
+        }
+        if ( rtrim( $uri, '/' ) === '/rmb-sitemap-index.xml' || rtrim( $uri, '/' ) === '/sitemap_index.xml' ) {
+            rmb_serve_sitemap_index();
+            exit;
+        }
+    }
+} );
+
+function rmb_serve_sitemap_index() {
+    $site_url = rtrim( get_bloginfo( 'url' ), '/' );
+    $now      = gmdate( 'Y-m-d\TH:i:s+00:00' );
+
+    header( 'Content-Type: application/xml; charset=UTF-8' );
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+    echo "  <sitemap><loc>{$site_url}/rmb-sitemap.xml</loc><lastmod>{$now}</lastmod></sitemap>\n";
+    echo '</sitemapindex>' . "\n";
+    echo "<!-- XML Sitemap generated by RankMath REST Bridge v" . RMB_VERSION . " -->\n";
+}
+
+function rmb_serve_sitemap() {
+    $entries = [];
+
+    // Pages
+    $pages = get_pages( [ 'post_status' => 'publish' ] );
+    foreach ( $pages as $page ) {
+        $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
+        if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+        $entries[] = [
+            'loc'     => get_permalink( $page ),
+            'lastmod' => get_the_modified_date( 'Y-m-d\TH:i:s+00:00', $page ),
+            'pri'     => ( $page->ID === (int) get_option( 'page_on_front' ) ) ? '1.0' : '0.8',
+        ];
+    }
+
+    // Posts
+    $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
+    foreach ( $posts as $post ) {
+        $noindex = get_post_meta( $post->ID, 'rank_math_robots', true );
+        if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false ) ) continue;
+        $entries[] = [
+            'loc'     => get_permalink( $post ),
+            'lastmod' => get_the_modified_date( 'Y-m-d\TH:i:s+00:00', $post ),
+            'pri'     => '0.6',
+        ];
+    }
+
+    header( 'Content-Type: application/xml; charset=UTF-8' );
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+    foreach ( $entries as $e ) {
+        echo "  <url>\n";
+        echo "    <loc>" . esc_url( $e['loc'] ) . "</loc>\n";
+        echo "    <lastmod>" . esc_html( $e['lastmod'] ) . "</lastmod>\n";
+        echo "    <priority>" . esc_html( $e['pri'] ) . "</priority>\n";
+        echo "  </url>\n";
+    }
+    echo '</urlset>' . "\n";
+    echo "<!-- XML Sitemap generated by RankMath REST Bridge v" . RMB_VERSION . " -->\n";
+}
+
+
 // ── REST API ──────────────────────────────────────────────────────────────────
 add_action( 'rest_api_init', function () {
 
     $admin_only = function () { return current_user_can( 'manage_options' ); };
 
-    // ── RankMath ──────────────────────────────────────────────────────────────
+    // ── SEO Meta (RankMath-compatible postmeta) ───────────────────────────────
     register_rest_route( 'rankmath-bridge/v1', '/update', [
         'methods'             => 'POST',
         'callback'            => 'rmb_update_meta',
@@ -103,6 +306,80 @@ add_action( 'rest_api_init', function () {
         'permission_callback' => $admin_only,
     ] );
 
+    // ── Bulk SEO meta read/write ───────────────────────────────────────────────
+    register_rest_route( 'rankmath-bridge/v1', '/meta/bulk-get', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_meta_bulk_get',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'post_ids' => [ 'required' => true, 'type' => 'array' ],
+        ],
+    ] );
+
+    register_rest_route( 'rankmath-bridge/v1', '/meta/bulk-update', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_meta_bulk_update',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'updates' => [ 'required' => true, 'type' => 'array' ],
+        ],
+    ] );
+
+    // ── Image ALT text ─────────────────────────────────────────────────────────
+    // GET  /images  — list all attachment images with current ALT text
+    register_rest_route( 'rankmath-bridge/v1', '/images', [
+        'methods'             => 'GET',
+        'callback'            => 'rmb_images_list',
+        'permission_callback' => $admin_only,
+    ] );
+
+    // POST /images/{id}/alt  — set ALT text on one attachment
+    // MUST be registered before the wildcard
+    register_rest_route( 'rankmath-bridge/v1', '/images/(?P<id>\d+)/alt', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_image_set_alt',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'id'  => [ 'required' => true, 'type' => 'integer' ],
+            'alt' => [ 'required' => true, 'type' => 'string'  ],
+        ],
+    ] );
+
+    // POST /images/bulk-alt  — set ALT text on multiple attachments atomically
+    register_rest_route( 'rankmath-bridge/v1', '/images/bulk-alt', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_images_bulk_alt',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'updates' => [ 'required' => true, 'type' => 'array' ],
+        ],
+    ] );
+
+    // ── llms.txt config ────────────────────────────────────────────────────────
+    register_rest_route( 'rankmath-bridge/v1', '/llms', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rmb_llms_get_config',
+            'permission_callback' => $admin_only,
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rmb_llms_set_config',
+            'permission_callback' => $admin_only,
+            'args' => [
+                'intro'    => [ 'required' => false, 'type' => 'string' ],
+                'sections' => [ 'required' => false, 'type' => 'array'  ],
+            ],
+        ],
+    ] );
+
+    // ── Sitemap config ─────────────────────────────────────────────────────────
+    register_rest_route( 'rankmath-bridge/v1', '/sitemap/preview', [
+        'methods'             => 'GET',
+        'callback'            => 'rmb_sitemap_preview',
+        'permission_callback' => $admin_only,
+    ] );
+
     // ── Snippets ──────────────────────────────────────────────────────────────
     register_rest_route( 'rankmath-bridge/v1', '/snippets', [
         [
@@ -117,14 +394,14 @@ add_action( 'rest_api_init', function () {
             'args' => [
                 'title'      => [ 'required' => true,  'type' => 'string' ],
                 'content'    => [ 'required' => true,  'type' => 'string' ],
-                'location'   => [ 'required' => false, 'type' => 'string', 'default' => 'footer'          ],
-                'display_on' => [ 'required' => false, 'type' => 'string', 'default' => 'entire_website'  ],
-                'status'     => [ 'required' => false, 'type' => 'string', 'default' => 'active'          ],
+                'location'   => [ 'required' => false, 'type' => 'string', 'default' => 'footer'         ],
+                'display_on' => [ 'required' => false, 'type' => 'string', 'default' => 'entire_website' ],
+                'status'     => [ 'required' => false, 'type' => 'string', 'default' => 'active'         ],
             ],
         ],
     ] );
 
-    // ── Snippets: Replace all — MUST be registered BEFORE the {id} wildcard route ───
+    // ── Snippets: Replace all — MUST be registered BEFORE {id} wildcard ──────
     register_rest_route( 'rankmath-bridge/v1', '/snippets/replace-all', [
         'methods'             => 'POST',
         'callback'            => 'rmb_snippets_replace_all',
@@ -134,7 +411,7 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
-    // ── Snippets: Update / Delete by ID (wildcard — must come AFTER replace-all) ───
+    // ── Snippets: Update / Delete by ID (wildcard — after replace-all) ───────
     register_rest_route( 'rankmath-bridge/v1', '/snippets/(?P<id>[a-zA-Z0-9_-]+)', [
         [
             'methods'             => 'POST',
@@ -165,7 +442,7 @@ add_action( 'rest_api_init', function () {
 } );
 
 
-// ── RankMath Handlers ─────────────────────────────────────────────────────────
+// ── SEO Meta Handlers ─────────────────────────────────────────────────────────
 
 function rmb_update_meta( WP_REST_Request $request ) {
     $post_id = intval( $request->get_param( 'post_id' ) );
@@ -217,6 +494,228 @@ function rmb_get_meta( WP_REST_Request $request ) {
     return rest_ensure_response( [ 'post_id' => $post_id, 'meta' => $meta ] );
 }
 
+function rmb_meta_bulk_get( WP_REST_Request $request ) {
+    $post_ids  = array_map( 'intval', $request->get_param( 'post_ids' ) );
+    $meta_keys = [
+        'rank_math_title', 'rank_math_description', 'rank_math_focus_keyword',
+        'rank_math_robots', 'rank_math_og_title', 'rank_math_og_description',
+        'rank_math_seo_score',
+    ];
+    $results = [];
+    foreach ( $post_ids as $pid ) {
+        $post = get_post( $pid );
+        if ( ! $post ) continue;
+        $meta = [];
+        foreach ( $meta_keys as $key ) {
+            $meta[ $key ] = get_post_meta( $pid, $key, true );
+        }
+        $results[] = [
+            'post_id' => $pid,
+            'slug'    => $post->post_name,
+            'title'   => get_the_title( $post ),
+            'meta'    => $meta,
+        ];
+    }
+    return rest_ensure_response( [ 'count' => count( $results ), 'pages' => $results ] );
+}
+
+function rmb_meta_bulk_update( WP_REST_Request $request ) {
+    $updates = $request->get_param( 'updates' );
+    $fields  = [
+        'title'          => 'rank_math_title',
+        'description'    => 'rank_math_description',
+        'focus_keyword'  => 'rank_math_focus_keyword',
+        'robots'         => 'rank_math_robots',
+        'og_title'       => 'rank_math_og_title',
+        'og_description' => 'rank_math_og_description',
+    ];
+    $results = [];
+    foreach ( $updates as $upd ) {
+        $post_id = intval( $upd['post_id'] ?? 0 );
+        if ( ! $post_id || ! get_post( $post_id ) ) {
+            $results[] = [ 'post_id' => $post_id, 'success' => false, 'error' => 'Post not found' ];
+            continue;
+        }
+        $updated = [];
+        foreach ( $fields as $param => $meta_key ) {
+            if ( isset( $upd[ $param ] ) && $upd[ $param ] !== '' ) {
+                update_post_meta( $post_id, $meta_key, sanitize_text_field( $upd[ $param ] ) );
+                $updated[ $meta_key ] = $upd[ $param ];
+            }
+        }
+        wp_cache_delete( $post_id, 'post_meta' );
+        clean_post_cache( $post_id );
+        $results[] = [ 'post_id' => $post_id, 'success' => true, 'updated' => $updated ];
+    }
+    return rest_ensure_response( [ 'count' => count( $results ), 'results' => $results ] );
+}
+
+
+// ── Image ALT Handlers ────────────────────────────────────────────────────────
+
+function rmb_images_list( WP_REST_Request $request ) {
+    $page     = max( 1, intval( $request->get_param( 'page' ) ?? 1 ) );
+    $per_page = min( 100, max( 10, intval( $request->get_param( 'per_page' ) ?? 50 ) ) );
+
+    $attachments = get_posts( [
+        'post_type'      => 'attachment',
+        'post_mime_type' => 'image',
+        'post_status'    => 'inherit',
+        'posts_per_page' => $per_page,
+        'paged'          => $page,
+        'orderby'        => 'date',
+        'order'          => 'DESC',
+    ] );
+
+    $images = [];
+    foreach ( $attachments as $att ) {
+        $alt   = get_post_meta( $att->ID, '_wp_attachment_image_alt', true );
+        $images[] = [
+            'id'       => $att->ID,
+            'filename' => basename( get_attached_file( $att->ID ) ),
+            'url'      => wp_get_attachment_url( $att->ID ),
+            'alt'      => $alt ?: '',
+            'title'    => $att->post_title,
+            'caption'  => $att->post_excerpt,
+            'missing'  => empty( $alt ),
+        ];
+    }
+
+    $total = wp_count_posts( 'attachment' );
+
+    return rest_ensure_response( [
+        'page'     => $page,
+        'per_page' => $per_page,
+        'count'    => count( $images ),
+        'images'   => $images,
+        'missing_alt_count' => count( array_filter( $images, fn( $i ) => $i['missing'] ) ),
+    ] );
+}
+
+function rmb_image_set_alt( WP_REST_Request $request ) {
+    $id  = intval( $request->get_param( 'id' ) );
+    $alt = sanitize_text_field( $request->get_param( 'alt' ) );
+
+    if ( ! get_post( $id ) ) {
+        return new WP_Error( 'not_found', 'Attachment not found', [ 'status' => 404 ] );
+    }
+
+    $before = get_post_meta( $id, '_wp_attachment_image_alt', true );
+    update_post_meta( $id, '_wp_attachment_image_alt', $alt );
+
+    return rest_ensure_response( [
+        'success'  => true,
+        'id'       => $id,
+        'filename' => basename( get_attached_file( $id ) ),
+        'before'   => $before ?: '',
+        'after'    => $alt,
+    ] );
+}
+
+function rmb_images_bulk_alt( WP_REST_Request $request ) {
+    $updates = $request->get_param( 'updates' ); // [ { id: 123, alt: "text" }, ... ]
+    $results = [];
+
+    foreach ( $updates as $upd ) {
+        $id  = intval( $upd['id']  ?? 0 );
+        $alt = sanitize_text_field( $upd['alt'] ?? '' );
+
+        if ( ! $id || ! get_post( $id ) ) {
+            $results[] = [ 'id' => $id, 'success' => false, 'error' => 'Attachment not found' ];
+            continue;
+        }
+
+        $before = get_post_meta( $id, '_wp_attachment_image_alt', true );
+        update_post_meta( $id, '_wp_attachment_image_alt', $alt );
+        $results[] = [
+            'id'       => $id,
+            'filename' => basename( get_attached_file( $id ) ),
+            'success'  => true,
+            'before'   => $before ?: '',
+            'after'    => $alt,
+        ];
+    }
+
+    return rest_ensure_response( [ 'count' => count( $results ), 'results' => $results ] );
+}
+
+
+// ── llms.txt Handlers ─────────────────────────────────────────────────────────
+
+function rmb_llms_get_config( WP_REST_Request $request ) {
+    $config = get_option( 'rmb_llms_config', [] );
+    return rest_ensure_response( [
+        'url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
+        'config' => $config,
+    ] );
+}
+
+function rmb_llms_set_config( WP_REST_Request $request ) {
+    $config = get_option( 'rmb_llms_config', [] );
+
+    $intro = $request->get_param( 'intro' );
+    if ( $intro !== null ) $config['intro'] = sanitize_textarea_field( $intro );
+
+    $sections = $request->get_param( 'sections' );
+    if ( $sections !== null && is_array( $sections ) ) $config['sections'] = $sections;
+
+    update_option( 'rmb_llms_config', $config );
+
+    return rest_ensure_response( [
+        'success' => true,
+        'url'     => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
+        'config'  => $config,
+    ] );
+}
+
+
+// ── Sitemap Preview Handler ───────────────────────────────────────────────────
+
+function rmb_sitemap_preview( WP_REST_Request $request ) {
+    $entries = [];
+
+    $pages = get_pages( [ 'post_status' => 'publish' ] );
+    foreach ( $pages as $page ) {
+        $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
+        $is_noindex = $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false );
+        $entries[] = [
+            'id'       => $page->ID,
+            'type'     => 'page',
+            'loc'      => get_permalink( $page ),
+            'lastmod'  => get_the_modified_date( 'Y-m-d', $page ),
+            'priority' => $page->ID === (int) get_option( 'page_on_front' ) ? '1.0' : '0.8',
+            'noindex'  => $is_noindex,
+            'included' => ! $is_noindex,
+        ];
+    }
+
+    $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
+    foreach ( $posts as $post ) {
+        $noindex    = get_post_meta( $post->ID, 'rank_math_robots', true );
+        $is_noindex = $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( $noindex, 'noindex' ) !== false );
+        $entries[]  = [
+            'id'       => $post->ID,
+            'type'     => 'post',
+            'loc'      => get_permalink( $post ),
+            'lastmod'  => get_the_modified_date( 'Y-m-d', $post ),
+            'priority' => '0.6',
+            'noindex'  => $is_noindex,
+            'included' => ! $is_noindex,
+        ];
+    }
+
+    $included = array_filter( $entries, fn( $e ) => $e['included'] );
+    $excluded = array_filter( $entries, fn( $e ) => ! $e['included'] );
+
+    return rest_ensure_response( [
+        'sitemap_url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
+        'total'          => count( $entries ),
+        'included_count' => count( $included ),
+        'excluded_count' => count( $excluded ),
+        'entries'        => array_values( $entries ),
+    ] );
+}
+
 
 // ── Snippet Handlers ──────────────────────────────────────────────────────────
 
@@ -231,7 +730,6 @@ function rmb_snippets_create( WP_REST_Request $request ) {
     $title = sanitize_text_field( $request->get_param( 'title' ) );
     $id    = sanitize_title( $title );
 
-    // Prevent duplicate IDs
     if ( isset( $snippets[ $id ] ) ) {
         $id = $id . '_' . time();
     }
@@ -239,7 +737,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
     $snippet = [
         'id'         => $id,
         'title'      => $title,
-        'content'    => $request->get_param( 'content' ),   // raw — allows <script> tags
+        'content'    => $request->get_param( 'content' ),
         'location'   => sanitize_text_field( $request->get_param( 'location'   ) ),
         'display_on' => sanitize_text_field( $request->get_param( 'display_on' ) ),
         'status'     => sanitize_text_field( $request->get_param( 'status'     ) ),
@@ -266,7 +764,6 @@ function rmb_snippets_update( WP_REST_Request $request ) {
         if ( $val !== null ) $snippets[ $id ][ $field ] = sanitize_text_field( $val );
     }
 
-    // content is raw (allows script tags)
     $content = $request->get_param( 'content' );
     if ( $content !== null ) $snippets[ $id ]['content'] = $content;
 
@@ -286,7 +783,6 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
     foreach ( $incoming as $snippet ) {
         $id = sanitize_title( $snippet['title'] ?? '' );
         if ( ! $id ) continue;
-        // Honour explicit id if provided
         if ( ! empty( $snippet['id'] ) ) {
             $id = sanitize_text_field( $snippet['id'] );
         }
@@ -360,12 +856,16 @@ function rmb_cache_purge( WP_REST_Request $request ) {
 // ── Status ────────────────────────────────────────────────────────────────────
 
 function rmb_status( WP_REST_Request $request ) {
-    $snippets = get_option( RMB_SNIPPETS_KEY, [] );
+    $snippets    = get_option( RMB_SNIPPETS_KEY, [] );
+    $rankmath_on = class_exists( 'RankMath' );
     return rest_ensure_response( [
         'plugin'         => 'RankMath REST Bridge',
         'version'        => RMB_VERSION,
+        'rankmath_active'=> $rankmath_on,
         'snippet_count'  => count( $snippets ),
         'snippet_ids'    => array_keys( $snippets ),
+        'sitemap_url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
+        'llms_url'       => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
         'update_url'     => RMB_UPDATE_URL,
         'php_version'    => PHP_VERSION,
         'wp_version'     => get_bloginfo( 'version' ),
