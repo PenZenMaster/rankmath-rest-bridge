@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.0.8
+ * Version:      2.0.9
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.0.8' );
+define( 'RMB_VERSION',      '2.0.9' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -127,26 +127,35 @@ function rmb_resolve_tokens( $str, $post_id ) {
 
 
 // ── llms.txt generator ────────────────────────────────────────────────────────
-// Use parse_request (fires before WP query + before canonical redirect).
-// get_pages()/get_posts() are safe here — WPDB is available, just no queried object.
-add_action( 'parse_request', function () {
+// Intercept /llms.txt at init — earliest hook where WPDB + options are available.
+// Handles both /llms.txt and /llms.txt/ (trailing slash variant).
+add_action( 'init', function () {
     if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
+    // Only fire on non-admin, non-REST requests
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) return;
+    if ( defined( 'DOING_CRON' ) && DOING_CRON ) return;
     $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
     $uri = rtrim( $uri, '/' );
     if ( $uri === '/llms.txt' ) {
         rmb_serve_llms_txt();
         exit;
     }
-} );
+}, 1 ); // priority 1 — before most plugins, before canonical redirect fires
 
 function rmb_serve_llms_txt() {
     // Clean any output already buffered by WP/plugins before we send headers
-    if ( ob_get_level() ) ob_end_clean();
+    while ( ob_get_level() ) ob_end_clean();
 
     $site_name = get_bloginfo( 'name' );
     $site_url  = get_bloginfo( 'url' );
     $tagline   = get_bloginfo( 'description' );
     $stored    = get_option( 'rmb_llms_config', [] );
+
+    // Safety: if headers already sent, bail gracefully
+    if ( headers_sent() ) {
+        echo "# llms.txt error: headers already sent\n";
+        return;
+    }
 
     $lines   = [];
     $lines[] = "# {$site_name}";
