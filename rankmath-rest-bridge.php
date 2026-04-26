@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO
  * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.1.3
+ * Version:      2.1.4
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.1.3' );
+define( 'RMB_VERSION',      '2.1.4' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -861,28 +861,83 @@ function rmb_snippets_delete( WP_REST_Request $request ) {
 
 function rmb_cache_purge( WP_REST_Request $request ) {
     $purged = [];
+    $errors = [];
 
+    // ── LiteSpeed Cache plugin ────────────────────────────────────────────────
     if ( class_exists( '\LiteSpeed\Purge' ) ) {
         do_action( 'litespeed_purge_all' );
         $purged[] = 'LiteSpeed';
     }
+
+    // ── Breeze (Cloudways cache plugin) ──────────────────────────────────────
+    if ( class_exists( 'Breeze_Admin' ) || function_exists( 'breeze_flush_cache' ) ) {
+        do_action( 'breeze_clear_all_cache' );
+        $purged[] = 'Breeze';
+    }
+
+    // ── Cloudways Varnish — HTTP PURGE to localhost ───────────────────────────
+    // Cloudways Varnish listens on port 80 and responds to PURGE method from
+    // within the same server. We attempt PURGE / with X-Purge-Method: regex
+    // to flush all cached URLs for this domain.
+    $site_url  = get_site_url();
+    $host      = parse_url( $site_url, PHP_URL_HOST );
+    $varnish_targets = [
+        'http://localhost/.*',
+        'http://127.0.0.1/.*',
+    ];
+    foreach ( $varnish_targets as $target ) {
+        $response = wp_remote_request( $target, [
+            'method'  => 'PURGE',
+            'timeout' => 5,
+            'headers' => [
+                'Host'            => $host,
+                'X-Purge-Method'  => 'regex',
+            ],
+            'sslverify' => false,
+        ] );
+        if ( ! is_wp_error( $response ) ) {
+            $code = wp_remote_retrieve_response_code( $response );
+            if ( in_array( $code, [ 200, 201, 204, 404 ] ) ) {
+                // 200/204 = purged; 404 = not cached (still OK)
+                if ( ! in_array( 'Varnish', $purged ) ) {
+                    $purged[] = 'Varnish';
+                }
+                break;
+            } else {
+                $errors[] = 'Varnish HTTP ' . $code;
+            }
+        } else {
+            $errors[] = 'Varnish: ' . $response->get_error_message();
+        }
+    }
+
+    // ── SiteGround Optimizer ──────────────────────────────────────────────────
     if ( function_exists( 'sg_cachepress_purge_cache' ) ) {
         sg_cachepress_purge_cache();
         $purged[] = 'SiteGround';
     }
+
+    // ── WP Rocket ─────────────────────────────────────────────────────────────
     if ( function_exists( 'rocket_clean_domain' ) ) {
         rocket_clean_domain();
         $purged[] = 'WP Rocket';
     }
+
+    // ── W3 Total Cache ────────────────────────────────────────────────────────
     if ( function_exists( 'w3tc_flush_all' ) ) {
         w3tc_flush_all();
         $purged[] = 'W3TC';
     }
 
+    $msg_parts = [];
+    if ( ! empty( $purged ) ) $msg_parts[] = 'Purged: ' . implode( ', ', $purged );
+    if ( ! empty( $errors ) ) $msg_parts[] = 'Errors: ' . implode( '; ', $errors );
+
     return rest_ensure_response( [
         'success' => true,
         'purged'  => $purged,
-        'message' => empty( $purged ) ? 'No supported cache plugin detected' : 'Purged: ' . implode( ', ', $purged ),
+        'errors'  => $errors,
+        'message' => empty( $msg_parts ) ? 'No supported cache plugin detected' : implode( ' | ', $msg_parts ),
     ] );
 }
 
