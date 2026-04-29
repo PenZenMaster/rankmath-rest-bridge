@@ -1,11 +1,66 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-04-29
-**Current Version:** 2.7.0
+**Current Version:** 2.9.2
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 74a7257 — chore: add bin/build-zip.ps1 release builder + correct v2.7.0 zip (pushed)
+**Last Commit:** 0ad343f — fix: legacy namespace alias, register_post_meta, first-paragraph fallback (v2.9.2, pushed)
 **Git Status:** Clean
+
+---
+
+## 2026-04-29 Session (continued) — v2.8.0 through v2.9.2 — COMPLETE
+
+### Session Summary
+Crawl sync spec P0 and P1 delivered; admin panel and update tooling improvements; all P1
+gaps from Gap-Priority-Notes.csv resolved.
+
+### Accomplishments
+
+**v2.8.0 — Shared Canonical URL Set (P0 crawl sync)**
+- `includes/class-rrseo-canonical.php` (new) — `rr_get_canonical_url_set()`, `rr_is_url_allowed_for_discovery()`, `rr_get_post_discovery_metadata()`, `rr_get_discovery_description()`, description fallback chain (rrseo_description → excerpt → first_paragraph → title), word-boundary truncation, utility exclusion, numeric-suffix duplicate detection
+- All sitemaps, `rmb_serve_llms_txt()`, and `/sitemap/preview` refactored to use the shared helper
+- `rmb_sitemap_preview()` expanded with `excluded_urls[]`, per-URL `warnings[]`, UTC lastmod fix
+- `rmb_status()` expanded: `sitemap_index_url`, `physical_robots_txt_exists`, `warnings[]`
+- `rmb_robots_set()` — `ensure_sitemap_directive` + `preferred_sitemap_only` flags; v4 §15.7 normalisation
+- 28 unit tests in `CanonicalUrlSetTest.php`
+
+**v2.9.0 — Crawl sync P1**
+- `includes/class-rrseo-llms.php` (new) — section classifier, `rr_classify_url_section()`, `rr_auto_classify_section()`, `rr_validate_llms_section()`, `rr_resolve_business_facts()`, `rr_render_llms_txt()`, `rmb_llms_preview()` REST handler
+- `META_LLMS_SECTION` constant, `RR_LLMS_CONFIG_KEY`, `RR_ROBOTS_CONFIG_KEY`
+- `GET /llms/preview` (?format=json|text) — read-only, no DB writes
+- `POST /llms` expanded: sections object, business_facts, exclude_patterns, max_description_chars, boolean flags
+- `POST /update` and `/meta/bulk-update` accept `llms_section`
+- `GET /get/{id}` and `/meta/bulk-get` return `llms_section` + `effective_llms_section`
+- `GET /images/{id}/alt` handler added
+- `/images/bulk-alt` batch cap (`RR_BATCH_MAX`)
+- `/status?include_counts=true` with 12h transient cache
+- 19 unit tests in `SectionClassifierTest.php`
+- Canonical cache invalidation hooks on save_post, delete_post, option updates
+
+**v2.9.1 — Force Update Check + admin llms.txt tab**
+- `POST /check-updates` — clears `update_plugins` transient + PUC's `external_updates-rankmath-rest-bridge` option
+- Admin Overview — "Force Update Check" button; one-click replaces WP-CLI workflow
+- PUC check period filterable via `rrseo_puc_check_period_hours`
+- Admin llms.txt tab rebuilt: Business Facts, Section Classifier table, Content Settings, live preview panel
+- `docs/staging-verify-autoupdate.md` updated with Force Update Check as primary option
+
+**v2.9.2 — Three P1 gap fixes (from Gap-Priority-Notes.csv)**
+- `rankmath-bridge/v1` namespace alias via `rr_legacy_namespace_proxy()` on `rest_pre_dispatch`
+- `register_post_meta` for `_rrseo_llms_section` (show_in_rest, sanitize, auth_callback)
+- First-paragraph description fallback bug fixed (split raw content before normalization)
+- 5 new description fallback tests
+
+### Commits (this session)
+- `7057439` — feat: shared Canonical URL Set — v2.8.0
+- `607751f` — feat: section classifier, llms/preview, _rrseo_llms_section — v2.9.0
+- `82fcc12` — feat: Force Update Check + admin llms.txt tab — v2.9.1
+- `0ad343f` — fix: namespace alias, register_post_meta, first-paragraph — v2.9.2
+
+### Known Issues / Gaps
+- Staging auto-update verify not yet run on a live site
+- `composer install` not yet run on dev machine
+- P2 gaps from `docs/Gap-Priority-Notes.csv` still open
 
 ---
 
@@ -81,33 +136,29 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 
 ## Backlog
 
-### [HIGH — NEXT] llms.txt Structured Config
-Full config schema requested by user 2026-04-29 — not yet implemented:
-```json
-{
-  "include_sitemaps": true,
-  "include_lastmod": true,
-  "include_meta_descriptions": true,
-  "description_fallback": ["rrseo_description", "excerpt", "first_paragraph"],
-  "exclude_noindex": true,
-  "exclude_utility_pages": true,
-  "exclude_patterns": ["-2/", "-3/", "/thank-you/", "/privacy-policy/", "/opt-out-preferences/"],
-  "sections": ["business_facts", "sitemaps", "services", "service_pages", "location_pages", "posts", "ai_guidance"],
-  "max_description_chars": 240
-}
-```
-- Update `POST /llms` to accept and persist these fields
-- Update `rmb_serve_llms_txt()` to honour all controls
-- Update admin panel llms.txt tab to display/edit
-
 ### [CRITICAL] Auto-Update Staging Verify
 - [x] Manifest fixed and correct zips pushed
-- [ ] End-to-end staging test — see `docs/staging-verify-autoupdate.md`
+- [x] Force Update Check button added (v2.9.1) — no WP-CLI needed
+- [ ] End-to-end test on live staging site — `docs/staging-verify-autoupdate.md`
+
+### [HIGH] P2 Gaps from Gap-Priority-Notes.csv
+- [x] ~~Legacy namespace alias~~ — fixed v2.9.2
+- [x] ~~register_post_meta for _rrseo_llms_section~~ — fixed v2.9.2
+- [x] ~~First-paragraph description fallback bug~~ — fixed v2.9.2
+- [ ] Self-canonical/redirect check — use `get_canonical_url()` per post (~10 lines)
+- [ ] `/sitemap_index.xml` lastmod — derive from canonical set, not raw `get_posts()`
+- [ ] `/canonical-urls/preview` endpoint alias (explicitly P2)
+- [ ] Expand test-placeholder pattern list beyond `please-do-not-delete-this-*`
+
+### [DONE] llms.txt Structured Config
+- [x] `POST /llms` accepts and persists all new fields (v2.9.0)
+- [x] `rmb_serve_llms_txt()` delegates to `rr_render_llms_txt()` (v2.9.0)
+- [x] Admin panel llms.txt tab displays all config + preview (v2.9.1)
 
 ### Ready to Start
 - [ ] `composer install` on dev machine to activate phpunit + phpcs locally
-- [ ] Run `composer run qa` — phpcs 0 errors expected; phpunit 35 tests
-- [ ] Verify llms.txt raw-content upload support (backlog item from earlier)
+- [ ] Run `composer run qa` — phpcs 0 errors expected; phpunit 50+ tests
+- [ ] Verify llms.txt raw-content upload support (old backlog item)
 - [ ] I18n pass — wrap user-visible strings with `__()` / `_e()`
 
 ### Future / Deferred
@@ -124,6 +175,10 @@ Full config schema requested by user 2026-04-29 — not yet implemented:
 
 | Version | Date       | Summary                                                              |
 |---------|------------|----------------------------------------------------------------------|
+| 2.9.2   | 2026-04-29 | rankmath-bridge/v1 alias; register_post_meta; first-para bug fix    |
+| 2.9.1   | 2026-04-29 | Force Update Check button + POST /check-updates; admin llms tab     |
+| 2.9.0   | 2026-04-29 | P1 crawl sync: section classifier, /llms/preview, _rrseo_llms_section |
+| 2.8.0   | 2026-04-29 | Shared Canonical URL Set (P0) — all sitemaps + llms.txt unified     |
 | 2.7.0   | 2026-04-29 | GET/POST /robots-txt; bin/build-zip.ps1; zip structure fix           |
 | 2.6.0   | 2026-04-29 | Styled sitemaps (XSL) + per-type sub-sitemaps                        |
 | 2.5.0   | 2026-04-29 | WordPress admin panel + Edit Post/Page meta box                      |

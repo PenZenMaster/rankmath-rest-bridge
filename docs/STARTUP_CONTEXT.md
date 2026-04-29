@@ -2,57 +2,55 @@
 
 **Last Updated:** 2026-04-29
 **Branch:** main
-**Version:** 2.7.0
-**Last Commit:** 74a7257 — chore: add bin/build-zip.ps1 release builder + correct v2.7.0 zip
+**Version:** 2.9.2
+**Last Commit:** 0ad343f — fix: legacy namespace alias, register_post_meta, first-paragraph fallback (v2.9.2)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **GET/POST /robots-txt + release build script (v2.7.0)** — New REST endpoint lets the
-   pipeline write arbitrary robots.txt content via the `rrseo_robots_txt` option; `robots_txt`
-   filter at priority 99 serves it. Detects physical `robots.txt` at webroot and warns.
-   `bin/build-zip.ps1` standardises release builds with 4 structural checks (PUC Puc/v5p5/,
-   includes/, plugin file, loader); fixed a zip-structure bug that caused v2.7.0 activation
-   failure (flattened vendor directory).
+1. **Three P1 gap fixes (v2.9.2)** — All three P1 items from `docs/Gap-Priority-Notes.csv`
+   resolved: (a) `rankmath-bridge/v1` legacy namespace alias via `rest_pre_dispatch` proxy —
+   old automation clients get working responses + `_deprecated` field instead of 404;
+   (b) `register_post_meta` for `_rrseo_llms_section` — `show_in_rest`, WP sanitize layer,
+   `auth_callback` all wired; (c) first-paragraph description fallback bug fixed — was
+   normalizing content before splitting on paragraph boundaries, causing all content-only
+   posts to fall through to thin_description title fallback.
 
-2. **Styled sitemaps + per-type sub-sitemaps (v2.6.0)** — `includes/sitemap.xsl` served by
-   PHP renders all sitemap XML as browser-readable HTML (dark navy header, priority badges).
-   `/sitemap_index.xml` now lists `/rmb-sitemap-posts.xml` + `/rmb-sitemap-pages.xml` separately;
-   prior single-entry index was semantically a no-op. Accurate UTC lastmod via `post_modified_gmt`.
+2. **Force Update Check + admin llms.txt tab (v2.9.1)** — `POST /check-updates` clears both
+   the `update_plugins` transient and PUC's `external_updates-rankmath-rest-bridge` option,
+   then calls `wp_update_plugins()`. Admin Overview gets a one-click "Force Update Check"
+   button (replaces WP-CLI-only workflow). Admin llms.txt tab fully rebuilt: shows
+   business_facts, section classifier table, exclude patterns, boolean flags, and a lazy-loaded
+   "Preview Generated llms.txt" panel with section counts, warnings, excluded URLs, and full
+   content. PUC check period now filterable via `rrseo_puc_check_period_hours`.
 
-3. **WordPress admin panel + Edit Post meta box (v2.5.0)** — 6-page admin menu (Overview, Posts
-   & Pages, Image ALT, Snippets, llms.txt, Sitemap) backed by existing REST endpoints; zero
-   front-end cost (`is_admin()` gate). Read-only sidebar meta box on Edit Post/Page shows SEO
-   fields, schema type, char-count badges, and last 3 audit entries via parallel REST fetch.
+3. **P0 + P1 crawl sync spec (v2.8.0 + v2.9.0)** — Shared `rr_get_canonical_url_set()`
+   helper wired into all sitemaps, llms.txt, and `/sitemap/preview`; section classifier
+   (`rr_classify_url_section`), `GET /llms/preview`, `_rrseo_llms_section` per-post meta,
+   expanded `/llms` config (business_facts, sections object, exclude_patterns,
+   max_description_chars), `GET /images/{id}/alt`, `/images/bulk-alt` batch cap,
+   `/status?include_counts=true` with transient cache.
 
 ---
 
 ## Next 3 Priorities
 
-1. **[HIGH] llms.txt structured config** — User requested full config schema during this session;
-   NOT YET IMPLEMENTED. Needed fields:
-   ```json
-   {
-     "include_sitemaps": true,
-     "include_lastmod": true,
-     "include_meta_descriptions": true,
-     "description_fallback": ["rrseo_description", "excerpt", "first_paragraph"],
-     "exclude_noindex": true,
-     "exclude_utility_pages": true,
-     "exclude_patterns": ["-2/", "-3/", "/thank-you/", "/privacy-policy/", "/opt-out-preferences/"],
-     "sections": ["business_facts", "sitemaps", "services", "service_pages", "location_pages", "posts", "ai_guidance"],
-     "max_description_chars": 240
-   }
-   ```
-   Both `POST /llms` and the dynamic `/llms.txt` output must honour the new schema.
+1. **Staging auto-update end-to-end verify** — v2.9.1+ adds the Force Update Check button.
+   Install v2.9.2 on staging via `POST /self-update`, use the button to force a re-check,
+   confirm WP Dashboard shows the update. Full steps in `docs/staging-verify-autoupdate.md`.
+   Set `add_filter('rrseo_puc_check_period_hours', fn() => 1)` in staging wp-config for faster cycles.
 
-2. **[CRITICAL] Staging verify auto-update** — Follow `docs/staging-verify-autoupdate.md`.
-   Requires WP-CLI + staging server access. Clear PUC transient, bump manifest version,
-   confirm WP Dashboard update notice, confirm `POST /self-update` succeeds end-to-end.
+2. **Remaining P2 gaps from `docs/Gap-Priority-Notes.csv`**:
+   - Self-canonical/redirect: check WordPress `get_canonical_url()` per post and exclude
+     URLs whose canonical differs from `get_permalink()` (easy, 10 lines)
+   - `/sitemap_index.xml` lastmod: derive from canonical set instead of raw `get_posts()`
+   - `/canonical-urls/preview` alias endpoint (P2, already in plan)
+   - Expand test-placeholder pattern list (P2)
 
-3. **Admin panel llms.txt tab** — Update the admin panel llms.txt page to display/edit
-   the new structured config fields once the schema is implemented.
+3. **Docs & projectStatus catch-up** — `projectStatus.md` still shows v2.7.0 as current.
+   Needs a session entry for v2.8.0–v2.9.2, updated version history table, and backlog
+   items checked off (llms.txt structured config, P0/P1 crawl sync, namespace alias, etc.).
 
 ---
 
@@ -60,37 +58,39 @@
 
 **Git:**
 - Branch: main
-- Version: 2.7.0
-- Last commit: 74a7257 — pushed, working tree clean
-- All releases v2.3.1–v2.7.0 built and pushed to GitHub
+- Version: 2.9.2
+- Last commit: 0ad343f — pushed, working tree clean
+- All releases v2.3.1–v2.9.2 built and pushed to GitHub
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php` (~2,400 lines)
-- Admin classes: `includes/class-rrseo-admin.php`, `includes/class-rrseo-metabox.php`
-- Admin assets: `includes/admin.js`, `includes/metabox.js`, `includes/admin.css`
+- Plugin: `rankmath-rest-bridge.php` (~2,700 lines)
+- Canonical set: `includes/class-rrseo-canonical.php`
+- llms generator: `includes/class-rrseo-llms.php`
+- Admin panel: `includes/class-rrseo-admin.php`, `admin.js`, `admin.css`
+- Meta box: `includes/class-rrseo-metabox.php`, `metabox.js`
 - Sitemap XSL: `includes/sitemap.xsl`
-- Release builder: `bin/build-zip.ps1` — always use this for future zips
-- GitHub repo: https://github.com/PenZenMaster/rankmath-rest-bridge
+- Release builder: `bin/build-zip.ps1` — always use this; never manual PS one-liners
+- Gap tracker: `docs/Gap-Priority-Notes.csv` — P1s all done; P2/P3 remain
+- Staging checklist: `docs/staging-verify-autoupdate.md`
 
 **Blockers:**
-- llms.txt structured config requested but not implemented
-- Staging auto-update verify not yet done
+- Staging auto-update end-to-end test not yet run on a live site
 - `composer install` not yet run on dev machine (phpunit/phpcs not active locally)
 
 ---
 
 ## Key Context Notes
 
-1. **Always use `bin/build-zip.ps1` for releases** — never build zips manually with
-   PowerShell one-liners. A `Get-ChildItem -Recurse | Copy-Item` pattern silently flattens
-   the `vendor/plugin-update-checker/Puc/v5p5/` sub-tree, causing fatal errors on plugin
-   activation after update. The script verifies 4 structural requirements before exiting.
+1. **Always use `bin/build-zip.ps1` for releases** — never manual PowerShell one-liners.
+   The v2.9.0 zip was accidentally rebuilt this session by a manual build command and had
+   to be restored via `git restore`. The script verifies 4 structural requirements (PUC
+   Puc/v5p5/, includes/, plugin file, loader) and exits non-zero on failure.
 
-2. **Auto-update is a critical plugin feature** — PUC manifest requires `name`, `version`,
-   and `download_url`. The zip must have `rankmath-rest-bridge/` at the top level and include
-   the full `vendor/` tree. Physical `robots.txt` in webroot bypasses the plugin's robots.txt
-   filter — same caveat applies to the robots.txt endpoint.
+2. **Legacy namespace alias works via proxy, not duplicate registration** — `rr_legacy_namespace_proxy()`
+   uses `rest_pre_dispatch` to intercept `/rankmath-bridge/v1/...` and re-dispatch to
+   `/rankrocket-seo/v1/...`. No route duplication. Every proxied response gets `_deprecated`
+   with the preferred namespace.
 
-3. **llms.txt structured config is the immediate next task** — the user explicitly requested
-   this config schema mid-session. It was NOT implemented. Do not start other work until this
-   is delivered.
+3. **Gap-Priority-Notes.csv is the active defect tracker** — all P1 items resolved in v2.9.2.
+   Remaining: P2 (self-canonical check, sitemap index lastmod, canonical-urls/preview alias,
+   placeholder list expansion) and P3 (pattern lowercasing, non-issue).
