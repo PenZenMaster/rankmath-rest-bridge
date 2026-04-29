@@ -124,6 +124,125 @@ if ( ! function_exists( 'wp_trim_words' ) ) {
 }
 
 // ------------------------------------------------------------------
+// Additional stubs for canonical URL set and discovery helpers (P0)
+// ------------------------------------------------------------------
+
+// get_posts — returns from $GLOBALS['_test_posts_list']; supports 'name', 'post_type'
+// and 'numberposts' filtering. Seed $GLOBALS['_test_posts_list'] in setUp().
+if ( ! function_exists( 'get_posts' ) ) {
+    function get_posts( $args = array() ) {
+        $list      = $GLOBALS['_test_posts_list'] ?? array();
+        $post_type = $args['post_type'] ?? 'post';
+        $name      = $args['name'] ?? null;
+        $status    = $args['post_status'] ?? 'publish';
+
+        $filtered = array_filter(
+            $list,
+            function ( $p ) use ( $post_type, $name, $status ) {
+                if ( $p->post_type !== $post_type ) {
+                    return false;
+                }
+                if ( $p->post_status !== $status ) {
+                    return false;
+                }
+                if ( null !== $name && $p->post_name !== $name ) {
+                    return false;
+                }
+                return true;
+            }
+        );
+
+        $filtered     = array_values( $filtered );
+        $numberposts  = isset( $args['numberposts'] ) ? (int) $args['numberposts'] : -1;
+        if ( $numberposts > 0 ) {
+            $filtered = array_slice( $filtered, 0, $numberposts );
+        }
+        return $filtered;
+    }
+}
+
+// get_pages — returns from $GLOBALS['_test_pages_list'].
+// Seed $GLOBALS['_test_pages_list'] with page stdClass objects in setUp().
+if ( ! function_exists( 'get_pages' ) ) {
+    function get_pages( $args = array() ) {
+        $status = $args['post_status'] ?? 'publish';
+        return array_values(
+            array_filter(
+                $GLOBALS['_test_pages_list'] ?? array(),
+                function ( $p ) use ( $status ) {
+                    return $p->post_status === $status;
+                }
+            )
+        );
+    }
+}
+
+// get_option — returns from $GLOBALS['_test_options'][$key] or $default.
+if ( ! function_exists( 'get_option' ) ) {
+    function get_option( $key, $default = false ) {
+        $options = $GLOBALS['_test_options'] ?? array();
+        return array_key_exists( $key, $options ) ? $options[ $key ] : $default;
+    }
+}
+
+// mysql2date — pure PHP DateTime conversion; mirrors WP behaviour for ISO 8601.
+if ( ! function_exists( 'mysql2date' ) ) {
+    function mysql2date( $format, $date, $translate = true ) {
+        if ( '' === $date || '0000-00-00 00:00:00' === $date ) {
+            return false;
+        }
+        try {
+            $dt = new DateTime( $date, new DateTimeZone( 'UTC' ) );
+            return $dt->format( $format );
+        } catch ( Exception $e ) {
+            return false;
+        }
+    }
+}
+
+// get_permalink — returns from $GLOBALS['_test_permalink'][$id] or a default URL.
+if ( ! function_exists( 'get_permalink' ) ) {
+    function get_permalink( $id = 0 ) {
+        $map = $GLOBALS['_test_permalink'] ?? array();
+        return $map[ (int) $id ] ?? 'https://example.test/?p=' . (int) $id;
+    }
+}
+
+// home_url — returns a base URL optionally suffixed with $path.
+if ( ! function_exists( 'home_url' ) ) {
+    function home_url( $path = '' ) {
+        return 'https://example.test' . $path;
+    }
+}
+
+// wp_parse_url — thin wrapper around PHP's parse_url().
+if ( ! function_exists( 'wp_parse_url' ) ) {
+    function wp_parse_url( $url, $component = -1 ) {
+        return parse_url( $url, $component );
+    }
+}
+
+// wp_strip_all_tags — wrapper around strip_tags with whitespace cleanup.
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+    function wp_strip_all_tags( $text, $remove_breaks = false ) {
+        $text = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $text );
+        $text = strip_tags( $text );
+        if ( $remove_breaks ) {
+            $text = preg_replace( '/[\r\n\t ]+/', ' ', $text );
+        }
+        return trim( $text );
+    }
+}
+
+// str_starts_with polyfill for PHP < 8.0 (plugin runs on 8.0+ in production
+// but test runners may differ).
+if ( ! function_exists( 'str_starts_with' ) ) {
+    function str_starts_with( $haystack, $needle ) {
+        return '' === $needle || strncmp( $haystack, $needle, strlen( $needle ) ) === 0;
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';

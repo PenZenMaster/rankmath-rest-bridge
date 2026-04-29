@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.7.0
+ * Version:      2.8.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.7.0' );
+define( 'RMB_VERSION', '2.8.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -109,6 +109,17 @@ define( 'RR_DESC_MAX', 320 ); // Chars; hard error above this.
 define( 'RR_DESC_WARN_MAX', 160 ); // Chars; warning above this.
 define( 'RR_DESC_WARN_MIN', 50 ); // Chars; warning below this.
 define( 'RR_BATCH_MAX', 20 ); // Items; hard error above this.
+
+// llms.txt config option key (replaces legacy 'rmb_llms_config'; both are read during migration).
+define( 'RR_LLMS_CONFIG_KEY', 'rrseo_llms_config' );
+
+// robots.txt directive config option key.
+define( 'RR_ROBOTS_CONFIG_KEY', 'rrseo_robots_config' );
+
+
+// ── Canonical URL Set helper ──────────────────────────────────────────────────
+// Loaded unconditionally — required by sitemaps, llms.txt, and REST preview endpoints.
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-canonical.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -593,7 +604,9 @@ function rmb_serve_llms_txt() {
 
 	$site_name = get_bloginfo( 'name' );
 	$tagline   = get_bloginfo( 'description' );
-	$stored    = get_option( 'rmb_llms_config', array() );
+	// Read both the new and legacy config keys (migration path).
+	$stored   = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
+	$max_desc = isset( $stored['max_description_chars'] ) ? (int) $stored['max_description_chars'] : 240;
 
 	$lines   = array();
 	$lines[] = "# {$site_name}";
@@ -607,43 +620,34 @@ function rmb_serve_llms_txt() {
 		$lines[] = '';
 	}
 
-	$pages = get_pages(
+	// Use the shared Canonical URL Set — consistent filtering with sitemap and preview.
+	$pages_canonical = rr_get_canonical_url_set(
 		array(
-			'post_status' => 'publish',
-			'sort_column' => 'menu_order',
+			'post_types'      => array( 'page' ),
+			'max_description' => $max_desc,
 		)
 	);
-	if ( $pages ) {
+	$posts_canonical = rr_get_canonical_url_set(
+		array(
+			'post_types'      => array( 'post' ),
+			'max_description' => $max_desc,
+		)
+	);
+
+	if ( ! empty( $pages_canonical['urls'] ) ) {
 		$lines[] = '## Pages';
-		foreach ( $pages as $page ) {
-			$noindex = rr_get_seo_meta( $page->ID, 'robots' );
-			if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) || false !== strpos( (string) $noindex, 'noindex' ) ) ) {
-				continue;
-			}
-			$desc    = rr_get_seo_meta( $page->ID, 'description' );
-			$desc    = $desc ? rmb_resolve_tokens( (string) $desc, $page->ID ) : '';
-			$lines[] = '- [' . get_the_title( $page ) . '](' . get_permalink( $page->ID ) . ')' . ( $desc ? ': ' . $desc : '' );
+		foreach ( $pages_canonical['urls'] as $entry ) {
+			$desc    = '' !== $entry['description'] ? ': ' . $entry['description'] : '';
+			$lines[] = '- [' . $entry['title'] . '](' . $entry['url'] . ')' . $desc;
 		}
 		$lines[] = '';
 	}
 
-	$posts = get_posts(
-		array(
-			'numberposts' => 10,
-			'post_status' => 'publish',
-		)
-	);
-	if ( $posts ) {
+	if ( ! empty( $posts_canonical['urls'] ) ) {
 		$lines[] = '## Blog Posts';
-		foreach ( $posts as $post ) {
-			$noindex = rr_get_seo_meta( $post->ID, 'robots' );
-			if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) || false !== strpos( (string) $noindex, 'noindex' ) ) ) {
-				continue;
-			}
-			$desc        = rr_get_seo_meta( $post->ID, 'description' );
-			$raw_excerpt = $post->post_excerpt ? $post->post_excerpt : $post->post_content;
-			$desc        = $desc ? rmb_resolve_tokens( (string) $desc, $post->ID ) : wp_trim_words( $raw_excerpt, 20 );
-			$lines[]     = '- [' . get_the_title( $post ) . '](' . get_permalink( $post->ID ) . ')' . ( $desc ? ': ' . $desc : '' );
+		foreach ( $posts_canonical['urls'] as $entry ) {
+			$desc    = '' !== $entry['description'] ? ': ' . $entry['description'] : '';
+			$lines[] = '- [' . $entry['title'] . '](' . $entry['url'] . ')' . $desc;
 		}
 		$lines[] = '';
 	}
@@ -796,7 +800,10 @@ function rmb_serve_sitemap_index(): void {
 }
 
 /**
- * Outputs a per-type XML sitemap (posts or pages), excluding noindex entries.
+ * Outputs a per-type XML sitemap using the shared Canonical URL Set.
+ *
+ * Replaces the previous independent URL loop with rr_get_canonical_url_set()
+ * to guarantee consistent filtering with llms.txt and the sitemap preview.
  *
  * @param string $post_type 'post' or 'page'.
  */
@@ -809,51 +816,23 @@ function rmb_serve_sitemap_type( string $post_type ): void {
 	$site_url   = rtrim( get_bloginfo( 'url' ), '/' );
 	$xsl_url    = $site_url . '/rmb-sitemap.xsl';
 	$front_page = 'page' === $post_type ? (int) get_option( 'page_on_front' ) : 0;
-	$entries    = array();
 
-	if ( 'page' === $post_type ) {
-		$items = get_pages( array( 'post_status' => 'publish' ) );
-	} else {
-		$items = get_posts(
-			array(
-				'numberposts' => -1,
-				'post_status' => 'publish',
-			)
-		);
-	}
-
-	foreach ( $items as $item ) {
-		$noindex = rr_get_seo_meta( $item->ID, 'robots' );
-		if ( ! empty( $noindex ) && (
-			( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) ||
-			( is_string( $noindex ) && false !== strpos( $noindex, 'noindex' ) )
-		) ) {
-			continue;
-		}
-
-		if ( 'page' === $post_type ) {
-			$priority = ( $item->ID === $front_page ) ? '1.0' : '0.8';
-		} else {
-			$priority = '0.6';
-		}
-
-		$entries[] = array(
-			'loc'     => get_permalink( $item->ID ),
-			'lastmod' => mysql2date( 'Y-m-d\TH:i:s+00:00', $item->post_modified_gmt ),
-			'pri'     => $priority,
-		);
-	}
+	$canonical = rr_get_canonical_url_set( array( 'post_types' => array( $post_type ) ) );
 
 	header( 'Content-Type: application/xml; charset=UTF-8' );
 	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- XML document; all values escaped inline below.
 	echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 	echo '<?xml-stylesheet type="text/xsl" href="' . esc_url( $xsl_url ) . '"?>' . "\n";
 	echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
-	foreach ( $entries as $e ) {
+	foreach ( $canonical['urls'] as $entry ) {
+		$priority = '0.6';
+		if ( 'page' === $post_type ) {
+			$priority = ( $entry['post_id'] === $front_page ) ? '1.0' : '0.8';
+		}
 		echo "  <url>\n";
-		echo '    <loc>' . esc_url( $e['loc'] ) . "</loc>\n";
-		echo '    <lastmod>' . esc_html( $e['lastmod'] ) . "</lastmod>\n";
-		echo '    <priority>' . esc_html( $e['pri'] ) . "</priority>\n";
+		echo '    <loc>' . esc_url( $entry['url'] ) . "</loc>\n";
+		echo '    <lastmod>' . esc_html( $entry['lastmod'] ) . "</lastmod>\n";
+		echo '    <priority>' . esc_html( $priority ) . "</priority>\n";
 		echo "  </url>\n";
 	}
 	echo '</urlset>' . "\n";
@@ -862,68 +841,41 @@ function rmb_serve_sitemap_type( string $post_type ): void {
 }
 
 /**
- * Outputs the legacy combined XML sitemap (all posts + pages in one urlset).
+ * Outputs the legacy combined XML sitemap using the shared Canonical URL Set.
  *
- * Kept for backward compatibility. The canonical sitemap is now the per-type
- * sub-sitemaps linked from /sitemap_index.xml.
+ * Kept for backward compatibility; canonical sitemap is the per-type sub-sitemaps
+ * linked from /sitemap_index.xml. Now uses rr_get_canonical_url_set() for
+ * consistent filtering.
  */
 function rmb_serve_sitemap(): void {
 	while ( ob_get_level() ) {
 		ob_end_clean();
 	}
 	status_header( 200 );
-	$entries    = array();
+
 	$front_page = (int) get_option( 'page_on_front' );
 	$site_url   = rtrim( get_bloginfo( 'url' ), '/' );
 	$xsl_url    = $site_url . '/rmb-sitemap.xsl';
 
-	$pages = get_pages( array( 'post_status' => 'publish' ) );
-	foreach ( $pages as $page ) {
-		$noindex = rr_get_seo_meta( $page->ID, 'robots' );
-		if ( ! empty( $noindex ) && (
-			( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) ||
-			( is_string( $noindex ) && false !== strpos( $noindex, 'noindex' ) )
-		) ) {
-			continue;
-		}
-		$entries[] = array(
-			'loc'     => get_permalink( $page->ID ),
-			'lastmod' => mysql2date( 'Y-m-d\TH:i:s+00:00', $page->post_modified_gmt ),
-			'pri'     => ( $page->ID === $front_page ) ? '1.0' : '0.8',
-		);
-	}
-
-	$posts = get_posts(
-		array(
-			'numberposts' => -1,
-			'post_status' => 'publish',
-		)
+	$canonical = rr_get_canonical_url_set(
+		array( 'post_types' => array( 'post', 'page' ) )
 	);
-	foreach ( $posts as $post ) {
-		$noindex = rr_get_seo_meta( $post->ID, 'robots' );
-		if ( ! empty( $noindex ) && (
-			( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) ||
-			( is_string( $noindex ) && false !== strpos( $noindex, 'noindex' ) )
-		) ) {
-			continue;
-		}
-		$entries[] = array(
-			'loc'     => get_permalink( $post->ID ),
-			'lastmod' => mysql2date( 'Y-m-d\TH:i:s+00:00', $post->post_modified_gmt ),
-			'pri'     => '0.6',
-		);
-	}
 
 	header( 'Content-Type: application/xml; charset=UTF-8' );
 	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- XML document; all values escaped inline below.
 	echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 	echo '<?xml-stylesheet type="text/xsl" href="' . esc_url( $xsl_url ) . '"?>' . "\n";
 	echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
-	foreach ( $entries as $e ) {
+	foreach ( $canonical['urls'] as $entry ) {
+		if ( 'page' === $entry['post_type'] ) {
+			$priority = ( $entry['post_id'] === $front_page ) ? '1.0' : '0.8';
+		} else {
+			$priority = '0.6';
+		}
 		echo "  <url>\n";
-		echo '    <loc>' . esc_url( $e['loc'] ) . "</loc>\n";
-		echo '    <lastmod>' . esc_html( $e['lastmod'] ) . "</lastmod>\n";
-		echo '    <priority>' . esc_html( $e['pri'] ) . "</priority>\n";
+		echo '    <loc>' . esc_url( $entry['url'] ) . "</loc>\n";
+		echo '    <lastmod>' . esc_html( $entry['lastmod'] ) . "</lastmod>\n";
+		echo '    <priority>' . esc_html( $priority ) . "</priority>\n";
 		echo "  </url>\n";
 	}
 	echo '</urlset>' . "\n";
@@ -1323,9 +1275,19 @@ add_action(
 					'callback'            => 'rmb_robots_set',
 					'permission_callback' => $admin_only,
 					'args'                => array(
-						'content' => array(
+						'content'                  => array(
 							'required' => true,
 							'type'     => 'string',
+						),
+						'ensure_sitemap_directive' => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+						'preferred_sitemap_only'   => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => true,
 						),
 					),
 				),
@@ -1879,19 +1841,45 @@ function rmb_robots_get( WP_REST_Request $request ): WP_REST_Response { // phpcs
 /**
  * Handles POST /robots-txt — writes a custom robots.txt body.
  *
- * Stores the content in the rrseo_robots_txt option; the robots_txt filter
- * returns it on every WordPress-generated robots.txt request.
- * Send content: "" to remove the custom override and restore the WP default.
+ * When ensure_sitemap_directive is true, normalises Sitemap: directives before
+ * storing. preferred_sitemap_only (default true) replaces all existing Sitemap:
+ * lines with the RankRocket preferred directive; when false, existing Sitemap:
+ * lines are preserved and the preferred directive is appended if absent.
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
 function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
-	$content       = sanitize_textarea_field( $request->get_param( 'content' ) );
-	$physical_path = ABSPATH . 'robots.txt';
-	$has_file      = file_exists( $physical_path );
+	$content          = sanitize_textarea_field( $request->get_param( 'content' ) );
+	$ensure_directive = (bool) $request->get_param( 'ensure_sitemap_directive' );
+	$preferred_only   = null !== $request->get_param( 'preferred_sitemap_only' )
+		? (bool) $request->get_param( 'preferred_sitemap_only' )
+		: true;
+	$physical_path    = ABSPATH . 'robots.txt';
+	$has_file         = file_exists( $physical_path );
+
+	if ( $ensure_directive && '' !== $content ) {
+		$preferred_url = rtrim( get_bloginfo( 'url' ), '/' ) . '/sitemap_index.xml';
+		$content       = rmb_robots_inject_sitemap_directive( $content, $preferred_url, $preferred_only );
+	}
 
 	update_option( 'rrseo_robots_txt', $content );
+
+	$missing_directive = '' !== $content && false === stripos( $content, 'Sitemap:' );
+	$response_warnings = array();
+	if ( $missing_directive ) {
+		$response_warnings[] = array(
+			'code'    => 'missing_sitemap_directive',
+			'message' => 'robots.txt content has no Sitemap: directive. Pass ensure_sitemap_directive:true to auto-add it.',
+		);
+	}
+	if ( $has_file ) {
+		$response_warnings[] = array(
+			'code'    => 'physical_robots_txt_bypass',
+			'message' => 'A physical robots.txt file exists at the WordPress root.'
+				. ' The web server serves it directly; this setting has no effect until the file is removed.',
+		);
+	}
 
 	return rest_ensure_response(
 		array(
@@ -1899,12 +1887,73 @@ function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
 			'content'              => $content,
 			'source'               => '' !== $content ? 'custom' : 'wordpress_default',
 			'physical_file_exists' => $has_file,
-			'warning'              => $has_file
-				? 'A physical robots.txt file exists at the WordPress root.'
-						. ' The web server serves it directly; this setting has no effect until the file is removed.'
-				: null,
+			'warnings'             => $response_warnings,
 		)
 	);
+}
+
+/**
+ * Normalises Sitemap: directives in a robots.txt body.
+ *
+ * Implements the v4 §15.7 five-step procedure:
+ * 1. Parse all existing Sitemap: lines case-insensitively.
+ * 2. Preserve non-Sitemap: lines exactly.
+ * 3. If preferred_only, remove all existing Sitemap: lines and append preferred once.
+ * 4. If not preferred_only, keep existing lines and append preferred if absent.
+ * 5. Deduplicate identical Sitemap: lines.
+ *
+ * @param string $content       Current robots.txt body.
+ * @param string $preferred_url Full URL of the preferred sitemap (e.g. sitemap_index.xml).
+ * @param bool   $preferred_only Replace all existing Sitemap: lines when true.
+ * @return string Normalised robots.txt body.
+ */
+function rmb_robots_inject_sitemap_directive( string $content, string $preferred_url, bool $preferred_only ): string {
+	$preferred_line = 'Sitemap: ' . $preferred_url;
+	$lines          = explode( "\n", str_replace( "\r\n", "\n", $content ) );
+	$non_sitemap    = array();
+	$existing_maps  = array();
+
+	foreach ( $lines as $line ) {
+		if ( 0 === stripos( trim( $line ), 'Sitemap:' ) ) {
+			$existing_maps[] = trim( $line );
+		} else {
+			$non_sitemap[] = $line;
+		}
+	}
+
+	// Remove trailing blank lines from non-sitemap block to keep output tidy.
+	while ( ! empty( $non_sitemap ) && '' === trim( end( $non_sitemap ) ) ) {
+		array_pop( $non_sitemap );
+	}
+
+	if ( $preferred_only ) {
+		$sitemap_lines = array( $preferred_line );
+	} else {
+		$already_present = false;
+		foreach ( $existing_maps as $m ) {
+			if ( strtolower( $m ) === strtolower( $preferred_line ) ) {
+				$already_present = true;
+			}
+		}
+		$sitemap_lines = $existing_maps;
+		if ( ! $already_present ) {
+			$sitemap_lines[] = $preferred_line;
+		}
+		// Deduplicate (case-insensitive).
+		$seen    = array();
+		$deduped = array();
+		foreach ( $sitemap_lines as $sl ) {
+			$key = strtolower( $sl );
+			if ( ! in_array( $key, $seen, true ) ) {
+				$seen[]    = $key;
+				$deduped[] = $sl;
+			}
+		}
+		$sitemap_lines = $deduped;
+	}
+
+	$result_lines = array_merge( $non_sitemap, array( '' ), $sitemap_lines );
+	return implode( "\n", $result_lines );
 }
 
 
@@ -1916,7 +1965,8 @@ function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
  * @return WP_REST_Response
  */
 function rmb_llms_get_config( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	$config = get_option( 'rmb_llms_config', array() );
+	// Read the new key first; fall back to the legacy key for migration compat.
+	$config = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
 	return rest_ensure_response(
 		array(
 			'url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
@@ -1932,7 +1982,8 @@ function rmb_llms_get_config( WP_REST_Request $request ) { // phpcs:ignore Gener
  * @return WP_REST_Response
  */
 function rmb_llms_set_config( WP_REST_Request $request ) {
-	$config = get_option( 'rmb_llms_config', array() );
+	// Read from the new key first; migrate legacy config if new key is absent.
+	$config = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
 
 	$intro = $request->get_param( 'intro' );
 	if ( null !== $intro ) {
@@ -1944,7 +1995,8 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 		$config['sections'] = $sections;
 	}
 
-	update_option( 'rmb_llms_config', $config );
+	// Write to the new canonical key; the legacy key is no longer updated.
+	update_option( RR_LLMS_CONFIG_KEY, $config );
 
 	return rest_ensure_response(
 		array(
@@ -1958,63 +2010,68 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 
 // ── Sitemap Preview Handler ───────────────────────────────────────────────────
 /**
- * Handles GET /sitemap/preview — returns all URLs with noindex status for review.
+ * Handles GET /sitemap/preview — Canonical URL Set preview with inclusion/exclusion audit.
+ *
+ * Now acts as the authoritative Canonical URL Set preview endpoint: uses the same
+ * rr_get_canonical_url_set() as all sitemap and llms.txt generators, guaranteeing
+ * the preview reflects exactly what will be served.
+ *
+ * Also fixes a prior bug where lastmod used post_modified (local time) instead of
+ * post_modified_gmt (UTC), and reported the legacy sitemap URL instead of the index.
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
 function rmb_sitemap_preview( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	$entries    = array();
 	$front_page = (int) get_option( 'page_on_front' );
+	$site_url   = rtrim( get_bloginfo( 'url' ), '/' );
 
-	$pages = get_pages( array( 'post_status' => 'publish' ) );
-	foreach ( $pages as $page ) {
-		$noindex    = rr_get_seo_meta( $page->ID, 'robots' );
-		$is_noindex = ! empty( $noindex ) && (
-			( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) ||
-			( is_string( $noindex ) && false !== strpos( $noindex, 'noindex' ) )
-		);
-		$entries[]  = array(
-			'id'       => $page->ID,
-			'type'     => 'page',
-			'loc'      => get_permalink( $page->ID ),
-			'lastmod'  => mysql2date( 'Y-m-d', $page->post_modified ),
-			'priority' => $page->ID === $front_page ? '1.0' : '0.8',
-			'noindex'  => $is_noindex,
-			'included' => ! $is_noindex,
+	$canonical = rr_get_canonical_url_set(
+		array( 'post_types' => array( 'post', 'page' ) )
+	);
+
+	$entries = array();
+	foreach ( $canonical['urls'] as $url_entry ) {
+		if ( 'page' === $url_entry['post_type'] ) {
+			$priority = ( $url_entry['post_id'] === $front_page ) ? '1.0' : '0.8';
+		} else {
+			$priority = '0.6';
+		}
+		$entries[] = array(
+			'id'               => $url_entry['post_id'],
+			'post_id'          => $url_entry['post_id'],
+			'type'             => $url_entry['post_type'],
+			'loc'              => $url_entry['url'],
+			'lastmod'          => $url_entry['lastmod'],
+			'priority'         => $priority,
+			'noindex'          => false,
+			'included'         => true,
+			'exclusion_reason' => null,
+			'warnings'         => $url_entry['warnings'],
 		);
 	}
 
-	$posts = get_posts(
-		array(
-			'numberposts' => -1,
-			'post_status' => 'publish',
-		)
-	);
-	foreach ( $posts as $post ) {
-		$noindex    = rr_get_seo_meta( $post->ID, 'robots' );
-		$is_noindex = ! empty( $noindex ) && (
-			( is_array( $noindex ) && in_array( 'noindex', $noindex, true ) ) ||
-			( is_string( $noindex ) && false !== strpos( $noindex, 'noindex' ) )
-		);
-		$entries[]  = array(
-			'id'       => $post->ID,
-			'type'     => 'post',
-			'loc'      => get_permalink( $post->ID ),
-			'lastmod'  => mysql2date( 'Y-m-d', $post->post_modified ),
-			'priority' => '0.6',
-			'noindex'  => $is_noindex,
-			'included' => ! $is_noindex,
+	$excluded_entries = array();
+	foreach ( $canonical['excluded'] as $excl ) {
+		$excluded_entries[] = array(
+			'id'               => $excl['post_id'],
+			'post_id'          => $excl['post_id'],
+			'type'             => $excl['post_type'],
+			'loc'              => $excl['url'],
+			'included'         => false,
+			'exclusion_reason' => $excl['reason'],
 		);
 	}
 
 	return rest_ensure_response(
 		array(
-			'sitemap_url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
-			'total'          => count( $entries ),
-			'included_count' => count( array_filter( $entries, fn( $e ) => $e['included'] ) ),
-			'excluded_count' => count( array_filter( $entries, fn( $e ) => ! $e['included'] ) ),
+			'sitemap_url'    => $site_url . '/sitemap_index.xml',
+			'total'          => count( $entries ) + count( $excluded_entries ),
+			'included_count' => count( $entries ),
+			'excluded_count' => count( $excluded_entries ),
 			'entries'        => array_values( $entries ),
+			'excluded_urls'  => array_values( $excluded_entries ),
+			'warnings'       => array_values( $canonical['warnings'] ),
 		)
 	);
 }
@@ -2294,22 +2351,38 @@ function rmb_cache_purge( WP_REST_Request $request ) { // phpcs:ignore Generic.C
  * @return WP_REST_Response
  */
 function rmb_status( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	$snippets    = get_option( RMB_SNIPPETS_KEY, array() );
-	$rankmath_on = class_exists( 'RankMath' );
+	$snippets             = get_option( RMB_SNIPPETS_KEY, array() );
+	$rankmath_on          = class_exists( 'RankMath' );
+	$site_url             = rtrim( get_bloginfo( 'url' ), '/' );
+	$physical_robots_file = file_exists( ABSPATH . 'robots.txt' );
+
+	$status_warnings = array();
+	if ( $physical_robots_file ) {
+		$status_warnings[] = array(
+			'code'    => 'physical_robots_txt_bypass',
+			'message' => 'A physical robots.txt file exists and may bypass RankRocket robots.txt output.',
+		);
+	}
+
 	return rest_ensure_response(
 		array(
-			'plugin'               => 'RankRocket SEO Control Layer',
-			'version'              => RMB_VERSION,
-			'rankmath_active'      => $rankmath_on,
-			'snippet_count'        => count( $snippets ),
-			'snippet_ids'          => array_keys( $snippets ),
-			'sitemap_url'          => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
-			'llms_url'             => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
-			'update_url'           => RMB_UPDATE_URL,
-			'php_version'          => PHP_VERSION,
-			'wp_version'           => get_bloginfo( 'version' ),
-			'allowed_post_types'   => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
-			'allowed_schema_types' => apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
+			'plugin'                     => 'RankRocket SEO Control Layer',
+			'version'                    => RMB_VERSION,
+			'namespace'                  => 'rankrocket-seo/v1',
+			'rankmath_active'            => $rankmath_on,
+			'sitemap_index_url'          => $site_url . '/sitemap_index.xml',
+			'legacy_sitemap_url'         => $site_url . '/rmb-sitemap.xml',
+			'llms_url'                   => $site_url . '/llms.txt',
+			'robots_txt_url'             => $site_url . '/robots.txt',
+			'physical_robots_txt_exists' => $physical_robots_file,
+			'snippet_count'              => count( $snippets ),
+			'snippet_ids'                => array_keys( $snippets ),
+			'update_url'                 => RMB_UPDATE_URL,
+			'php_version'                => PHP_VERSION,
+			'wp_version'                 => get_bloginfo( 'version' ),
+			'allowed_post_types'         => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
+			'allowed_schema_types'       => apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
+			'warnings'                   => $status_warnings,
 		)
 	);
 }
