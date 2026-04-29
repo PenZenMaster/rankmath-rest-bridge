@@ -90,6 +90,31 @@
 	border-color: #2271b1;
 }
 
+/* ── llms.txt page header ────────────────────────────────────────────────────── */
+.rrseo-llms-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 4px;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.rrseo-llms-header p {
+	margin: 0;
+}
+.rrseo-llms-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+#rrseo-llms-preview-panel {
+	background: #f8f9fa;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	padding: 16px;
+	margin-bottom: 16px;
+}
+
 /* ── Pagination ──────────────────────────────────────────────────────────────── */
 .rrseo-pagination {
 	margin: 12px 0;

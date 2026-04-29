@@ -125,6 +125,14 @@
 			html += '<div id="rrseo-purge-result" style="margin-top:8px;"></div>';
 			html += '</div>';
 
+			// Force update check card.
+			html += '<div class="rrseo-card">';
+			html += '<h2>Plugin Update Check</h2>';
+			html += '<p>PUC caches the update-check result for 12 hours. Use this button to force an immediate re-check of the update manifest.</p>';
+			html += '<button id="rrseo-check-updates-btn" class="button">Force Update Check</button>';
+			html += '<div id="rrseo-check-updates-result" style="margin-top:8px;"></div>';
+			html += '</div>';
+
 			html += '</div>';
 			container.innerHTML = html;
 
@@ -145,6 +153,26 @@
 						result.innerHTML = errHtml( e.message || 'Cache purge failed.' );
 						btn.disabled    = false;
 						btn.textContent = 'Purge Cache Now';
+					} );
+			} );
+
+			document.getElementById( 'rrseo-check-updates-btn' ).addEventListener( 'click', function () {
+				var btn    = this;
+				var result = document.getElementById( 'rrseo-check-updates-result' );
+				btn.disabled    = true;
+				btn.textContent = 'Checking…';
+				result.innerHTML = '';
+
+				apiFetch( { path: '/rankrocket-seo/v1/check-updates', method: 'POST' } )
+					.then( function ( r ) {
+						result.innerHTML = '<p class="rrseo-success">' + esc( r.message ) + '</p>';
+						btn.disabled    = false;
+						btn.textContent = 'Force Update Check';
+					} )
+					.catch( function ( e ) {
+						result.innerHTML = errHtml( e.message || 'Update check failed.' );
+						btn.disabled    = false;
+						btn.textContent = 'Force Update Check';
 					} );
 			} );
 		} ).catch( function ( e ) {
@@ -422,14 +450,114 @@
 	 * @param {HTMLElement} container
 	 */
 	function renderLlms( container ) {
+		container.innerHTML = loading();
+
 		apiFetch( { path: '/rankrocket-seo/v1/llms' } ).then( function ( data ) {
-			var config   = data.config || {};
-			var sections = config.sections || [];
+			var config          = data.config || {};
+			var sectionsConfig  = ( config.sections && ! Array.isArray( config.sections ) ) ? config.sections : null;
+			var customSections  = config.custom_sections || ( Array.isArray( config.sections ) ? config.sections : [] );
+			var businessFacts   = config.business_facts || null;
+			var excludePatterns = config.exclude_patterns || [];
+			var maxDesc         = config.max_description_chars || 240;
+			var exclUtility     = config.exclude_utility_pages !== false;
 
-			var html = '<p>Live URL: <a href="' + esc( data.url ) + '" target="_blank">'
-				+ esc( data.url ) + '</a></p>';
+			var html = '<div class="rrseo-llms-header">';
+			html += '<p>Live URL: <a href="' + esc( data.url ) + '" target="_blank">' + esc( data.url ) + ' ↗</a></p>';
+			html += '<div class="rrseo-llms-actions">';
+			html += '<button id="rrseo-llms-preview-btn" class="button button-primary">Preview Generated llms.txt</button> ';
+			html += '</div></div>';
 
-			html += '<div class="rrseo-card"><h3>Intro Text</h3>';
+			html += '<div id="rrseo-llms-preview-panel" style="display:none;">' + loading() + '</div>';
+
+			html += '<div class="rrseo-overview-grid" style="margin-top:16px;">';
+
+			// ── Business Facts ───────────────────────────────────────────────────
+			html += '<div class="rrseo-card">';
+			html += '<h2>Business Facts</h2>';
+			if ( businessFacts && Object.keys( businessFacts ).length ) {
+				html += '<table class="rrseo-info-table">';
+				var factLabels = {
+					business_name: 'Business', website: 'Website', phone: 'Phone',
+					address: 'Address', schema_type: 'Schema Type', entity_id: 'Entity ID',
+				};
+				Object.keys( factLabels ).forEach( function ( k ) {
+					if ( businessFacts[ k ] ) {
+						html += '<tr><th>' + esc( factLabels[ k ] ) + '</th><td>' + esc( businessFacts[ k ] ) + '</td></tr>';
+					}
+				} );
+				if ( businessFacts.primary_services ) {
+					var svcs = Array.isArray( businessFacts.primary_services ) ? businessFacts.primary_services.join( ', ' ) : businessFacts.primary_services;
+					html += '<tr><th>Services</th><td>' + esc( svcs ) + '</td></tr>';
+				}
+				if ( businessFacts.service_area ) {
+					var area = Array.isArray( businessFacts.service_area ) ? businessFacts.service_area.join( ', ' ) : businessFacts.service_area;
+					html += '<tr><th>Service Area</th><td>' + esc( area ) + '</td></tr>';
+				}
+				html += '</table>';
+			} else {
+				html += '<p><em class="rrseo-empty">Not configured. Set via POST /llms with business_facts object.</em></p>';
+			}
+			html += '</div>';
+
+			// ── Section Classifier ───────────────────────────────────────────────
+			html += '<div class="rrseo-card">';
+			html += '<h2>Section Classifier</h2>';
+			if ( sectionsConfig ) {
+				var sectionKeys = Object.keys( sectionsConfig ).sort( function ( a, b ) {
+					return ( sectionsConfig[ a ].order || 99 ) - ( sectionsConfig[ b ].order || 99 );
+				} );
+				html += '<table class="widefat rrseo-table" style="font-size:12px;">';
+				html += '<thead><tr><th>#</th><th>Section Key</th><th>Label</th><th>Rules</th></tr></thead><tbody>';
+				sectionKeys.forEach( function ( key ) {
+					var s     = sectionsConfig[ key ];
+					var rules = [];
+					if ( s.exact_paths && s.exact_paths.length ) {
+						rules.push( 'exact: ' + s.exact_paths.slice( 0, 3 ).map( esc ).join( ', ' ) + ( s.exact_paths.length > 3 ? '…' : '' ) );
+					}
+					if ( s.url_patterns && s.url_patterns.length ) {
+						rules.push( 'prefix: ' + s.url_patterns.slice( 0, 3 ).map( esc ).join( ', ' ) + ( s.url_patterns.length > 3 ? '…' : '' ) );
+					}
+					if ( s.post_types && s.post_types.length ) {
+						rules.push( 'type: ' + s.post_types.map( esc ).join( ', ' ) );
+					}
+					html += '<tr>';
+					html += '<td>' + esc( s.order || '—' ) + '</td>';
+					html += '<td><code>' + esc( key ) + '</code></td>';
+					html += '<td>' + esc( s.label || key ) + '</td>';
+					html += '<td style="font-size:11px;color:#555;">' + ( rules.length ? rules.join( '<br>' ) : '<em>fallback</em>' ) + '</td>';
+					html += '</tr>';
+				} );
+				html += '</tbody></table>';
+			} else {
+				html += '<p><em class="rrseo-empty">No section classifier configured — llms.txt uses simple Pages / Blog Posts structure.</em></p>';
+				html += '<p style="font-size:12px;color:#666;">Configure via POST /llms with a <code>sections</code> object keyed by section name.</p>';
+			}
+			html += '</div>';
+
+			// ── Content Settings ─────────────────────────────────────────────────
+			html += '<div class="rrseo-card">';
+			html += '<h2>Content Settings</h2>';
+			html += '<table class="rrseo-info-table">';
+			html += '<tr><th>Max Description</th><td>' + esc( maxDesc ) + ' chars</td></tr>';
+			html += '<tr><th>Exclude noindex</th><td>' + badge( config.exclude_noindex !== false ? 'Yes' : 'No', config.exclude_noindex !== false ? 'green' : 'red' ) + '</td></tr>';
+			html += '<tr><th>Exclude utility pages</th><td>' + badge( exclUtility ? 'Yes' : 'No', exclUtility ? 'green' : 'red' ) + '</td></tr>';
+			html += '<tr><th>Include sitemaps section</th><td>' + badge( config.include_sitemaps !== false ? 'Yes' : 'No', config.include_sitemaps !== false ? 'green' : 'orange' ) + '</td></tr>';
+			var fallbackChain = Array.isArray( config.description_fallback )
+				? config.description_fallback.join( ' → ' )
+				: 'rrseo_description → excerpt → first_paragraph';
+			html += '<tr><th>Description fallback</th><td style="font-size:11px;">' + esc( fallbackChain ) + '</td></tr>';
+			html += '</table>';
+			if ( excludePatterns.length ) {
+				html += '<p style="margin:8px 0 4px;font-weight:600;font-size:12px;">Custom Exclude Patterns</p>';
+				html += '<ul style="margin:0;padding-left:18px;font-size:12px;">';
+				excludePatterns.forEach( function ( p ) { html += '<li><code>' + esc( p ) + '</code></li>'; } );
+				html += '</ul>';
+			}
+			html += '</div>';
+
+			// ── Intro Text ───────────────────────────────────────────────────────
+			html += '<div class="rrseo-card">';
+			html += '<h2>Intro Text</h2>';
 			if ( config.intro ) {
 				html += '<pre class="rrseo-pre">' + esc( config.intro ) + '</pre>';
 			} else {
@@ -437,24 +565,111 @@
 			}
 			html += '</div>';
 
-			if ( sections.length ) {
-				html += '<div class="rrseo-card"><h3>Custom Sections (' + esc( sections.length ) + ')</h3>';
-				sections.forEach( function ( s ) {
-					html += '<h4>' + esc( s.heading || '' ) + '</h4><ul>';
-					( s.items || [] ).forEach( function ( item ) {
-						html += '<li>' + esc( item ) + '</li>';
-					} );
+			// ── Custom Sections (legacy text blocks) ─────────────────────────────
+			if ( customSections.length ) {
+				html += '<div class="rrseo-card">';
+				html += '<h2>Custom Text Sections (' + esc( customSections.length ) + ')</h2>';
+				customSections.forEach( function ( s ) {
+					html += '<h4 style="margin:8px 0 4px;">' + esc( s.heading || '' ) + '</h4><ul style="margin:0;">';
+					( s.items || [] ).forEach( function ( item ) { html += '<li>' + esc( item ) + '</li>'; } );
 					html += '</ul>';
 				} );
 				html += '</div>';
-			} else {
-				html += '<p><em class="rrseo-empty">No custom sections configured.</em></p>';
 			}
 
+			html += '</div>'; // .rrseo-overview-grid
+
 			container.innerHTML = html;
+
+			// ── Preview button handler ───────────────────────────────────────────
+			var previewBtn   = document.getElementById( 'rrseo-llms-preview-btn' );
+			var previewPanel = document.getElementById( 'rrseo-llms-preview-panel' );
+			var previewLoaded = false;
+
+			previewBtn.addEventListener( 'click', function () {
+				if ( previewPanel.style.display === 'none' ) {
+					previewPanel.style.display = 'block';
+					if ( ! previewLoaded ) {
+						previewLoaded = true;
+						loadLlmsPreview( previewPanel );
+					}
+					previewBtn.textContent = 'Hide Preview';
+				} else {
+					previewPanel.style.display = 'none';
+					previewBtn.textContent = 'Preview Generated llms.txt';
+				}
+			} );
 		} ).catch( function ( e ) {
 			container.innerHTML = errHtml( e.message || 'Failed to load llms.txt config.' );
 		} );
+	}
+
+	/**
+	 * Fetches /llms/preview and renders results into the preview panel.
+	 *
+	 * @param {HTMLElement} panel
+	 */
+	function loadLlmsPreview( panel ) {
+		panel.innerHTML = loading();
+		apiFetch( { path: '/rankrocket-seo/v1/llms/preview?format=json' } )
+			.then( function ( data ) {
+				var html = '<div style="margin-top:8px;">';
+
+				// Summary row.
+				html += '<div style="margin-bottom:12px;">';
+				html += badge( data.url_count + ' URLs', 'green' ) + ' &nbsp; ';
+				if ( data.warnings && data.warnings.length ) {
+					html += badge( data.warnings.length + ' warning(s)', 'orange' );
+				} else {
+					html += badge( '0 warnings', 'green' );
+				}
+				html += '</div>';
+
+				// Section counts.
+				if ( data.sections && Object.keys( data.sections ).length ) {
+					html += '<table class="widefat rrseo-table" style="margin-bottom:12px;font-size:12px;">';
+					html += '<thead><tr><th>Section</th><th>URLs</th></tr></thead><tbody>';
+					Object.keys( data.sections ).forEach( function ( key ) {
+						html += '<tr><td><code>' + esc( key ) + '</code></td><td>' + esc( data.sections[ key ] ) + '</td></tr>';
+					} );
+					html += '</tbody></table>';
+				}
+
+				// Warnings.
+				if ( data.warnings && data.warnings.length ) {
+					html += '<p style="font-weight:600;font-size:12px;margin-bottom:4px;">Warnings</p>';
+					html += '<ul style="font-size:12px;margin:0 0 12px;">';
+					data.warnings.forEach( function ( w ) {
+						html += '<li><code>' + esc( w.code ) + '</code> — ' + esc( w.message || w.url || '' ) + '</li>';
+					} );
+					html += '</ul>';
+				}
+
+				// Excluded URLs.
+				if ( data.excluded && data.excluded.length ) {
+					html += '<details style="margin-bottom:12px;"><summary style="cursor:pointer;font-size:12px;">'
+						+ esc( data.excluded.length ) + ' excluded URL(s)</summary>';
+					html += '<ul style="font-size:11px;margin:4px 0 0;">';
+					data.excluded.slice( 0, 20 ).forEach( function ( e ) {
+						html += '<li>' + esc( e.url ) + ' <span style="color:#999;">(' + esc( e.reason ) + ')</span></li>';
+					} );
+					if ( data.excluded.length > 20 ) {
+						html += '<li style="color:#999;">… and ' + esc( data.excluded.length - 20 ) + ' more</li>';
+					}
+					html += '</ul></details>';
+				}
+
+				// Full generated content.
+				html += '<details><summary style="cursor:pointer;font-size:12px;font-weight:600;">View full llms.txt output</summary>';
+				html += '<pre class="rrseo-pre" style="max-height:400px;margin-top:8px;">' + esc( data.content ) + '</pre>';
+				html += '</details>';
+
+				html += '</div>';
+				panel.innerHTML = html;
+			} )
+			.catch( function ( e ) {
+				panel.innerHTML = errHtml( e.message || 'Failed to load preview.' );
+			} );
 	}
 
 	// ── Sitemap ───────────────────────────────────────────────────────────────────

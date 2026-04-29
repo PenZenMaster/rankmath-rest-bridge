@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.9.0
+ * Version:      2.9.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.9.0' );
+define( 'RMB_VERSION', '2.9.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -147,7 +147,9 @@ add_action(
 			$checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 				RMB_UPDATE_URL,
 				RMB_PLUGIN_FILE,
-				'rankmath-rest-bridge' // GitHub repo slug; must match repo folder name.
+				'rankmath-rest-bridge', // GitHub repo slug; must match repo folder name.
+				// Check period in hours — filterable so staging can reduce to 1h for testing.
+				(int) apply_filters( 'rrseo_puc_check_period_hours', 12 )
 			);
 		}
 	}
@@ -1290,6 +1292,17 @@ add_action(
 			array(
 				'methods'             => 'GET',
 				'callback'            => 'rmb_status',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		// ── Force update check ────────────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/check-updates',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_check_updates',
 				'permission_callback' => $admin_only,
 			)
 		);
@@ -2581,6 +2594,38 @@ function rmb_status( WP_REST_Request $request ) {
 	}
 
 	return rest_ensure_response( $response );
+}
+
+/**
+ * Handles POST /check-updates — clears the WordPress and PUC update-check caches.
+ *
+ * WordPress caches the update-check result in the update_plugins site transient for
+ * 12 hours. PUC stores its own last-check timestamp in a site option. Both must be
+ * cleared before WordPress will fetch the manifest and detect new versions.
+ *
+ * This endpoint is the server-side equivalent of clicking "Check Again" on the
+ * WordPress Dashboard > Updates page, with the addition of clearing PUC's own state.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_check_updates( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+	// Clear WordPress core's plugin update transient.
+	delete_site_transient( 'update_plugins' );
+
+	// Clear PUC's own cached state for this plugin (stores last-check timestamp +
+	// cached API response). Option name is derived from the plugin slug.
+	delete_site_option( 'external_updates-rankmath-rest-bridge' );
+
+	// Trigger a synchronous update check so the result is available immediately.
+	wp_update_plugins();
+
+	return rest_ensure_response(
+		array(
+			'success' => true,
+			'message' => 'Update transients cleared and check triggered. Refresh the WordPress Updates page to see the result.',
+		)
+	);
 }
 
 
