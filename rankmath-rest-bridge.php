@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.6.0
+ * Version:      2.7.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.6.0' );
+define( 'RMB_VERSION', '2.7.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -232,6 +232,12 @@ function rmb_output_snippets( $location ) {
 // wp_head callback therefore runs after the <title> has already been rendered.
 // Registering here guarantees the filter is in place when _wp_render_title_tag() runs.
 add_filter( 'pre_get_document_title', 'rr_override_document_title', 20 );
+
+// ── robots.txt override ───────────────────────────────────────────────────────
+// Priority 99 to run after other plugins. Only applies when WordPress is serving
+// its virtual robots.txt; a physical robots.txt file in the webroot takes
+// precedence at the web-server level and bypasses this filter entirely.
+add_filter( 'robots_txt', 'rr_robots_txt_output', 99, 2 );
 
 // ── SEO meta output — description, robots, OG tags ───────────────────────────
 // Title is handled above via pre_get_document_title; only echoed tags go here.
@@ -1302,6 +1308,30 @@ add_action(
 			)
 		);
 
+		// ── robots.txt ────────────────────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/robots-txt',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_robots_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_robots_set',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'content' => array(
+							'required' => true,
+							'type'     => 'string',
+						),
+					),
+				),
+			)
+		);
+
 		// ── Legacy migration ──────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -1795,6 +1825,84 @@ function rmb_images_bulk_alt( WP_REST_Request $request ) {
 		array(
 			'count'   => count( $results ),
 			'results' => $results,
+		)
+	);
+}
+
+
+// ── robots.txt Handler ────────────────────────────────────────────────────────
+
+/**
+ * WordPress robots_txt filter callback.
+ *
+ * Returns the stored custom content when set; otherwise passes through
+ * the default WordPress robots.txt content unchanged.
+ * Has no effect when a physical robots.txt file exists at the webroot —
+ * in that case the web server serves the file directly.
+ *
+ * @param string $output  WordPress-generated robots.txt content.
+ * @param int    $is_public Site visibility setting (1 = public, 0 = discourage).
+ * @return string
+ */
+function rr_robots_txt_output( string $output, int $is_public ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	$custom = get_option( 'rrseo_robots_txt', '' );
+	if ( '' !== $custom ) {
+		return $custom;
+	}
+	return $output;
+}
+
+/**
+ * Handles GET /robots-txt — returns current robots.txt content and status.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_robots_get( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+	$custom        = get_option( 'rrseo_robots_txt', '' );
+	$physical_path = ABSPATH . 'robots.txt';
+	$has_file      = file_exists( $physical_path );
+
+	return rest_ensure_response(
+		array(
+			'content'              => $custom,
+			'source'               => '' !== $custom ? 'custom' : 'wordpress_default',
+			'physical_file_exists' => $has_file,
+			'warning'              => $has_file
+				? 'A physical robots.txt file exists at the WordPress root.'
+						. ' The web server serves it directly; this setting has no effect until the file is removed.'
+				: null,
+		)
+	);
+}
+
+/**
+ * Handles POST /robots-txt — writes a custom robots.txt body.
+ *
+ * Stores the content in the rrseo_robots_txt option; the robots_txt filter
+ * returns it on every WordPress-generated robots.txt request.
+ * Send content: "" to remove the custom override and restore the WP default.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
+	$content       = sanitize_textarea_field( $request->get_param( 'content' ) );
+	$physical_path = ABSPATH . 'robots.txt';
+	$has_file      = file_exists( $physical_path );
+
+	update_option( 'rrseo_robots_txt', $content );
+
+	return rest_ensure_response(
+		array(
+			'success'              => true,
+			'content'              => $content,
+			'source'               => '' !== $content ? 'custom' : 'wordpress_default',
+			'physical_file_exists' => $has_file,
+			'warning'              => $has_file
+				? 'A physical robots.txt file exists at the WordPress root.'
+						. ' The web server serves it directly; this setting has no effect until the file is removed.'
+				: null,
 		)
 	);
 }
