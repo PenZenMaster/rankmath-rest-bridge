@@ -1,11 +1,11 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-04-29
-**Current Version:** 2.3.1
+**Current Version:** 2.4.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 7f55bc0 — chore(checkpoint): 2026-04-28_1946 (pushed)
-**Git Status:** Dirty — manifest fix + v2.3.1 zip pending commit/push
+**Last Commit:** 658bc4b — fix: register pre_get_document_title at plugin load (v2.4.1, pushed)
+**Git Status:** Clean
 
 ---
 
@@ -124,10 +124,46 @@ the destructive replace-all endpoint. Three commits landed; working tree is clea
 - [x] `tests/unit/SeoValidationTest.php` — 16 tests for rr_validate_seo_fields()
 - [x] `tests/unit/SchemaValidationTest.php` — 11 tests for rr_validate_schema()
 - [x] `tests/unit/ManifestTest.php` — 8 regression tests for update-manifest.json format
-- [x] `hooks/pre-commit` — committed source; auto-installed by composer post-install-cmd
-- [x] `.git/hooks/pre-commit` — active hook; runs phpcs if dev-vendor/bin/phpcs is present
-- [ ] `composer install` on dev machine to activate phpcs + phpunit
-- [ ] Run `composer run qa` and fix any phpcs violations in plugin file (separate task)
+- [x] `tests/unit/TitleOutputTest.php` — 9 tests for rr_override_document_title()
+- [x] `hooks/pre-commit` — committed source; warn-only until compliance pass complete
+- [ ] `composer install` on dev machine (one-time; auto-installs pre-commit hook)
+
+### [HIGH] WPCS Compliance Refactor — rankmath-rest-bridge.php
+**Baseline (as of 2026-04-29):** 1,804 errors + 57 warnings across 1,220 lines.
+Pre-commit hook is warn-only until this task is complete; flip `EXIT_CODE=1` in
+`hooks/pre-commit` when clean.
+
+**Violation breakdown by category:**
+
+| Category | Rule | Est. count | Auto-fix? |
+|----------|------|-----------|-----------|
+| Space indentation (plugin uses 4-space; WPCS requires tabs) | `Generic.WhiteSpace.DisallowSpaceIndent` | ~1,200 | Yes (`phpcbf`) |
+| Aligned `define()` / array spacing | `Generic.Functions.FunctionCallArgumentSpacing` | ~200 | Yes |
+| Inline control structures (`if (...) exit;`) | `Generic.ControlStructures.InlineControlStructure` | ~15 | Yes |
+| Multi-line function call formatting | `PEAR.Functions.FunctionCallSignature` | ~100 | Yes |
+| Unescaped output (`$snippet['content']`) | `WordPress.Security.EscapeOutput` | ~10 | No — needs `wp_kses_post()` |
+| Line too long (Description header, 273 chars) | `Generic.Files.LineLength` | ~1 | No — split manually |
+| Missing `@package` in file docblock | `Squiz.Commenting.FileComment` | 1 | No — add manually |
+| Deprecated phpcs.xml.dist `text_domain` syntax | phpcs deprecation | 1 | No — update XML |
+| I18n missing wrappers | `WordPress.WP.I18n` | ~57 | No — add `__()` |
+
+**Execution plan (two-stage to keep diffs reviewable):**
+
+Stage 1 — Auto-fix (commit: `refactor: apply phpcbf WPCS auto-fixes`)
+```
+composer run lint-fix   # runs phpcbf; fixes indentation, spacing, inline controls
+```
+Expected: reduces from ~1,804 errors to ~70 (only the manual ones remain).
+
+Stage 2 — Manual fixes (commit: `refactor: manual WPCS compliance fixes`)
+- Wrap `$snippet['content']` with `wp_kses_post()` in `rmb_output_snippets()`
+- Split Description header line (line 4) to stay within 200 chars
+- Add `@package RankRocket_SEO` to file-level docblock
+- Fix `phpcs.xml.dist` deprecated `text_domain` property syntax (use `<element>` nodes)
+- I18n pass (can be deferred as its own task — see Ready to Start)
+
+After Stage 2: flip `EXIT_CODE=0` → `EXIT_CODE=1` in `hooks/pre-commit` to enforce blocking.
+Rebuild release zip once compliant (will be v2.5.0 if no other features land first).
 
 ### Ready to Start
 - [x] `POST /migrate-legacy` — implemented in v2.4.0
@@ -136,8 +172,6 @@ the destructive replace-all endpoint. Three commits landed; working tree is clea
       bypasses dynamic generation and serves the uploaded text verbatim. Assess whether the
       current config API is sufficient for pipeline use cases.
 - [ ] I18n pass — wrap user-visible strings with `__()` / `_e()` and text domain
-
-### Future / Deferred
 
 ### Future / Deferred
 - [ ] Native `rr_seo_score` postmeta key + scoring endpoint
@@ -153,6 +187,7 @@ the destructive replace-all endpoint. Three commits landed; working tree is clea
 
 | Version | Date       | Summary                                                              |
 |---------|------------|----------------------------------------------------------------------|
+| 2.4.1   | 2026-04-29 | Fix document title override (pre_get_document_title timing bug)       |
 | 2.4.0   | 2026-04-29 | POST /migrate-legacy; testing stack; pre-commit hook                 |
 | 2.3.1   | 2026-04-28 | replace-all: custom cap + deprecation notice                         |
 | 2.3.0   | 2026-04-28 | Schema model, preview endpoint, validation layer, audit log          |
