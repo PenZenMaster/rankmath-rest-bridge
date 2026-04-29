@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO Control Layer
  * Description:  Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. Reads legacy rank_math_* post-meta as a migration fallback; RankMath not required.
- * Version:      2.3.1
+ * Version:      2.4.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.3.1' );
+define( 'RMB_VERSION',      '2.4.0' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -726,6 +726,17 @@ add_action( 'rest_api_init', function () {
         'permission_callback' => $admin_only,
     ] );
 
+    // ── Legacy migration ──────────────────────────────────────────────────────
+    register_rest_route( 'rankrocket-seo/v1', '/migrate-legacy', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_migrate_legacy',
+        'permission_callback' => $admin_only,
+        'args'                => [
+            'post_ids' => [ 'required' => true,  'type' => 'array'   ],
+            'dry_run'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+        ],
+    ] );
+
 } );
 
 
@@ -1356,6 +1367,112 @@ function rmb_status( WP_REST_Request $request ) {
         'wp_version'          => get_bloginfo( 'version' ),
         'allowed_post_types'  => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
         'allowed_schema_types'=> apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
+    ] );
+}
+
+
+// ── Legacy Migration Handler ──────────────────────────────────────────────────
+// POST /rankrocket-seo/v1/migrate-legacy
+// Copies rank_math_* values into rr_seo_* keys for each requested post.
+// Skips any field where the native key already has a value.
+// Supports dry_run: true to preview what would be migrated without writing.
+
+function rmb_migrate_legacy( WP_REST_Request $request ) {
+    $post_ids   = array_map( 'intval', (array) $request->get_param( 'post_ids' ) );
+    $dry_run    = (bool) $request->get_param( 'dry_run' );
+    $request_id = rr_request_id( $request );
+
+    if ( count( $post_ids ) > RR_BATCH_MAX ) {
+        return new WP_Error(
+            'batch_too_large',
+            'Batch size exceeds maximum of ' . RR_BATCH_MAX,
+            [ 'status' => 422 ]
+        );
+    }
+
+    $results = [];
+
+    foreach ( $post_ids as $post_id ) {
+        $post = get_post( $post_id );
+        if ( ! $post ) {
+            $results[] = [
+                'post_id'  => $post_id,
+                'status'   => 'skipped',
+                'reason'   => 'post not found',
+                'migrated' => [],
+                'skipped'  => [],
+            ];
+            continue;
+        }
+
+        $allowed_types = apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES );
+        if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
+            $results[] = [
+                'post_id'  => $post_id,
+                'status'   => 'skipped',
+                'reason'   => "post type '{$post->post_type}' not in allowed list",
+                'migrated' => [],
+                'skipped'  => [],
+            ];
+            continue;
+        }
+
+        $migrated      = [];
+        $skipped_fields = [];
+        $audit_changes = [];
+
+        foreach ( RR_SEO_META_KEYS as $field => $native_key ) {
+            $legacy_key   = RR_SEO_LEGACY_META_KEYS[ $field ];
+            $native_value = get_post_meta( $post_id, $native_key, true );
+            $legacy_value = get_post_meta( $post_id, $legacy_key, true );
+
+            if ( $native_value !== '' && $native_value !== false ) {
+                $skipped_fields[ $field ] = [ 'reason' => 'native key already set', 'value' => $native_value ];
+                continue;
+            }
+
+            if ( $legacy_value === '' || $legacy_value === false ) {
+                $skipped_fields[ $field ] = [ 'reason' => 'no legacy value found' ];
+                continue;
+            }
+
+            if ( ! $dry_run ) {
+                update_post_meta( $post_id, $native_key, $legacy_value );
+            }
+
+            $migrated[ $field ]      = [ 'from_key' => $legacy_key, 'value' => $legacy_value ];
+            $audit_changes[ $field ] = [ 'before' => '', 'after' => $legacy_value ];
+        }
+
+        if ( ! $dry_run && ! empty( $audit_changes ) ) {
+            rr_audit_log( $post_id, '/migrate-legacy', $audit_changes, $request_id, 'migrated' );
+            wp_cache_delete( $post_id, 'post_meta' );
+            clean_post_cache( $post_id );
+        }
+
+        $post_status = 'skipped';
+        if ( ! empty( $migrated ) ) {
+            $post_status = $dry_run ? 'would_migrate' : 'migrated';
+        }
+
+        $results[] = [
+            'post_id'  => $post_id,
+            'status'   => $post_status,
+            'migrated' => $migrated,
+            'skipped'  => $skipped_fields,
+        ];
+    }
+
+    $migrated_count      = count( array_filter( $results, fn( $r ) => $r['status'] === 'migrated' ) );
+    $would_migrate_count = count( array_filter( $results, fn( $r ) => $r['status'] === 'would_migrate' ) );
+    $skipped_count       = count( array_filter( $results, fn( $r ) => $r['status'] === 'skipped' ) );
+
+    return rest_ensure_response( [
+        'dry_run'             => $dry_run,
+        'post_count'          => count( $results ),
+        'migrated_count'      => $dry_run ? $would_migrate_count : $migrated_count,
+        'skipped_count'       => $skipped_count,
+        'results'             => $results,
     ] );
 }
 

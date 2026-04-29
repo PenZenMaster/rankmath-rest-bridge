@@ -1,0 +1,11 @@
+# Composer dev-dependencies (PHPUnit, phpcs, wpcs)
+dev-vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

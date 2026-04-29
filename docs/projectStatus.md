@@ -109,27 +109,35 @@ the destructive replace-all endpoint. Three commits landed; working tree is clea
 
 ## Backlog
 
-### [CRITICAL] Auto-Update (in progress — must complete before any other backlog work)
+### [CRITICAL] Auto-Update — PARTIALLY COMPLETE
 - [x] Fix `update-manifest.json` — field names + PUC required fields
-- [x] Build `releases/v2.3.1/rankmath-rest-bridge.zip`
-- [ ] Push to GitHub so `raw.githubusercontent.com` download URL resolves
-- [ ] End-to-end staging test: clear PUC transient, bump manifest version, confirm WP Dashboard
-      Update notice, confirm one-click upgrade succeeds
+- [x] Build `releases/v2.3.1/rankmath-rest-bridge.zip` (superseded by v2.4.0)
+- [x] Build `releases/v2.4.0/rankmath-rest-bridge.zip` — 173.7 KB, 118 entries
+- [x] Push to GitHub (manifest + zips live at raw.githubusercontent.com)
+- [ ] **End-to-end staging test** — see `docs/staging-verify-autoupdate.md` for exact steps
 
-### Ready to Start (priority order)
-- [ ] **Testing + pre-commit hooks** — No test suite or active hooks exist. Required work:
-      (a) `composer.json` with `phpunit/phpunit`, `wp-phpunit/wp-phpunit`, `yoast/wp-test-utils`
-          as dev dependencies; `phpcs` + `dealerdirect/phpcodesniffer-composer-installer` +
-          `wp-coding-standards/wpcs` for sniffing
-      (b) `phpunit.xml.dist` — bootstrap WP test suite, map `tests/` directory
-      (c) `tests/` — at minimum: bootstrap file, unit tests for `rr_validate_seo_fields()`,
-          `rr_validate_schema()`, `rr_get_seo_meta()` fallback logic, manifest field assertions
-      (d) `phpcs.xml.dist` — WordPress Coding Standards, exclude vendor
-      (e) `.git/hooks/pre-commit` — run `phpcs` (fast); run `phpunit` only if `--all` flag set
-          (keeps commit speed acceptable while enforcing standards on every commit)
-- [ ] `phpcs.xml.dist` — can be bootstrapped independently if full test suite is deferred
-- [ ] `POST /migrate-legacy` — batch-copy `rank_math_*` -> `rr_seo_*` with audit log
+### [HIGH] Testing + CI
+- [x] `composer.json` — PHPUnit 9.x, phpcs/wpcs, dev-vendor dir (avoids PUC conflict)
+- [x] `phpcs.xml.dist` — WordPress-Core/Extra/Docs, 160/200 char line limits, I18n text domain
+- [x] `phpunit.xml.dist` — PHPUnit 9.x config, unit testsuite mapped to tests/unit/
+- [x] `tests/bootstrap.php` — WP stubs (plugin_dir_path, add_action, apply_filters, WP_Error)
+- [x] `tests/unit/SeoValidationTest.php` — 16 tests for rr_validate_seo_fields()
+- [x] `tests/unit/SchemaValidationTest.php` — 11 tests for rr_validate_schema()
+- [x] `tests/unit/ManifestTest.php` — 8 regression tests for update-manifest.json format
+- [x] `hooks/pre-commit` — committed source; auto-installed by composer post-install-cmd
+- [x] `.git/hooks/pre-commit` — active hook; runs phpcs if dev-vendor/bin/phpcs is present
+- [ ] `composer install` on dev machine to activate phpcs + phpunit
+- [ ] Run `composer run qa` and fix any phpcs violations in plugin file (separate task)
+
+### Ready to Start
+- [x] `POST /migrate-legacy` — implemented in v2.4.0
+- [ ] **Verify llms.txt upload** — Confirm `POST /llms` supports uploading arbitrary raw content
+      (not just the structured intro/sections config). If not, add a `raw_content` field that
+      bypasses dynamic generation and serves the uploaded text verbatim. Assess whether the
+      current config API is sufficient for pipeline use cases.
 - [ ] I18n pass — wrap user-visible strings with `__()` / `_e()` and text domain
+
+### Future / Deferred
 
 ### Future / Deferred
 - [ ] Native `rr_seo_score` postmeta key + scoring endpoint
@@ -143,12 +151,13 @@ the destructive replace-all endpoint. Three commits landed; working tree is clea
 
 ## Version History
 
-| Version | Date       | Summary                                                        |
-|---------|------------|----------------------------------------------------------------|
-| 2.3.1   | 2026-04-28 | replace-all: custom cap + deprecation notice                   |
-| 2.3.0   | 2026-04-28 | Schema model, preview endpoint, validation layer, audit log    |
-| 2.2.0   | 2026-04-28 | Rename to RRSEO Control Layer; native rr_seo_* keys; new namespace |
-| 2.1.4   | (prior)    | Varnish PURGE + Breeze cache detection                         |
-| 2.1.x   | (prior)    | og:image, sitemap fixes, llms.txt fixes                        |
-| 2.0.x   | (prior)    | Self-update, cache purge, snippets, image ALT                  |
-| 1.x     | (prior)    | Original RankMath REST Bridge                                  |
+| Version | Date       | Summary                                                              |
+|---------|------------|----------------------------------------------------------------------|
+| 2.4.0   | 2026-04-29 | POST /migrate-legacy; testing stack; pre-commit hook                 |
+| 2.3.1   | 2026-04-28 | replace-all: custom cap + deprecation notice                         |
+| 2.3.0   | 2026-04-28 | Schema model, preview endpoint, validation layer, audit log          |
+| 2.2.0   | 2026-04-28 | Rename to RRSEO Control Layer; native rr_seo_* keys; new namespace   |
+| 2.1.4   | (prior)    | Varnish PURGE + Breeze cache detection                               |
+| 2.1.x   | (prior)    | og:image, sitemap fixes, llms.txt fixes                              |
+| 2.0.x   | (prior)    | Self-update, cache purge, snippets, image ALT                        |
+| 1.x     | (prior)    | Original RankMath REST Bridge                                        |

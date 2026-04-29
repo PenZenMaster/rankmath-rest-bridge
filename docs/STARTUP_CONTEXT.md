@@ -2,50 +2,42 @@
 
 **Last Updated:** 2026-04-29
 **Branch:** main
-**Version:** 2.3.1
-**Last Commit:** 7f55bc0 — chore(checkpoint): 2026-04-28_1946
+**Version:** 2.4.0
+**Last Commit:** pending (2026-04-29 session)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Auto-update repaired (2026-04-29)** — Two bugs fixed in `update-manifest.json`: (a) missing
-   `name` field caused PUC `validateMetadata()` to return `WP_Error` silently; (b) field was named
-   `zip_url` but PUC and the REST `/self-update` handler both require `download_url`. Manifest
-   now includes all required PUC fields (`name`, `slug`, `download_url`, `sections`, `author`,
-   `requires`, `requires_php`, `tested`). Release zip `releases/v2.3.1/rankmath-rest-bridge.zip`
-   built with correct `rankmath-rest-bridge/` top-level folder and full vendor tree (118 entries,
-   ~177 KB). Needs push to GitHub to resolve the download URL on live sites.
+1. **Testing stack + pre-commit hook (2026-04-29)** — `composer.json` (PHPUnit 9.x, phpcs/wpcs,
+   vendor-dir: dev-vendor), `phpcs.xml.dist` (WordPress-Core/Extra/Docs), `phpunit.xml.dist`,
+   `tests/bootstrap.php` (WP stubs), 35 unit tests across SeoValidationTest, SchemaValidationTest,
+   ManifestTest. `hooks/pre-commit` committed; auto-installed by `composer install`.
+   Run `composer run qa` to execute lint + tests after `composer install`.
 
-2. **replace-all hardened (v2.3.1)** — `rrseo_replace_all_snippets` custom WordPress capability
-   created. Auto-granted to administrator role on first load (idempotent DB write). Route permission
-   callback checks the custom cap instead of broad `manage_options`. Success response includes
-   `deprecated` field pointing to per-snippet endpoints; target removal v3.0.0.
+2. **POST /migrate-legacy (v2.4.0)** — New endpoint batch-copies `rank_math_*` values into
+   `rr_seo_*` keys per post. Skips fields where native key is already set; skips posts not found
+   or not in the allowed post-type list. Supports `dry_run: true` to preview without writing.
+   All migrations written to audit log via `rr_audit_log()`.
 
-3. **Schema model, preview endpoint, validation layer, audit log (v2.3.0)** — `GET/POST /schema/{post_id}`
-   stores JSON-LD in `_rrseo_schema_graph`, injected into `wp_head`. `POST /preview-update` returns
-   before/after diff with errors/warnings, no DB write. Hard validation on title (120 char max),
-   description (320 char max), OG image URL, robots values, JSON-LD structure, schema @type allowlist,
-   post type allowlist, batch max 20. Audit log in `_rrseo_change_log` (capped 100/post),
-   `GET /log/{post_id}` endpoint. Both allowlists extensible via `apply_filters`.
+3. **Auto-update repaired (2026-04-29)** — `update-manifest.json` fixed (missing `name` field +
+   `zip_url` → `download_url`). Release zips v2.3.1 and v2.4.0 built and pushed to GitHub.
+   Staging verify checklist in `docs/staging-verify-autoupdate.md`.
 
 ---
 
 ## Next 3 Priorities
 
-1. **[CRITICAL] Push & verify auto-update end-to-end** — Commit manifest fix + zip, push to GitHub.
-   On a staging site: clear the PUC transient (`delete_site_transient('update_plugins')`), bump the
-   manifest version to a test value, confirm WP Dashboard > Updates shows the plugin. Then restore
-   and confirm one-click upgrade runs `POST /self-update` cleanly.
+1. **[CRITICAL] Staging verify auto-update** — Follow `docs/staging-verify-autoupdate.md`.
+   Requires WP-CLI + staging server access. Clear PUC transient, bump manifest to a test version,
+   confirm WP Dashboard shows update notice, confirm `POST /self-update` succeeds.
 
-2. **Testing infrastructure + pre-commit hooks** — No test suite or active git hooks exist.
-   Stack: `composer.json` (PHPUnit + WP test suite + wpcs + phpcs), `phpunit.xml.dist`,
-   `tests/` with unit tests for validators and meta helpers, `phpcs.xml.dist`, and a
-   `.git/hooks/pre-commit` that runs phpcs on every commit. See projectStatus.md backlog
-   for full task breakdown.
+2. **Activate + validate test suite** — Run `composer install` on dev machine to install PHPUnit +
+   phpcs. Then `composer run qa` to see current lint violations. Fix violations as a dedicated task.
 
-3. **phpcs quality gate** — `phpcs.xml.dist` configured for WordPress Coding Standards; run
-   against `rankmath-rest-bridge.php` and fix violations. Can land before full PHPUnit suite.
+3. **Verify llms.txt upload** — Check whether `POST /llms` supports uploading raw arbitrary
+   llms.txt content (not just structured intro/sections). If not, add a `raw_content` field that
+   bypasses dynamic generation. See projectStatus.md backlog for full scope.
 
 ---
 
@@ -53,30 +45,29 @@
 
 **Git:**
 - Branch: main
-- Version: 2.3.1
-- Last commit: 7f55bc0 — chore(checkpoint): 2026-04-28_1946 (pushed)
-- Working tree: DIRTY — manifest fix + v2.3.1 zip staged for commit
+- Version: 2.4.0
+- Working tree: DIRTY — all 2026-04-29 session changes pending commit/push
 
-**Plugin file:** `rankmath-rest-bridge.php` (single-file plugin, ~1445 lines)
+**Plugin file:** `rankmath-rest-bridge.php` (~1545 lines)
 **GitHub repo:** https://github.com/PenZenMaster/rankmath-rest-bridge
 
 **Blockers:**
-- Zip + manifest fix not yet pushed → auto-update broken on live sites until pushed
-- No `phpcs.xml.dist` → quality gate not runnable
+- `composer install` not yet run on dev machine — phpcs/phpunit not yet active
+- Staging verify not yet done — auto-update assumed correct but untested on live WP
 
 ---
 
 ## Key Context Notes
 
-1. **Auto-update is a critical plugin feature** — The plugin must self-update cleanly through the
-   WordPress admin (Dashboard > Updates). PUC (`vendor/plugin-update-checker`) hooks into WP's
-   native update system using `update-manifest.json` on GitHub raw. The manifest MUST have `name`,
-   `version`, and `download_url` fields (PUC will silently fail otherwise). The zip MUST have
+1. **Auto-update is a critical plugin feature** — PUC (`vendor/plugin-update-checker`) hooks into
+   WP's native update system using `update-manifest.json` on GitHub raw. The manifest MUST have
+   `name`, `version`, and `download_url` fields (PUC silently fails otherwise). The zip MUST have
    `rankmath-rest-bridge/` as its top-level folder and include the full `vendor/` tree.
 
-2. **File name vs plugin identity** — `rankmath-rest-bridge.php` is the WordPress plugin slug
-   (matches GitHub repo folder). The Plugin Name header says "RankRocket SEO Control Layer". These
-   can diverge safely; only rename the file if the GitHub repo is also renamed.
+2. **Testing setup: dev-vendor, not vendor** — `composer.json` uses `"vendor-dir": "dev-vendor"`
+   to avoid conflict with the manually committed `vendor/plugin-update-checker/`. The PUC library
+   is committed directly; dev tools (phpunit, phpcs) install to `dev-vendor/`. Do not run
+   `composer install` as root in production; dev-vendor is gitignored.
 
 3. **replace-all is deprecated** — endpoint still works but response includes `deprecated` field.
    Per-snippet CRUD (`POST /snippets`, `POST /snippets/{id}`, `DELETE /snippets/{id}`) is the

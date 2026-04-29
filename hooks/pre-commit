@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook — runs phpcs on the plugin file.
+# Install: composer install  (post-install-cmd copies this file automatically)
+# Manual:  cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+PHPCS="dev-vendor/bin/phpcs"
+PLUGIN="rankmath-rest-bridge.php"
+
+if [ ! -f "$PHPCS" ]; then
+    echo "[pre-commit] phpcs not found. Run 'composer install' to enable lint checks."
+    exit 0
+fi
+
+echo "[pre-commit] Linting $PLUGIN..."
+if ! "$PHPCS" --standard=phpcs.xml.dist "$PLUGIN"; then
+    echo ""
+    echo "[pre-commit] Lint failed. Fix errors above, or run:"
+    echo "  composer run lint-fix   (auto-fix where possible)"
+    echo "  composer run lint       (review remaining issues)"
+    exit 1
+fi
+
+echo "[pre-commit] Lint passed."
