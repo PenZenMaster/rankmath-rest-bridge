@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO Control Layer
  * Description:  Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. Reads legacy rank_math_* post-meta as a migration fallback; RankMath not required.
- * Version:      2.2.0
+ * Version:      2.3.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.2.0' );
+define( 'RMB_VERSION',      '2.3.0' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -39,6 +39,35 @@ define( 'RR_SEO_LEGACY_META_KEYS', [
     'og_image'       => 'rank_math_og_image',
 ] );
 
+// Schema + audit log meta keys.
+define( 'RR_SCHEMA_META_KEY', '_rrseo_schema_graph' );
+define( 'RR_CHANGE_LOG_KEY',  '_rrseo_change_log' );
+
+// Validation allowlists.
+define( 'RR_ALLOWED_POST_TYPES', [ 'post', 'page', 'product' ] );
+
+define( 'RR_ALLOWED_ROBOTS', [
+    'index', 'noindex', 'follow', 'nofollow',
+    'noarchive', 'noodp', 'noimageindex', 'nosnippet',
+] );
+
+define( 'RR_ALLOWED_SCHEMA_TYPES', [
+    'Article', 'BlogPosting', 'NewsArticle', 'WebPage', 'FAQPage',
+    'HowTo', 'Product', 'LocalBusiness', 'Organization', 'Person',
+    'Event', 'Recipe', 'VideoObject', 'ImageObject', 'BreadcrumbList',
+    'Review', 'Service',
+] );
+
+// Hard limits for AI-generated content.
+define( 'RR_TITLE_MAX',       120 ); // chars — hard error above this
+define( 'RR_TITLE_WARN_MAX',   60 ); // chars — warning above this
+define( 'RR_TITLE_WARN_MIN',   30 ); // chars — warning below this
+define( 'RR_DESC_MAX',        320 ); // chars — hard error above this
+define( 'RR_DESC_WARN_MAX',   160 ); // chars — warning above this
+define( 'RR_DESC_WARN_MIN',    50 ); // chars — warning below this
+define( 'RR_BATCH_MAX',        20 ); // items — hard error above this
+
+
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
 add_action( 'init', function () {
     $puc_loader = RMB_PLUGIN_DIR . 'vendor/plugin-update-checker/plugin-update-checker.php';
@@ -51,6 +80,7 @@ add_action( 'init', function () {
         );
     }
 } );
+
 
 // ── Output managed snippets ───────────────────────────────────────────────────
 add_action( 'wp_head',   function () { rmb_output_snippets( 'head' ); },   5  );
@@ -95,6 +125,7 @@ function rmb_output_snippets( $location ) {
     }
 }
 
+
 // ── SEO meta output (native rr_seo_* keys; rank_math_* read as migration fallback) ──
 add_action( 'wp_head', function () {
     if ( class_exists( 'RankMath' ) ) return; // RankMath handles it
@@ -106,7 +137,6 @@ add_action( 'wp_head', function () {
     $desc   = rr_get_seo_meta( $post_id, 'description' );
     $robots = rr_get_seo_meta( $post_id, 'robots' );
 
-    // Resolve tokens (%sitename%, %title%, %sep%)
     $title = rmb_resolve_tokens( $title, $post_id );
     $desc  = rmb_resolve_tokens( $desc,  $post_id );
 
@@ -123,7 +153,6 @@ add_action( 'wp_head', function () {
         }
     }
 
-    // og:title / og:description / og:image
     $og_title = rr_get_seo_meta( $post_id, 'og_title' );
     $og_desc  = rr_get_seo_meta( $post_id, 'og_description' );
     $og_image = rr_get_seo_meta( $post_id, 'og_image' );
@@ -135,7 +164,21 @@ add_action( 'wp_head', function () {
     if ( $og_desc  ) echo '<meta property="og:description" content="' . esc_attr( rmb_resolve_tokens( $og_desc,  $post_id ) ) . '">' . "\n";
     if ( $og_image ) echo '<meta property="og:image" content="'       . esc_url( $og_image ) . '">' . "\n";
 
-}, 1 ); // priority 1 — before most plugins
+}, 1 );
+
+
+// ── Schema JSON-LD output ─────────────────────────────────────────────────────
+// Outputs whatever graph is stored in _rrseo_schema_graph for singular posts.
+// Safe to coexist with RankMath (different @type values produce separate blocks).
+add_action( 'wp_head', function () {
+    if ( ! is_singular() ) return;
+    $post_id = get_queried_object_id();
+    $schema  = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
+    if ( ! $schema || ! is_array( $schema ) ) return;
+    echo '<script type="application/ld+json">' . "\n";
+    echo wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT );
+    echo "\n</script>\n";
+}, 5 );
 
 
 // ── Token resolver ────────────────────────────────────────────────────────────
@@ -164,9 +207,152 @@ function rr_get_seo_meta( $post_id, $field ) {
 }
 
 
+// ── Validation layer ──────────────────────────────────────────────────────────
+
+/**
+ * Validates SEO field values for a given post.
+ *
+ * Returns [ 'errors' => string[], 'warnings' => string[] ].
+ * Errors are hard failures; warnings are advisory.
+ */
+function rr_validate_seo_fields( array $fields, $post_id = null ) {
+    $errors   = [];
+    $warnings = [];
+
+    if ( $post_id !== null ) {
+        $post = get_post( $post_id );
+        if ( ! $post ) {
+            $errors[] = "post_id {$post_id}: post not found";
+        } else {
+            $allowed_types = apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES );
+            if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
+                $errors[] = "post_id {$post_id}: post type '{$post->post_type}' not allowed. Allowed: " . implode( ', ', $allowed_types );
+            }
+        }
+    }
+
+    if ( isset( $fields['title'] ) && $fields['title'] !== '' ) {
+        $len = mb_strlen( $fields['title'] );
+        if ( $len > RR_TITLE_MAX ) {
+            $errors[]   = "title: {$len} chars — exceeds hard limit of " . RR_TITLE_MAX;
+        } elseif ( $len > RR_TITLE_WARN_MAX ) {
+            $warnings[] = "title: {$len} chars — above recommended maximum of " . RR_TITLE_WARN_MAX;
+        } elseif ( $len < RR_TITLE_WARN_MIN ) {
+            $warnings[] = "title: {$len} chars — below recommended minimum of " . RR_TITLE_WARN_MIN;
+        }
+    }
+
+    if ( isset( $fields['description'] ) && $fields['description'] !== '' ) {
+        $len = mb_strlen( $fields['description'] );
+        if ( $len > RR_DESC_MAX ) {
+            $errors[]   = "description: {$len} chars — exceeds hard limit of " . RR_DESC_MAX;
+        } elseif ( $len > RR_DESC_WARN_MAX ) {
+            $warnings[] = "description: {$len} chars — above recommended maximum of " . RR_DESC_WARN_MAX;
+        } elseif ( $len < RR_DESC_WARN_MIN ) {
+            $warnings[] = "description: {$len} chars — below recommended minimum of " . RR_DESC_WARN_MIN;
+        }
+    }
+
+    if ( isset( $fields['og_image'] ) && $fields['og_image'] !== '' ) {
+        if ( ! filter_var( $fields['og_image'], FILTER_VALIDATE_URL ) ) {
+            $errors[] = "og_image: not a valid URL";
+        }
+    }
+
+    if ( isset( $fields['robots'] ) && $fields['robots'] !== '' ) {
+        $values  = array_map( 'trim', explode( ',', $fields['robots'] ) );
+        $invalid = array_diff( $values, RR_ALLOWED_ROBOTS );
+        if ( $invalid ) {
+            $errors[] = "robots: invalid value(s): " . implode( ', ', $invalid )
+                      . ". Allowed: " . implode( ', ', RR_ALLOWED_ROBOTS );
+        }
+    }
+
+    return [ 'errors' => $errors, 'warnings' => $warnings ];
+}
+
+/**
+ * Validates a JSON-LD schema object.
+ *
+ * Accepts either a PHP array or a JSON string.
+ * Returns [ 'errors' => string[], 'warnings' => string[], 'schema' => array|null ].
+ */
+function rr_validate_schema( $schema ) {
+    $errors   = [];
+    $warnings = [];
+
+    if ( is_string( $schema ) ) {
+        $decoded = json_decode( $schema, true );
+        if ( json_last_error() !== JSON_ERROR_NONE ) {
+            return [
+                'errors'   => [ 'schema: invalid JSON — ' . json_last_error_msg() ],
+                'warnings' => [],
+                'schema'   => null,
+            ];
+        }
+        $schema = $decoded;
+    }
+
+    if ( ! is_array( $schema ) ) {
+        return [
+            'errors'   => [ 'schema: must be a JSON object' ],
+            'warnings' => [],
+            'schema'   => null,
+        ];
+    }
+
+    if ( empty( $schema['@context'] ) ) {
+        $errors[] = "schema: missing required @context";
+    }
+
+    if ( empty( $schema['@type'] ) ) {
+        $errors[] = "schema: missing required @type";
+    } else {
+        $allowed = apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES );
+        if ( ! in_array( $schema['@type'], $allowed, true ) ) {
+            $errors[] = "schema: @type '{$schema['@type']}' not allowed. Allowed: " . implode( ', ', $allowed );
+        }
+    }
+
+    return [ 'errors' => $errors, 'warnings' => $warnings, 'schema' => $schema ];
+}
+
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+
+function rr_audit_log( $post_id, $endpoint, array $changes, $request_id, $status ) {
+    $log  = get_post_meta( $post_id, RR_CHANGE_LOG_KEY, true );
+    $log  = is_array( $log ) ? $log : [];
+    $uid  = get_current_user_id();
+    $user = $uid ? get_userdata( $uid ) : null;
+
+    $log[] = [
+        'timestamp'  => gmdate( 'Y-m-d\TH:i:s\Z' ),
+        'user_id'    => $uid,
+        'user_login' => $user ? $user->user_login : 'system',
+        'endpoint'   => $endpoint,
+        'post_id'    => $post_id,
+        'changes'    => $changes,
+        'request_id' => $request_id,
+        'status'     => $status,
+    ];
+
+    // Cap at 100 entries per post to prevent unbounded growth.
+    if ( count( $log ) > 100 ) {
+        $log = array_slice( $log, -100 );
+    }
+
+    update_post_meta( $post_id, RR_CHANGE_LOG_KEY, $log );
+}
+
+// Uses X-Request-ID header when provided by the caller, otherwise generates one.
+function rr_request_id( WP_REST_Request $request ) {
+    $id = $request->get_header( 'x-request-id' );
+    return $id ?: wp_generate_uuid4();
+}
+
+
 // ── llms.txt generator ────────────────────────────────────────────────────────
-// Intercept /llms.txt at init — earliest hook where WPDB + options are available.
-// Handles both /llms.txt and /llms.txt/ (trailing slash variant).
 add_action( 'init', function () {
     if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
     if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) return;
@@ -177,7 +363,7 @@ add_action( 'init', function () {
         rmb_serve_llms_txt();
         exit;
     }
-}, 1 ); // priority 1 — before most plugins, before canonical redirect fires
+}, 1 );
 
 function rmb_serve_llms_txt() {
     while ( ob_get_level() ) ob_end_clean();
@@ -277,9 +463,8 @@ function rmb_serve_sitemap() {
     status_header( 200 );
     $entries = [];
 
-    // Pages
     $front_page = (int) get_option( 'page_on_front' );
-    $pages = get_pages( [ 'post_status' => 'publish' ] );
+    $pages      = get_pages( [ 'post_status' => 'publish' ] );
     foreach ( $pages as $page ) {
         $noindex = rr_get_seo_meta( $page->ID, 'robots' );
         if ( ! empty( $noindex ) && (
@@ -293,7 +478,6 @@ function rmb_serve_sitemap() {
         ];
     }
 
-    // Posts
     $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
     foreach ( $posts as $post ) {
         $noindex = rr_get_seo_meta( $post->ID, 'robots' );
@@ -351,6 +535,23 @@ add_action( 'rest_api_init', function () {
         'permission_callback' => $admin_only,
     ] );
 
+    // ── Preview / dry-run ─────────────────────────────────────────────────────
+    register_rest_route( 'rankrocket-seo/v1', '/preview-update', [
+        'methods'             => 'POST',
+        'callback'            => 'rmb_preview_update',
+        'permission_callback' => $admin_only,
+        'args' => [
+            'post_id'        => [ 'required' => true,  'type' => 'integer' ],
+            'title'          => [ 'required' => false, 'type' => 'string'  ],
+            'description'    => [ 'required' => false, 'type' => 'string'  ],
+            'focus_keyword'  => [ 'required' => false, 'type' => 'string'  ],
+            'robots'         => [ 'required' => false, 'type' => 'string'  ],
+            'og_title'       => [ 'required' => false, 'type' => 'string'  ],
+            'og_description' => [ 'required' => false, 'type' => 'string'  ],
+            'og_image'       => [ 'required' => false, 'type' => 'string'  ],
+        ],
+    ] );
+
     // ── Bulk SEO meta read/write ───────────────────────────────────────────────
     register_rest_route( 'rankrocket-seo/v1', '/meta/bulk-get', [
         'methods'             => 'POST',
@@ -370,6 +571,31 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
+    // ── Schema ────────────────────────────────────────────────────────────────
+    register_rest_route( 'rankrocket-seo/v1', '/schema/(?P<post_id>\d+)', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'rmb_schema_get',
+            'permission_callback' => $admin_only,
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'rmb_schema_set',
+            'permission_callback' => $admin_only,
+            'args' => [
+                'schema'  => [ 'required' => true,  'type' => 'object'  ],
+                'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+            ],
+        ],
+    ] );
+
+    // ── Audit log ─────────────────────────────────────────────────────────────
+    register_rest_route( 'rankrocket-seo/v1', '/log/(?P<post_id>\d+)', [
+        'methods'             => 'GET',
+        'callback'            => 'rmb_log_get',
+        'permission_callback' => $admin_only,
+    ] );
+
     // ── Image ALT text ─────────────────────────────────────────────────────────
     register_rest_route( 'rankrocket-seo/v1', '/images', [
         'methods'             => 'GET',
@@ -377,7 +603,7 @@ add_action( 'rest_api_init', function () {
         'permission_callback' => $admin_only,
     ] );
 
-    // MUST be registered before the wildcard
+    // MUST be registered before the wildcard.
     register_rest_route( 'rankrocket-seo/v1', '/images/(?P<id>\d+)/alt', [
         'methods'             => 'POST',
         'callback'            => 'rmb_image_set_alt',
@@ -443,13 +669,14 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
-    // ── Snippets: Replace all — MUST be registered BEFORE {id} wildcard ──────
+    // MUST be registered BEFORE the {id} wildcard.
     register_rest_route( 'rankrocket-seo/v1', '/snippets/replace-all', [
         'methods'             => 'POST',
         'callback'            => 'rmb_snippets_replace_all',
         'permission_callback' => $admin_only,
         'args' => [
-            'snippets' => [ 'required' => true, 'type' => 'array' ],
+            'snippets' => [ 'required' => true,  'type' => 'array'   ],
+            'confirm'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
         ],
     ] );
 
@@ -487,27 +714,52 @@ add_action( 'rest_api_init', function () {
 // ── SEO Meta Handlers ─────────────────────────────────────────────────────────
 
 function rmb_update_meta( WP_REST_Request $request ) {
-    $post_id = intval( $request->get_param( 'post_id' ) );
-    if ( ! get_post( $post_id ) ) {
-        return new WP_Error( 'invalid_post', 'Post not found', [ 'status' => 404 ] );
-    }
-
-    $updated   = [];
+    $post_id    = intval( $request->get_param( 'post_id' ) );
     $url_fields = [ 'og_image' ];
+    $raw_fields = [];
 
-    foreach ( RR_SEO_META_KEYS as $param => $meta_key ) {
+    foreach ( RR_SEO_META_KEYS as $param => $native_key ) {
         $value = $request->get_param( $param );
         if ( $value !== null && $value !== '' ) {
-            $sanitized = in_array( $param, $url_fields ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
-            update_post_meta( $post_id, $meta_key, $sanitized );
-            $updated[ $meta_key ] = $sanitized;
+            $raw_fields[ $param ] = $value;
         }
+    }
+
+    $validation = rr_validate_seo_fields( $raw_fields, $post_id );
+    if ( ! empty( $validation['errors'] ) ) {
+        return new WP_Error( 'validation_failed', 'Validation failed', [
+            'status'   => 422,
+            'errors'   => $validation['errors'],
+            'warnings' => $validation['warnings'],
+        ] );
+    }
+
+    $updated       = [];
+    $audit_changes = [];
+    $request_id    = rr_request_id( $request );
+
+    foreach ( $raw_fields as $param => $value ) {
+        $meta_key  = RR_SEO_META_KEYS[ $param ];
+        $before    = rr_get_seo_meta( $post_id, $param );
+        $sanitized = in_array( $param, $url_fields, true ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
+        update_post_meta( $post_id, $meta_key, $sanitized );
+        $updated[ $meta_key ]    = $sanitized;
+        $audit_changes[ $param ] = [ 'before' => $before ?: '', 'after' => $sanitized ];
     }
 
     wp_cache_delete( $post_id, 'post_meta' );
     clean_post_cache( $post_id );
 
-    return rest_ensure_response( [ 'success' => true, 'post_id' => $post_id, 'updated' => $updated ] );
+    if ( ! empty( $audit_changes ) ) {
+        rr_audit_log( $post_id, '/update', $audit_changes, $request_id, 'written' );
+    }
+
+    return rest_ensure_response( [
+        'success'  => true,
+        'post_id'  => $post_id,
+        'updated'  => $updated,
+        'warnings' => $validation['warnings'],
+    ] );
 }
 
 function rmb_get_meta( WP_REST_Request $request ) {
@@ -520,7 +772,6 @@ function rmb_get_meta( WP_REST_Request $request ) {
     foreach ( RR_SEO_META_KEYS as $field => $native_key ) {
         $meta[ $native_key ] = rr_get_seo_meta( $post_id, $field );
     }
-    // seo_score has no native equivalent yet; read legacy key directly
     $meta['rr_seo_score'] = get_post_meta( $post_id, 'rank_math_seo_score', true );
 
     $thumb_id = get_post_thumbnail_id( $post_id );
@@ -531,8 +782,12 @@ function rmb_get_meta( WP_REST_Request $request ) {
 
 function rmb_meta_bulk_get( WP_REST_Request $request ) {
     $post_ids = array_map( 'intval', $request->get_param( 'post_ids' ) );
-    $results  = [];
 
+    if ( count( $post_ids ) > RR_BATCH_MAX ) {
+        return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . RR_BATCH_MAX, [ 'status' => 422 ] );
+    }
+
+    $results = [];
     foreach ( $post_ids as $pid ) {
         $post = get_post( $pid );
         if ( ! $post ) continue;
@@ -554,27 +809,167 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
 function rmb_meta_bulk_update( WP_REST_Request $request ) {
     $updates    = $request->get_param( 'updates' );
     $url_fields = [ 'og_image' ];
-    $results    = [];
+    $request_id = rr_request_id( $request );
 
+    if ( count( $updates ) > RR_BATCH_MAX ) {
+        return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . RR_BATCH_MAX, [ 'status' => 422 ] );
+    }
+
+    $results = [];
     foreach ( $updates as $upd ) {
         $post_id = intval( $upd['post_id'] ?? 0 );
-        if ( ! $post_id || ! get_post( $post_id ) ) {
-            $results[] = [ 'post_id' => $post_id, 'success' => false, 'error' => 'Post not found' ];
-            continue;
-        }
-        $updated = [];
-        foreach ( RR_SEO_META_KEYS as $param => $meta_key ) {
+
+        $raw_fields = [];
+        foreach ( RR_SEO_META_KEYS as $param => $native_key ) {
             if ( isset( $upd[ $param ] ) && $upd[ $param ] !== '' ) {
-                $sanitized = in_array( $param, $url_fields ) ? esc_url_raw( $upd[ $param ] ) : sanitize_text_field( $upd[ $param ] );
-                update_post_meta( $post_id, $meta_key, $sanitized );
-                $updated[ $meta_key ] = $upd[ $param ];
+                $raw_fields[ $param ] = $upd[ $param ];
             }
         }
+
+        $validation = rr_validate_seo_fields( $raw_fields, $post_id ?: null );
+        if ( ! empty( $validation['errors'] ) ) {
+            $results[] = [
+                'post_id'  => $post_id,
+                'success'  => false,
+                'errors'   => $validation['errors'],
+                'warnings' => $validation['warnings'],
+            ];
+            continue;
+        }
+
+        $updated       = [];
+        $audit_changes = [];
+
+        foreach ( $raw_fields as $param => $value ) {
+            $meta_key  = RR_SEO_META_KEYS[ $param ];
+            $before    = rr_get_seo_meta( $post_id, $param );
+            $sanitized = in_array( $param, $url_fields, true ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
+            update_post_meta( $post_id, $meta_key, $sanitized );
+            $updated[ $meta_key ]    = $value;
+            $audit_changes[ $param ] = [ 'before' => $before ?: '', 'after' => $sanitized ];
+        }
+
         wp_cache_delete( $post_id, 'post_meta' );
         clean_post_cache( $post_id );
-        $results[] = [ 'post_id' => $post_id, 'success' => true, 'updated' => $updated ];
+
+        if ( ! empty( $audit_changes ) ) {
+            rr_audit_log( $post_id, '/meta/bulk-update', $audit_changes, $request_id, 'written' );
+        }
+
+        $results[] = [
+            'post_id'  => $post_id,
+            'success'  => true,
+            'updated'  => $updated,
+            'warnings' => $validation['warnings'],
+        ];
     }
     return rest_ensure_response( [ 'count' => count( $results ), 'results' => $results ] );
+}
+
+
+// ── Preview / Dry-run Handler ─────────────────────────────────────────────────
+
+function rmb_preview_update( WP_REST_Request $request ) {
+    $post_id = intval( $request->get_param( 'post_id' ) );
+
+    $raw_fields = [];
+    foreach ( RR_SEO_META_KEYS as $param => $native_key ) {
+        $value = $request->get_param( $param );
+        if ( $value !== null && $value !== '' ) {
+            $raw_fields[ $param ] = $value;
+        }
+    }
+
+    $validation = rr_validate_seo_fields( $raw_fields, $post_id );
+
+    $changes = [];
+    foreach ( $raw_fields as $param => $value ) {
+        $changes[ $param ] = [
+            'before' => rr_get_seo_meta( $post_id, $param ) ?: '',
+            'after'  => $value,
+        ];
+    }
+
+    return rest_ensure_response( [
+        'post_id'  => $post_id,
+        'changes'  => $changes,
+        'warnings' => $validation['warnings'],
+        'errors'   => $validation['errors'],
+        'valid'    => empty( $validation['errors'] ),
+    ] );
+}
+
+
+// ── Schema Handlers ───────────────────────────────────────────────────────────
+
+function rmb_schema_get( WP_REST_Request $request ) {
+    $post_id = intval( $request->get_param( 'post_id' ) );
+    if ( ! get_post( $post_id ) ) {
+        return new WP_Error( 'invalid_post', 'Post not found', [ 'status' => 404 ] );
+    }
+    $schema = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
+    return rest_ensure_response( [
+        'post_id' => $post_id,
+        'schema'  => $schema ?: null,
+    ] );
+}
+
+function rmb_schema_set( WP_REST_Request $request ) {
+    $post_id = intval( $request->get_param( 'post_id' ) );
+    $dry_run = (bool) $request->get_param( 'dry_run' );
+    $schema  = $request->get_param( 'schema' );
+
+    if ( ! get_post( $post_id ) ) {
+        return new WP_Error( 'invalid_post', 'Post not found', [ 'status' => 404 ] );
+    }
+
+    $validation = rr_validate_schema( $schema );
+    if ( ! empty( $validation['errors'] ) ) {
+        return new WP_Error( 'validation_failed', 'Schema validation failed', [
+            'status'   => 422,
+            'errors'   => $validation['errors'],
+            'warnings' => $validation['warnings'],
+        ] );
+    }
+
+    $clean_schema = $validation['schema'];
+    $before       = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true ) ?: null;
+
+    if ( ! $dry_run ) {
+        update_post_meta( $post_id, RR_SCHEMA_META_KEY, $clean_schema );
+        rr_audit_log(
+            $post_id,
+            '/schema',
+            [ 'schema' => [ 'before' => $before, 'after' => $clean_schema ] ],
+            rr_request_id( $request ),
+            'written'
+        );
+    }
+
+    return rest_ensure_response( [
+        'post_id'  => $post_id,
+        'dry_run'  => $dry_run,
+        'valid'    => true,
+        'warnings' => $validation['warnings'],
+        'schema'   => $clean_schema,
+    ] );
+}
+
+
+// ── Audit Log Handler ─────────────────────────────────────────────────────────
+
+function rmb_log_get( WP_REST_Request $request ) {
+    $post_id = intval( $request->get_param( 'post_id' ) );
+    if ( ! get_post( $post_id ) ) {
+        return new WP_Error( 'invalid_post', 'Post not found', [ 'status' => 404 ] );
+    }
+    $log = get_post_meta( $post_id, RR_CHANGE_LOG_KEY, true );
+    $log = is_array( $log ) ? $log : [];
+    return rest_ensure_response( [
+        'post_id' => $post_id,
+        'count'   => count( $log ),
+        'log'     => array_reverse( $log ), // most recent first
+    ] );
 }
 
 
@@ -596,7 +991,7 @@ function rmb_images_list( WP_REST_Request $request ) {
 
     $images = [];
     foreach ( $attachments as $att ) {
-        $alt   = get_post_meta( $att->ID, '_wp_attachment_image_alt', true );
+        $alt      = get_post_meta( $att->ID, '_wp_attachment_image_alt', true );
         $images[] = [
             'id'       => $att->ID,
             'filename' => basename( get_attached_file( $att->ID ) ),
@@ -650,7 +1045,7 @@ function rmb_images_bulk_alt( WP_REST_Request $request ) {
             continue;
         }
 
-        $before = get_post_meta( $id, '_wp_attachment_image_alt', true );
+        $before    = get_post_meta( $id, '_wp_attachment_image_alt', true );
         update_post_meta( $id, '_wp_attachment_image_alt', $alt );
         $results[] = [
             'id'       => $id,
@@ -736,14 +1131,11 @@ function rmb_sitemap_preview( WP_REST_Request $request ) {
         ];
     }
 
-    $included = array_values( array_filter( $entries, function( $e ) { return $e['included']; } ) );
-    $excluded = array_values( array_filter( $entries, function( $e ) { return ! $e['included']; } ) );
-
     return rest_ensure_response( [
         'sitemap_url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
         'total'          => count( $entries ),
-        'included_count' => count( $included ),
-        'excluded_count' => count( $excluded ),
+        'included_count' => count( array_filter( $entries, fn( $e ) => $e['included'] ) ),
+        'excluded_count' => count( array_filter( $entries, fn( $e ) => ! $e['included'] ) ),
         'entries'        => array_values( $entries ),
     ] );
 }
@@ -806,12 +1198,26 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 }
 
 function rmb_snippets_replace_all( WP_REST_Request $request ) {
+    // Destructive: replaces the entire snippet store atomically.
+    // Caller must pass {"confirm": true}. Prefer per-snippet create/update/delete
+    // for routine operations; reserve this endpoint for full sync scenarios.
+    if ( $request->get_param( 'confirm' ) !== true ) {
+        return new WP_Error(
+            'confirmation_required',
+            'replace-all overwrites the entire snippet store. Send {"confirm": true} to proceed. '
+            . 'For routine changes, use the per-snippet POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} endpoints.',
+            [ 'status' => 400 ]
+        );
+    }
+
     $incoming = $request->get_param( 'snippets' );
     if ( ! is_array( $incoming ) ) {
         return new WP_Error( 'invalid_data', 'snippets must be an array', [ 'status' => 400 ] );
     }
 
+    $before      = get_option( RMB_SNIPPETS_KEY, [] );
     $clean_store = [];
+
     foreach ( $incoming as $snippet ) {
         $id = sanitize_title( $snippet['title'] ?? '' );
         if ( ! $id ) continue;
@@ -833,9 +1239,11 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
     update_option( RMB_SNIPPETS_KEY, $clean_store );
 
     return rest_ensure_response( [
-        'success' => true,
-        'count'   => count( $clean_store ),
-        'ids'     => array_keys( $clean_store ),
+        'success'       => true,
+        'count'         => count( $clean_store ),
+        'ids'           => array_keys( $clean_store ),
+        'removed_count' => count( array_diff_key( $before, $clean_store ) ),
+        'added_count'   => count( array_diff_key( $clean_store, $before ) ),
     ] );
 }
 
@@ -861,44 +1269,30 @@ function rmb_cache_purge( WP_REST_Request $request ) {
     $purged = [];
     $errors = [];
 
-    // ── LiteSpeed Cache plugin ────────────────────────────────────────────────
     if ( class_exists( '\LiteSpeed\Purge' ) ) {
         do_action( 'litespeed_purge_all' );
         $purged[] = 'LiteSpeed';
     }
 
-    // ── Breeze (Cloudways cache plugin) ──────────────────────────────────────
     if ( class_exists( 'Breeze_Admin' ) || function_exists( 'breeze_flush_cache' ) ) {
         do_action( 'breeze_clear_all_cache' );
         $purged[] = 'Breeze';
     }
 
-    // ── Cloudways Varnish — HTTP PURGE to localhost ───────────────────────────
-    // Cloudways Varnish listens on port 80 and responds to PURGE method from
-    // within the same server. We attempt PURGE / with X-Purge-Method: regex
-    // to flush all cached URLs for this domain.
-    $site_url  = get_site_url();
-    $host      = parse_url( $site_url, PHP_URL_HOST );
-    $varnish_targets = [
-        'http://localhost/.*',
-        'http://127.0.0.1/.*',
-    ];
+    $site_url        = get_site_url();
+    $host            = parse_url( $site_url, PHP_URL_HOST );
+    $varnish_targets = [ 'http://localhost/.*', 'http://127.0.0.1/.*' ];
     foreach ( $varnish_targets as $target ) {
         $response = wp_remote_request( $target, [
-            'method'  => 'PURGE',
-            'timeout' => 5,
-            'headers' => [
-                'Host'            => $host,
-                'X-Purge-Method'  => 'regex',
-            ],
+            'method'    => 'PURGE',
+            'timeout'   => 5,
+            'headers'   => [ 'Host' => $host, 'X-Purge-Method' => 'regex' ],
             'sslverify' => false,
         ] );
         if ( ! is_wp_error( $response ) ) {
             $code = wp_remote_retrieve_response_code( $response );
-            if ( in_array( $code, [ 200, 201, 204, 404 ] ) ) {
-                if ( ! in_array( 'Varnish', $purged ) ) {
-                    $purged[] = 'Varnish';
-                }
+            if ( in_array( $code, [ 200, 201, 204, 404 ], true ) ) {
+                if ( ! in_array( 'Varnish', $purged ) ) $purged[] = 'Varnish';
                 break;
             } else {
                 $errors[] = 'Varnish HTTP ' . $code;
@@ -908,23 +1302,9 @@ function rmb_cache_purge( WP_REST_Request $request ) {
         }
     }
 
-    // ── SiteGround Optimizer ──────────────────────────────────────────────────
-    if ( function_exists( 'sg_cachepress_purge_cache' ) ) {
-        sg_cachepress_purge_cache();
-        $purged[] = 'SiteGround';
-    }
-
-    // ── WP Rocket ─────────────────────────────────────────────────────────────
-    if ( function_exists( 'rocket_clean_domain' ) ) {
-        rocket_clean_domain();
-        $purged[] = 'WP Rocket';
-    }
-
-    // ── W3 Total Cache ────────────────────────────────────────────────────────
-    if ( function_exists( 'w3tc_flush_all' ) ) {
-        w3tc_flush_all();
-        $purged[] = 'W3TC';
-    }
+    if ( function_exists( 'sg_cachepress_purge_cache' ) ) { sg_cachepress_purge_cache(); $purged[] = 'SiteGround'; }
+    if ( function_exists( 'rocket_clean_domain' ) )        { rocket_clean_domain();        $purged[] = 'WP Rocket';  }
+    if ( function_exists( 'w3tc_flush_all' ) )             { w3tc_flush_all();             $purged[] = 'W3TC';       }
 
     $msg_parts = [];
     if ( ! empty( $purged ) ) $msg_parts[] = 'Purged: ' . implode( ', ', $purged );
@@ -945,16 +1325,18 @@ function rmb_status( WP_REST_Request $request ) {
     $snippets    = get_option( RMB_SNIPPETS_KEY, [] );
     $rankmath_on = class_exists( 'RankMath' );
     return rest_ensure_response( [
-        'plugin'          => 'RankRocket SEO Control Layer',
-        'version'         => RMB_VERSION,
-        'rankmath_active' => $rankmath_on,
-        'snippet_count'   => count( $snippets ),
-        'snippet_ids'     => array_keys( $snippets ),
-        'sitemap_url'     => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
-        'llms_url'        => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
-        'update_url'      => RMB_UPDATE_URL,
-        'php_version'     => PHP_VERSION,
-        'wp_version'      => get_bloginfo( 'version' ),
+        'plugin'              => 'RankRocket SEO Control Layer',
+        'version'             => RMB_VERSION,
+        'rankmath_active'     => $rankmath_on,
+        'snippet_count'       => count( $snippets ),
+        'snippet_ids'         => array_keys( $snippets ),
+        'sitemap_url'         => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
+        'llms_url'            => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
+        'update_url'          => RMB_UPDATE_URL,
+        'php_version'         => PHP_VERSION,
+        'wp_version'          => get_bloginfo( 'version' ),
+        'allowed_post_types'  => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
+        'allowed_schema_types'=> apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
     ] );
 }
 
@@ -1001,7 +1383,6 @@ function rmb_self_update( WP_REST_Request $request ) {
 
     $current_ver = RMB_VERSION;
 
-    // Remove stale copies before upgrading
     $plugins_dir = WP_PLUGIN_DIR;
     $old_copies  = [ 'rankmath-rest-bridge', 'rankrocket-seo' ];
     foreach ( $old_copies as $folder ) {
@@ -1028,7 +1409,7 @@ function rmb_self_update( WP_REST_Request $request ) {
         return new WP_Error( 'upgrade_failed', 'Upgrader returned false — check filesystem permissions', [ 'status' => 500 ] );
     }
 
-    // Re-activate plugin after install (GitHub repo folder name is the disk slug)
+    // GitHub repo folder name is the active disk slug.
     $plugin_file = 'rankmath-rest-bridge/rankmath-rest-bridge.php';
     if ( ! is_plugin_active( $plugin_file ) ) {
         activate_plugin( $plugin_file );
