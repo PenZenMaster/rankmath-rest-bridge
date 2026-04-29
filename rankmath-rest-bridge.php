@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO Control Layer
  * Description:  Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. Reads legacy rank_math_* post-meta as a migration fallback; RankMath not required.
- * Version:      2.3.0
+ * Version:      2.3.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.3.0' );
+define( 'RMB_VERSION',      '2.3.1' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -58,6 +58,11 @@ define( 'RR_ALLOWED_SCHEMA_TYPES', [
     'Review', 'Service',
 ] );
 
+// Custom capability guarding the destructive replace-all endpoint.
+// Granted to the administrator role on first load; can be revoked per-role
+// to restrict bulk-sync access independently of manage_options.
+define( 'RR_REPLACE_ALL_CAP', 'rrseo_replace_all_snippets' );
+
 // Hard limits for AI-generated content.
 define( 'RR_TITLE_MAX',       120 ); // chars — hard error above this
 define( 'RR_TITLE_WARN_MAX',   60 ); // chars — warning above this
@@ -78,6 +83,18 @@ add_action( 'init', function () {
             RMB_PLUGIN_FILE,
             'rankmath-rest-bridge' // GitHub repo slug — must match repo folder name
         );
+    }
+} );
+
+
+// ── Capability provisioning ───────────────────────────────────────────────────
+// Grants RR_REPLACE_ALL_CAP to the administrator role on first load.
+// Stored in the DB with the role, so the write only happens once.
+// To revoke: $role->remove_cap( RR_REPLACE_ALL_CAP ) in a one-time script.
+add_action( 'init', function () {
+    $role = get_role( 'administrator' );
+    if ( $role && ! $role->has_cap( RR_REPLACE_ALL_CAP ) ) {
+        $role->add_cap( RR_REPLACE_ALL_CAP );
     }
 } );
 
@@ -670,10 +687,11 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // MUST be registered BEFORE the {id} wildcard.
+    // @deprecated — prefer per-snippet create/update/delete. Target removal: v3.0.0.
     register_rest_route( 'rankrocket-seo/v1', '/snippets/replace-all', [
         'methods'             => 'POST',
         'callback'            => 'rmb_snippets_replace_all',
-        'permission_callback' => $admin_only,
+        'permission_callback' => function () { return current_user_can( RR_REPLACE_ALL_CAP ); },
         'args' => [
             'snippets' => [ 'required' => true,  'type' => 'array'   ],
             'confirm'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
@@ -1244,6 +1262,7 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
         'ids'           => array_keys( $clean_store ),
         'removed_count' => count( array_diff_key( $before, $clean_store ) ),
         'added_count'   => count( array_diff_key( $clean_store, $before ) ),
+        'deprecated'    => 'This endpoint will be removed in v3.0.0. Use POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} for routine changes.',
     ] );
 }
 

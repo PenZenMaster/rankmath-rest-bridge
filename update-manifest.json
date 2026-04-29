@@ -1,5 +1,5 @@
 {
-  "version": "2.3.0",
-  "zip_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.3.0/rankmath-rest-bridge.zip",
-  "changelog": "v2.3.0: Schema object model (GET+POST /schema/{id}, _rrseo_schema_graph, JSON-LD output); preview/dry-run endpoint; hard validation layer (title/desc length, URL, robots, JSON-LD, allowed types, batch max 20, post type allowlist); audit log (_rrseo_change_log, GET /log/{id}); replace-all now requires confirm:true"
+  "version": "2.3.1",
+  "zip_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.3.1/rankmath-rest-bridge.zip",
+  "changelog": "v2.3.1: replace-all guarded by rrseo_replace_all_snippets custom capability (auto-granted to administrator); deprecation notice in response body; target removal v3.0.0"
 }
