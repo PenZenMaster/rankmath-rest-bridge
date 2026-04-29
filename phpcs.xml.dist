@@ -3,6 +3,7 @@
     <description>WordPress Coding Standards for RankRocket SEO Control Layer.</description>
 
     <file>rankmath-rest-bridge.php</file>
+    <file>includes/</file>
 
     <exclude-pattern>dev-vendor/*</exclude-pattern>
     <exclude-pattern>vendor/*</exclude-pattern>

@@ -1,0 +1,189 @@
+/*
+ * RankRocket SEO — Admin & Meta Box Styles
+ * Shared by admin.js (panel pages) and metabox.js (Edit Post/Page sidebar).
+ * Uses WP admin CSS conventions; no external framework.
+ */
+
+/* ── Overview grid ──────────────────────────────────────────────────────────── */
+.rrseo-overview-grid {
+	display: grid;
+	grid-template-columns: repeat( auto-fill, minmax( 300px, 1fr ) );
+	gap: 16px;
+	margin-top: 16px;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────────── */
+.rrseo-card {
+	background: #fff;
+	border: 1px solid #ccd0d4;
+	border-radius: 4px;
+	padding: 16px 20px;
+}
+.rrseo-card h2,
+.rrseo-card h3 {
+	margin-top: 0;
+	font-size: 14px;
+}
+
+/* ── Info tables (Overview) ──────────────────────────────────────────────────── */
+.rrseo-info-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+.rrseo-info-table th {
+	text-align: left;
+	width: 42%;
+	font-weight: 600;
+	padding: 4px 0;
+	color: #555;
+}
+.rrseo-info-table td {
+	padding: 4px 0;
+}
+
+/* ── Data tables (Posts, Images, Snippets, Sitemap) ─────────────────────────── */
+.rrseo-table {
+	margin-top: 12px;
+}
+.rrseo-table th {
+	font-weight: 600;
+}
+.rrseo-row-excluded {
+	opacity: .65;
+	background: #fff5f5;
+}
+
+/* ── Badges ──────────────────────────────────────────────────────────────────── */
+.rrseo-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 600;
+}
+.rrseo-badge-green  { background: #d4edda; color: #155724; }
+.rrseo-badge-red    { background: #f8d7da; color: #721c24; }
+.rrseo-badge-orange { background: #fff3cd; color: #856404; }
+
+/* ── State messages ──────────────────────────────────────────────────────────── */
+.rrseo-empty   { color: #aaa; font-style: italic; }
+.rrseo-loading { color: #666; }
+.rrseo-error   { color: #dc3545; }
+.rrseo-success { color: #28a745; }
+
+/* ── Tabs (Posts & Pages) ────────────────────────────────────────────────────── */
+.rrseo-tabs {
+	margin: 12px 0 8px;
+}
+.rrseo-tab-btn {
+	background: #f6f7f7;
+	border: 1px solid #ccd0d4;
+	padding: 6px 16px;
+	cursor: pointer;
+	margin-right: 4px;
+	border-radius: 3px;
+	font-size: 13px;
+}
+.rrseo-tab-btn.active {
+	background: #2271b1;
+	color: #fff;
+	border-color: #2271b1;
+}
+
+/* ── Pagination ──────────────────────────────────────────────────────────────── */
+.rrseo-pagination {
+	margin: 12px 0;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+}
+
+/* ── Toolbar (Images filter) ─────────────────────────────────────────────────── */
+.rrseo-toolbar {
+	margin: 8px 0 12px;
+}
+
+/* ── Sitemap summary ─────────────────────────────────────────────────────────── */
+.rrseo-sitemap-summary {
+	margin-bottom: 12px;
+}
+.rrseo-stat {
+	margin-right: 8px;
+}
+
+/* ── llms.txt pre-formatted text ─────────────────────────────────────────────── */
+.rrseo-pre {
+	background: #f6f7f7;
+	border: 1px solid #ddd;
+	border-radius: 3px;
+	padding: 8px 12px;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	font-size: 12px;
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+/* ── Meta box table ──────────────────────────────────────────────────────────── */
+.rrseo-mb-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 12px;
+}
+.rrseo-mb-table th {
+	text-align: left;
+	width: 36%;
+	font-weight: 600;
+	padding: 3px 4px 3px 0;
+	color: #555;
+	vertical-align: top;
+}
+.rrseo-mb-table td {
+	padding: 3px 0;
+	word-break: break-word;
+}
+.rrseo-val {
+	display: block;
+}
+
+/* ── Character count badges (meta box) ──────────────────────────────────────── */
+.rrseo-char {
+	display: inline-block;
+	font-size: 10px;
+	padding: 1px 5px;
+	border-radius: 8px;
+	margin-left: 4px;
+	font-weight: 600;
+}
+.rrseo-char.ok   { background: #d4edda; color: #155724; }
+.rrseo-char.warn { background: #fff3cd; color: #856404; }
+.rrseo-char.over { background: #f8d7da; color: #721c24; }
+.rrseo-char.low  { background: #d1ecf1; color: #0c5460; }
+
+/* ── Meta box audit log ──────────────────────────────────────────────────────── */
+.rrseo-divider {
+	margin: 8px 0;
+	border: none;
+	border-top: 1px solid #eee;
+}
+.rrseo-log-head {
+	margin: 4px 0;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: .05em;
+	color: #666;
+}
+.rrseo-log {
+	margin: 4px 0 0;
+	padding-left: 14px;
+	font-size: 11px;
+	color: #555;
+}
+.rrseo-log li {
+	margin-bottom: 3px;
+}
+.rrseo-log-date {
+	color: #999;
+	margin-right: 4px;
+}
