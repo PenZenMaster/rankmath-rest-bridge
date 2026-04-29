@@ -318,4 +318,67 @@ class CanonicalUrlSetTest extends TestCase {
 		$this->assertStringEndsWith( '...', $result );
 		$this->assertStringNotContainsString( "\xe2\x80\xa6", $result ); // UTF-8 ellipsis
 	}
+
+	// ── rr_get_discovery_description() — first-paragraph fallback ────────────────
+
+	/**
+	 * Regression test for the first-paragraph fallback bug:
+	 * rr_normalize_description_text() collapses whitespace before paragraph splitting,
+	 * so splitting on double-space after normalization always returns one element.
+	 * The fix splits on paragraph boundaries in the RAW content first.
+	 */
+	public function test_first_paragraph_uses_content_when_no_seo_desc_or_excerpt(): void {
+		$post              = $this->makePost( 200, 'content-post' );
+		$post->post_content = "First paragraph with enough useful text here.\n\nSecond paragraph that should not be used.";
+		$post->post_excerpt = '';
+
+		$result = rr_get_discovery_description( $post );
+		$this->assertSame( 'first_paragraph', $result['source'] );
+		$this->assertStringContainsString( 'First paragraph', $result['description'] );
+		$this->assertStringNotContainsString( 'Second', $result['description'] );
+		$this->assertNull( $result['warning'] );
+	}
+
+	public function test_first_paragraph_works_with_html_paragraph_tags(): void {
+		$post              = $this->makePost( 201, 'html-post' );
+		$post->post_content = '<p>First paragraph from block editor content.</p><p>Second block content here.</p>';
+		$post->post_excerpt = '';
+
+		$result = rr_get_discovery_description( $post );
+		$this->assertSame( 'first_paragraph', $result['source'] );
+		$this->assertStringContainsString( 'First paragraph', $result['description'] );
+		$this->assertNull( $result['warning'] );
+	}
+
+	public function test_thin_description_warning_when_content_is_empty(): void {
+		$post               = $this->makePost( 202, 'empty-post' );
+		$post->post_content = '';
+		$post->post_excerpt = '';
+		$post->post_title   = 'My Page Title';
+
+		$result = rr_get_discovery_description( $post );
+		$this->assertSame( 'title', $result['source'] );
+		$this->assertSame( 'thin_description', $result['warning'] );
+	}
+
+	public function test_seo_description_takes_priority_over_content(): void {
+		$post              = $this->makePost( 203, 'full-post' );
+		$post->post_content = "Long content that should not be used.\n\nSecond paragraph.";
+		$post->post_excerpt = 'Excerpt should also not be used.';
+		$GLOBALS['_test_post_meta'][203]['rr_seo_description'] = 'Explicit SEO description wins.';
+
+		$result = rr_get_discovery_description( $post );
+		$this->assertSame( 'rrseo_description', $result['source'] );
+		$this->assertSame( 'Explicit SEO description wins.', $result['description'] );
+	}
+
+	public function test_excerpt_takes_priority_over_content(): void {
+		$post              = $this->makePost( 204, 'excerpt-post' );
+		$post->post_content = "Content paragraph that should not be used.\n\nSecond.";
+		$post->post_excerpt = 'This excerpt should be used instead of content.';
+
+		$result = rr_get_discovery_description( $post );
+		$this->assertSame( 'excerpt', $result['source'] );
+		$this->assertStringContainsString( 'excerpt should be used', $result['description'] );
+	}
 }

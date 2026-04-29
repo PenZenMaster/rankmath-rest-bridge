@@ -232,16 +232,19 @@ function rr_get_discovery_description( WP_Post $post, int $max = 240 ): array {
 	}
 
 	// 3. First meaningful paragraph from content.
+	// Split on paragraph boundaries in the RAW content before any normalization —
+	// rr_normalize_description_text() collapses all whitespace including newlines to
+	// single spaces, so splitting after normalization always yields one element.
 	if ( '' !== $post->post_content ) {
-		$text  = rr_normalize_description_text( $post->post_content );
-		$lines = array_filter( explode( ' ', $text ) ); // rough first-sentence proxy via words
-		// Use the normalized text directly — split on double-space as paragraph boundary.
-		$paras = preg_split( '/\s{2,}/', $text );
-		$first = '';
-		foreach ( $paras as $para ) {
-			$para = trim( $para );
-			if ( strlen( $para ) >= 20 ) { // Ignore very short fragments.
-				$first = $para;
+		$raw_paras = preg_split(
+			'/\r?\n\s*\r?\n|<\/p\s*>|<br\s*\/?>\s*<br\s*\/?>/',
+			$post->post_content
+		);
+		$first     = '';
+		foreach ( $raw_paras as $raw_para ) {
+			$cleaned = rr_normalize_description_text( $raw_para );
+			if ( strlen( $cleaned ) >= 20 ) {
+				$first = $cleaned;
 				break;
 			}
 		}

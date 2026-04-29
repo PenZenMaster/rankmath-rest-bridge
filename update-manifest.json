@@ -1,8 +1,8 @@
 {
   "name": "RankRocket SEO Control Layer",
   "slug": "rankmath-rest-bridge",
-  "version": "2.9.1",
-  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.9.1/rankmath-rest-bridge.zip",
+  "version": "2.9.2",
+  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.9.2/rankmath-rest-bridge.zip",
   "author": "Rank Rocket Co.",
   "author_homepage": "https://rankrocket.co",
   "homepage": "https://rankrocket.co",
@@ -11,6 +11,6 @@
   "tested": "6.7",
   "sections": {
     "description": "Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, robots.txt, cache purge, and self-updates.",
-    "changelog": "v2.9.1: Force Update Check button in admin Overview; POST /check-updates endpoint clears PUC + WP update transients; PUC check period filterable via rrseo_puc_check_period_hours; admin llms.txt tab shows full config (business_facts, sections classifier, exclude_patterns) with live preview panel.\nv2.9.0: Section classifier, /llms/preview, _rrseo_llms_section meta, expanded /llms config.\nv2.8.0: Shared Canonical URL Set."
+    "changelog": "v2.9.2: Legacy rankmath-bridge/v1 namespace alias via rest_pre_dispatch proxy; register_post_meta for _rrseo_llms_section (show_in_rest, sanitize, auth); fix first-paragraph description fallback bug where content was normalized before paragraph splitting.\nv2.9.1: Force Update Check button + POST /check-updates; admin llms.txt config tab rebuilt.\nv2.9.0: Section classifier, /llms/preview, _rrseo_llms_section meta."
   }
 }

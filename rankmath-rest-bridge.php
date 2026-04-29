@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.9.1
+ * Version:      2.9.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.9.1' );
+define( 'RMB_VERSION', '2.9.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -170,6 +170,32 @@ add_action(
 	}
 );
 
+// ── Post meta registration ────────────────────────────────────────────────────
+// Registers _rrseo_llms_section as a first-class WordPress meta key so it is
+// discoverable via show_in_rest, sanitized by the meta layer, and visible in
+// REST /wp/v2/posts responses.
+add_action(
+	'init',
+	function () {
+		$post_types = apply_filters( 'rrseo_metabox_post_types', array( 'post', 'page' ) );
+		foreach ( $post_types as $post_type ) {
+			register_post_meta(
+				$post_type,
+				META_LLMS_SECTION,
+				array(
+					'type'              => 'string',
+					'single'            => true,
+					'show_in_rest'      => true,
+					'sanitize_callback' => 'sanitize_text_field',
+					'auth_callback'     => function () {
+						return current_user_can( 'manage_options' );
+					},
+				)
+			);
+		}
+	}
+);
+
 
 // ── Output managed snippets ───────────────────────────────────────────────────
 /**
@@ -260,6 +286,59 @@ add_action( 'delete_post', 'rr_invalidate_canonical_cache' );
 add_action( 'transition_post_status', 'rr_invalidate_canonical_cache' );
 add_action( 'update_option_' . RR_LLMS_CONFIG_KEY, 'rr_invalidate_canonical_cache' );
 add_action( 'update_option_rrseo_robots_txt', 'rr_invalidate_canonical_cache' );
+
+// ── Legacy namespace alias ────────────────────────────────────────────────────
+// Intercepts REST requests to /rankmath-bridge/v1/... (the original namespace
+// before the v2.2.0 rename) and re-dispatches them to /rankrocket-seo/v1/...
+// using the same method and body. Appends a _deprecated field to every response
+// so callers know they need to update their base URL.
+// Uses rest_pre_dispatch so WordPress never tries to match the old namespace
+// against registered routes — no duplicate route registrations needed.
+add_filter(
+	'rest_pre_dispatch',
+	'rr_legacy_namespace_proxy',
+	10,
+	3
+);
+
+/**
+ * Re-dispatches legacy rankmath-bridge/v1 requests to rankrocket-seo/v1.
+ *
+ * @param mixed           $result  Pre-dispatch result (null when not short-circuited).
+ * @param WP_REST_Server  $server  The REST server instance.
+ * @param WP_REST_Request $request Incoming request object.
+ * @return mixed WP_REST_Response for old-namespace requests; original $result otherwise.
+ */
+function rr_legacy_namespace_proxy( $result, WP_REST_Server $server, WP_REST_Request $request ) {
+	$route      = $request->get_route();
+	$old_prefix = '/rankmath-bridge/v1';
+
+	if ( 0 !== strpos( $route, $old_prefix ) ) {
+		return $result;
+	}
+
+	$new_route   = '/rankrocket-seo/v1' . substr( $route, strlen( $old_prefix ) );
+	$new_request = new WP_REST_Request( $request->get_method(), $new_route );
+	$new_request->set_query_params( $request->get_query_params() );
+	$new_request->set_body( $request->get_body() );
+	$new_request->set_headers( $request->get_headers() );
+
+	$response = $server->dispatch( $new_request );
+
+	if ( is_a( $response, 'WP_REST_Response' ) ) {
+		$data = $response->get_data();
+		if ( is_array( $data ) ) {
+			$data['_deprecated'] = array(
+				'deprecated_namespace' => 'rankmath-bridge/v1',
+				'preferred_namespace'  => 'rankrocket-seo/v1',
+				'message'              => 'This namespace was renamed in v2.2.0. Update your client to use rankrocket-seo/v1.',
+			);
+			$response->set_data( $data );
+		}
+	}
+
+	return $response;
+}
 
 // ── robots.txt override ───────────────────────────────────────────────────────
 // Priority 99 to run after other plugins. Only applies when WordPress is serving
