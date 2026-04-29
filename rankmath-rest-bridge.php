@@ -2,7 +2,7 @@
 /**
  * Plugin Name:  RankRocket SEO Control Layer
  * Description:  Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. Reads legacy rank_math_* post-meta as a migration fallback; RankMath not required.
- * Version:      2.4.0
+ * Version:      2.4.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.4.0' );
+define( 'RMB_VERSION',      '2.4.1' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -143,23 +143,27 @@ function rmb_output_snippets( $location ) {
 }
 
 
-// ── SEO meta output (native rr_seo_* keys; rank_math_* read as migration fallback) ──
+// ── Document <title> override ─────────────────────────────────────────────────
+// Must be registered at plugin-load time, NOT inside a wp_head callback.
+// WordPress core hooks _wp_render_title_tag() to wp_head at priority 1, and it
+// was registered before this plugin loaded, so it always fires first at priority 1.
+// Any add_filter( 'pre_get_document_title', ... ) call made inside a same-priority
+// wp_head callback therefore runs after the <title> has already been rendered.
+// Registering here guarantees the filter is in place when _wp_render_title_tag() runs.
+add_filter( 'pre_get_document_title', 'rr_override_document_title', 20 );
+
+// ── SEO meta output — description, robots, OG tags ───────────────────────────
+// Title is handled above via pre_get_document_title; only echoed tags go here.
 add_action( 'wp_head', function () {
-    if ( class_exists( 'RankMath' ) ) return; // RankMath handles it
+    if ( class_exists( 'RankMath' ) ) return; // RankMath handles its own meta
 
     if ( ! is_singular() ) return;
     $post_id = get_queried_object_id();
 
-    $title  = rr_get_seo_meta( $post_id, 'title' );
     $desc   = rr_get_seo_meta( $post_id, 'description' );
     $robots = rr_get_seo_meta( $post_id, 'robots' );
+    $desc   = rmb_resolve_tokens( $desc, $post_id );
 
-    $title = rmb_resolve_tokens( $title, $post_id );
-    $desc  = rmb_resolve_tokens( $desc,  $post_id );
-
-    if ( $title ) {
-        add_filter( 'pre_get_document_title', function() use ( $title ) { return $title; } );
-    }
     if ( $desc ) {
         echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
     }
@@ -209,6 +213,20 @@ function rmb_resolve_tokens( $str, $post_id ) {
         '%excerpt%'  => $post ? wp_trim_words( $post->post_excerpt ?: $post->post_content, 20 ) : '',
     ];
     return str_replace( array_keys( $tokens ), array_values( $tokens ), $str );
+}
+
+
+// ── Document title override callback ─────────────────────────────────────────
+// Called by pre_get_document_title (registered at plugin load — see above).
+// Returns the stored rr_seo_title for singular posts; otherwise passes through
+// WordPress's default title so archives, search, and 404 pages are unaffected.
+function rr_override_document_title( $title ) {
+    if ( class_exists( 'RankMath' ) ) return $title;
+    if ( ! is_singular() ) return $title;
+    $post_id   = get_queried_object_id();
+    $seo_title = rr_get_seo_meta( $post_id, 'title' );
+    if ( ! $seo_title ) return $title;
+    return rmb_resolve_tokens( $seo_title, $post_id );
 }
 
 

@@ -1,8 +1,8 @@
 {
   "name": "RankRocket SEO Control Layer",
   "slug": "rankmath-rest-bridge",
-  "version": "2.4.0",
-  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.4.0/rankmath-rest-bridge.zip",
+  "version": "2.4.1",
+  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.4.1/rankmath-rest-bridge.zip",
   "author": "Rank Rocket Co.",
   "author_homepage": "https://rankrocket.co",
   "homepage": "https://rankrocket.co",
@@ -11,6 +11,6 @@
   "tested": "6.7",
   "sections": {
     "description": "Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates.",
-    "changelog": "v2.4.0: POST /migrate-legacy endpoint — batch-copy rank_math_* values into rr_seo_* keys per post, with dry_run support and audit log writes.\nv2.3.1: replace-all guarded by rrseo_replace_all_snippets custom capability; deprecation notice added.\nv2.3.0: Schema model, preview endpoint, validation layer, audit log."
+    "changelog": "v2.4.1: Fix document title override — pre_get_document_title filter now registered at plugin-load time instead of inside wp_head, ensuring it fires before WordPress core's _wp_render_title_tag() at priority 1.\nv2.4.0: POST /migrate-legacy endpoint with dry_run support and audit log.\nv2.3.1: replace-all guarded by rrseo_replace_all_snippets custom capability."
   }
 }

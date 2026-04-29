@@ -33,9 +33,6 @@
         </properties>
     </rule>
 
-    <!-- Short-array syntax is fine with PHP 7.4 target. -->
-    <rule ref="Generic.Arrays.DisallowShortArraySyntax" />
-
     <!-- Nonce checks on REST endpoints are handled by WP's permission callback, not inline. -->
     <rule ref="WordPress.Security.NonceVerification.Missing">
         <exclude-pattern>rankmath-rest-bridge.php</exclude-pattern>
