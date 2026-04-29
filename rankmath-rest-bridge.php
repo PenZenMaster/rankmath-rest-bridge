@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.8.0
+ * Version:      2.9.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.8.0' );
+define( 'RMB_VERSION', '2.9.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -116,10 +116,16 @@ define( 'RR_LLMS_CONFIG_KEY', 'rrseo_llms_config' );
 // robots.txt directive config option key.
 define( 'RR_ROBOTS_CONFIG_KEY', 'rrseo_robots_config' );
 
+// Post meta key for per-post llms.txt section override (set via POST /update or /meta/bulk-update).
+define( 'META_LLMS_SECTION', '_rrseo_llms_section' );
+
 
 // ── Canonical URL Set helper ──────────────────────────────────────────────────
 // Loaded unconditionally — required by sitemaps, llms.txt, and REST preview endpoints.
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-canonical.php';
+
+// ── llms.txt generator (section classifier, business_facts, renderer) ─────────
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-llms.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -243,6 +249,15 @@ function rmb_output_snippets( $location ) {
 // wp_head callback therefore runs after the <title> has already been rendered.
 // Registering here guarantees the filter is in place when _wp_render_title_tag() runs.
 add_filter( 'pre_get_document_title', 'rr_override_document_title', 20 );
+
+// ── Canonical URL count cache invalidation ────────────────────────────────────
+// Clears the rrseo_canonical_counts transient whenever site content changes so
+// /status?include_counts=true always reflects the current canonical URL set.
+add_action( 'save_post', 'rr_invalidate_canonical_cache' );
+add_action( 'delete_post', 'rr_invalidate_canonical_cache' );
+add_action( 'transition_post_status', 'rr_invalidate_canonical_cache' );
+add_action( 'update_option_' . RR_LLMS_CONFIG_KEY, 'rr_invalidate_canonical_cache' );
+add_action( 'update_option_rrseo_robots_txt', 'rr_invalidate_canonical_cache' );
 
 // ── robots.txt override ───────────────────────────────────────────────────────
 // Priority 99 to run after other plugins. Only applies when WordPress is serving
@@ -370,6 +385,16 @@ function rr_override_document_title( $title ) {
 		return $title;
 	}
 	return rmb_resolve_tokens( $seo_title, $post_id );
+}
+
+
+// ── Canonical cache helper ────────────────────────────────────────────────────
+/**
+ * Deletes the cached canonical URL counts transient.
+ * Hooked to save_post, delete_post, transition_post_status, and option updates.
+ */
+function rr_invalidate_canonical_cache(): void {
+	delete_transient( 'rrseo_canonical_counts' );
 }
 
 
@@ -602,68 +627,11 @@ function rmb_serve_llms_txt() {
 	header( 'Content-Type: text/plain; charset=UTF-8' );
 	header( 'Cache-Control: no-cache' );
 
-	$site_name = get_bloginfo( 'name' );
-	$tagline   = get_bloginfo( 'description' );
-	// Read both the new and legacy config keys (migration path).
-	$stored   = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
-	$max_desc = isset( $stored['max_description_chars'] ) ? (int) $stored['max_description_chars'] : 240;
-
-	$lines   = array();
-	$lines[] = "# {$site_name}";
-	if ( $tagline ) {
-		$lines[] = "> {$tagline}";
-	}
-	$lines[] = '';
-
-	if ( ! empty( $stored['intro'] ) ) {
-		$lines[] = $stored['intro'];
-		$lines[] = '';
-	}
-
-	// Use the shared Canonical URL Set — consistent filtering with sitemap and preview.
-	$pages_canonical = rr_get_canonical_url_set(
-		array(
-			'post_types'      => array( 'page' ),
-			'max_description' => $max_desc,
-		)
-	);
-	$posts_canonical = rr_get_canonical_url_set(
-		array(
-			'post_types'      => array( 'post' ),
-			'max_description' => $max_desc,
-		)
-	);
-
-	if ( ! empty( $pages_canonical['urls'] ) ) {
-		$lines[] = '## Pages';
-		foreach ( $pages_canonical['urls'] as $entry ) {
-			$desc    = '' !== $entry['description'] ? ': ' . $entry['description'] : '';
-			$lines[] = '- [' . $entry['title'] . '](' . $entry['url'] . ')' . $desc;
-		}
-		$lines[] = '';
-	}
-
-	if ( ! empty( $posts_canonical['urls'] ) ) {
-		$lines[] = '## Blog Posts';
-		foreach ( $posts_canonical['urls'] as $entry ) {
-			$desc    = '' !== $entry['description'] ? ': ' . $entry['description'] : '';
-			$lines[] = '- [' . $entry['title'] . '](' . $entry['url'] . ')' . $desc;
-		}
-		$lines[] = '';
-	}
-
-	if ( ! empty( $stored['sections'] ) && is_array( $stored['sections'] ) ) {
-		foreach ( $stored['sections'] as $section ) {
-			$lines[] = '## ' . ( $section['heading'] ?? 'More' );
-			foreach ( ( $section['items'] ?? array() ) as $item ) {
-				$lines[] = '- ' . $item;
-			}
-			$lines[] = '';
-		}
-	}
+	$config = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
+	$result = rr_render_llms_txt( $config );
 
 	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Plain-text llms.txt; content is site-admin-controlled.
-	echo implode( "\n", $lines );
+	echo $result['content'];
 }
 
 
@@ -1082,17 +1050,24 @@ add_action(
 			'rankrocket-seo/v1',
 			'/images/(?P<id>\d+)/alt',
 			array(
-				'methods'             => 'POST',
-				'callback'            => 'rmb_image_set_alt',
-				'permission_callback' => $admin_only,
-				'args'                => array(
-					'id'  => array(
-						'required' => true,
-						'type'     => 'integer',
-					),
-					'alt' => array(
-						'required' => true,
-						'type'     => 'string',
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_image_get_alt',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_image_set_alt',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'id'  => array(
+							'required' => true,
+							'type'     => 'integer',
+						),
+						'alt' => array(
+							'required' => true,
+							'type'     => 'string',
+						),
 					),
 				),
 			)
@@ -1129,14 +1104,73 @@ add_action(
 					'callback'            => 'rmb_llms_set_config',
 					'permission_callback' => $admin_only,
 					'args'                => array(
-						'intro'    => array(
+						'intro'                 => array(
 							'required' => false,
 							'type'     => 'string',
 						),
-						'sections' => array(
+						'sections'              => array(
+							'required' => false,
+							'type'     => 'object',
+						),
+						'custom_sections'       => array(
 							'required' => false,
 							'type'     => 'array',
 						),
+						'business_facts'        => array(
+							'required' => false,
+							'type'     => 'object',
+						),
+						'schema_source_post_id' => array(
+							'required' => false,
+							'type'     => 'integer',
+						),
+						'include_sitemaps'      => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'include_lastmod'       => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'exclude_noindex'       => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'exclude_utility_pages' => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'exclude_patterns'      => array(
+							'required' => false,
+							'type'     => 'array',
+						),
+						'group_by_intent'       => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'max_description_chars' => array(
+							'required' => false,
+							'type'     => 'integer',
+						),
+					),
+				),
+			)
+		);
+
+		// ── llms.txt preview ──────────────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/llms/preview',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_llms_preview',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'format' => array(
+						'required' => false,
+						'type'     => 'string',
+						'enum'     => array( 'json', 'text' ),
+						'default'  => 'json',
 					),
 				),
 			)
@@ -1367,6 +1401,29 @@ function rmb_update_meta( WP_REST_Request $request ) {
 		);
 	}
 
+	// Handle llms_section classification meta (outside RR_SEO_META_KEYS — different validation).
+	$section = $request->get_param( 'llms_section' );
+	if ( null !== $section ) {
+		$before_section = get_post_meta( $post_id, META_LLMS_SECTION, true );
+		if ( '' === $section ) {
+			delete_post_meta( $post_id, META_LLMS_SECTION );
+			$audit_changes['llms_section'] = array(
+				'before' => $before_section,
+				'after'  => '',
+			);
+		} else {
+			$section_validation = rr_validate_llms_section( sanitize_text_field( $section ) );
+			if ( is_wp_error( $section_validation ) ) {
+				return $section_validation;
+			}
+			update_post_meta( $post_id, META_LLMS_SECTION, sanitize_text_field( $section ) );
+			$audit_changes['llms_section'] = array(
+				'before' => $before_section,
+				'after'  => $section,
+			);
+		}
+	}
+
 	wp_cache_delete( $post_id, 'post_meta' );
 	clean_post_cache( $post_id );
 
@@ -1405,10 +1462,32 @@ function rmb_get_meta( WP_REST_Request $request ) {
 	$thumb_id                    = get_post_thumbnail_id( $post_id );
 	$meta['_featured_image_url'] = $thumb_id ? wp_get_attachment_image_url( $thumb_id, 'large' ) : '';
 
+	// llms.txt section classification metadata.
+	$stored_section    = get_post_meta( $post_id, META_LLMS_SECTION, true );
+	$config            = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
+	$sections_config   = ( ! empty( $config['sections'] ) && is_array( $config['sections'] ) && ! isset( $config['sections'][0] ) )
+		? $config['sections']
+		: array();
+	$section_warnings  = array();
+	$effective_section = $stored_section;
+	if ( '' !== $stored_section && ! empty( $sections_config ) && ! isset( $sections_config[ $stored_section ] ) ) {
+		// Stale key — report it.
+		$effective_section  = '';
+		$section_warnings[] = array(
+			'code'              => 'stale_section_key',
+			'stored_section'    => $stored_section,
+			'effective_section' => '',
+			'message'           => 'Stored llms_section is not present in current llms section config.',
+		);
+	}
+
 	return rest_ensure_response(
 		array(
-			'post_id' => $post_id,
-			'meta'    => $meta,
+			'post_id'                => $post_id,
+			'meta'                   => $meta,
+			'llms_section'           => $stored_section,
+			'effective_llms_section' => $effective_section,
+			'llms_warnings'          => $section_warnings,
 		)
 	);
 }
@@ -1437,11 +1516,14 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
 			$meta[ $native_key ] = rr_get_seo_meta( $pid, $field );
 		}
 		$meta['rr_seo_score'] = get_post_meta( $pid, 'rank_math_seo_score', true );
+		$stored_section       = get_post_meta( $pid, META_LLMS_SECTION, true );
 		$results[]            = array(
-			'post_id' => $pid,
-			'slug'    => $post->post_name,
-			'title'   => get_the_title( $post ),
-			'meta'    => $meta,
+			'post_id'                => $pid,
+			'slug'                   => $post->post_name,
+			'title'                  => get_the_title( $post ),
+			'meta'                   => $meta,
+			'llms_section'           => $stored_section,
+			'effective_llms_section' => $stored_section,
 		);
 	}
 	return rest_ensure_response(
@@ -1502,6 +1584,28 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 				'before' => $before ? $before : '',
 				'after'  => $sanitized,
 			);
+		}
+
+		// Handle llms_section per-item if provided.
+		$item_section = isset( $upd['llms_section'] ) ? $upd['llms_section'] : null;
+		if ( null !== $item_section ) {
+			$before_section = get_post_meta( $post_id, META_LLMS_SECTION, true );
+			if ( '' === $item_section ) {
+				delete_post_meta( $post_id, META_LLMS_SECTION );
+				$audit_changes['llms_section'] = array(
+					'before' => $before_section,
+					'after'  => '',
+				);
+			} else {
+				$sv = rr_validate_llms_section( sanitize_text_field( $item_section ) );
+				if ( ! is_wp_error( $sv ) ) {
+					update_post_meta( $post_id, META_LLMS_SECTION, sanitize_text_field( $item_section ) );
+					$audit_changes['llms_section'] = array(
+						'before' => $before_section,
+						'after'  => $item_section,
+					);
+				}
+			}
 		}
 
 		wp_cache_delete( $post_id, 'post_meta' );
@@ -1755,8 +1859,43 @@ function rmb_image_set_alt( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
+/**
+ * Handles GET /images/{id}/alt — returns current ALT text for a single attachment.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_image_get_alt( WP_REST_Request $request ) {
+	$id   = intval( $request->get_param( 'id' ) );
+	$post = get_post( $id );
+	if ( ! $post ) {
+		return new WP_Error( 'not_found', 'Attachment not found', array( 'status' => 404 ) );
+	}
+	return rest_ensure_response(
+		array(
+			'id'       => $id,
+			'url'      => wp_get_attachment_url( $id ),
+			'filename' => basename( get_attached_file( $id ) ),
+			'alt'      => get_post_meta( $id, '_wp_attachment_image_alt', true ),
+			'title'    => get_the_title( $post ),
+			'caption'  => $post->post_excerpt,
+		)
+	);
+}
+
+/**
+ * Handles POST /images/bulk-alt — sets ALT text for multiple attachments.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
 function rmb_images_bulk_alt( WP_REST_Request $request ) {
 	$updates = $request->get_param( 'updates' );
+
+	if ( count( $updates ) > RR_BATCH_MAX ) {
+		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . RR_BATCH_MAX, array( 'status' => 422 ) );
+	}
+
 	$results = array();
 
 	foreach ( $updates as $upd ) {
@@ -1985,15 +2124,50 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 	// Read from the new key first; migrate legacy config if new key is absent.
 	$config = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
 
-	$intro = $request->get_param( 'intro' );
-	if ( null !== $intro ) {
-		$config['intro'] = sanitize_textarea_field( $intro );
+	// Simple scalar / text fields.
+	$scalar_fields = array( 'intro', 'max_description_chars', 'schema_source_post_id' );
+	foreach ( $scalar_fields as $field ) {
+		$val = $request->get_param( $field );
+		if ( null !== $val ) {
+			$config[ $field ] = 'intro' === $field ? sanitize_textarea_field( $val ) : (int) $val;
+		}
 	}
 
+	// Boolean flags.
+	$bool_fields = array( 'include_sitemaps', 'include_lastmod', 'exclude_noindex', 'exclude_utility_pages', 'group_by_intent' );
+	foreach ( $bool_fields as $field ) {
+		$val = $request->get_param( $field );
+		if ( null !== $val ) {
+			$config[ $field ] = (bool) $val;
+		}
+	}
+
+	// sections (object form — URL classifier config).
 	$sections = $request->get_param( 'sections' );
-	if ( null !== $sections && is_array( $sections ) ) {
+	if ( null !== $sections && is_array( $sections ) && ! isset( $sections[0] ) ) {
 		$config['sections'] = $sections;
 	}
+
+	// custom_sections (array of {heading, items} text blocks — legacy).
+	$custom_sections = $request->get_param( 'custom_sections' );
+	if ( null !== $custom_sections && is_array( $custom_sections ) ) {
+		$config['custom_sections'] = $custom_sections;
+	}
+
+	// exclude_patterns (array of URL path strings).
+	$patterns = $request->get_param( 'exclude_patterns' );
+	if ( null !== $patterns && is_array( $patterns ) ) {
+		$config['exclude_patterns'] = array_map( 'sanitize_text_field', $patterns );
+	}
+
+	// business_facts (object).
+	$facts = $request->get_param( 'business_facts' );
+	if ( null !== $facts && is_array( $facts ) ) {
+		$config['business_facts'] = $facts;
+	}
+
+	// Invalidate the canonical counts transient after config change.
+	rr_invalidate_canonical_cache();
 
 	// Write to the new canonical key; the legacy key is no longer updated.
 	update_option( RR_LLMS_CONFIG_KEY, $config );
@@ -2350,7 +2524,7 @@ function rmb_cache_purge( WP_REST_Request $request ) { // phpcs:ignore Generic.C
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_status( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_status( WP_REST_Request $request ) {
 	$snippets             = get_option( RMB_SNIPPETS_KEY, array() );
 	$rankmath_on          = class_exists( 'RankMath' );
 	$site_url             = rtrim( get_bloginfo( 'url' ), '/' );
@@ -2364,27 +2538,49 @@ function rmb_status( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAn
 		);
 	}
 
-	return rest_ensure_response(
-		array(
-			'plugin'                     => 'RankRocket SEO Control Layer',
-			'version'                    => RMB_VERSION,
-			'namespace'                  => 'rankrocket-seo/v1',
-			'rankmath_active'            => $rankmath_on,
-			'sitemap_index_url'          => $site_url . '/sitemap_index.xml',
-			'legacy_sitemap_url'         => $site_url . '/rmb-sitemap.xml',
-			'llms_url'                   => $site_url . '/llms.txt',
-			'robots_txt_url'             => $site_url . '/robots.txt',
-			'physical_robots_txt_exists' => $physical_robots_file,
-			'snippet_count'              => count( $snippets ),
-			'snippet_ids'                => array_keys( $snippets ),
-			'update_url'                 => RMB_UPDATE_URL,
-			'php_version'                => PHP_VERSION,
-			'wp_version'                 => get_bloginfo( 'version' ),
-			'allowed_post_types'         => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
-			'allowed_schema_types'       => apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
-			'warnings'                   => $status_warnings,
-		)
+	$response = array(
+		'plugin'                     => 'RankRocket SEO Control Layer',
+		'version'                    => RMB_VERSION,
+		'namespace'                  => 'rankrocket-seo/v1',
+		'rankmath_active'            => $rankmath_on,
+		'sitemap_index_url'          => $site_url . '/sitemap_index.xml',
+		'legacy_sitemap_url'         => $site_url . '/rmb-sitemap.xml',
+		'llms_url'                   => $site_url . '/llms.txt',
+		'robots_txt_url'             => $site_url . '/robots.txt',
+		'physical_robots_txt_exists' => $physical_robots_file,
+		'snippet_count'              => count( $snippets ),
+		'snippet_ids'                => array_keys( $snippets ),
+		'update_url'                 => RMB_UPDATE_URL,
+		'php_version'                => PHP_VERSION,
+		'wp_version'                 => get_bloginfo( 'version' ),
+		'allowed_post_types'         => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
+		'allowed_schema_types'       => apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
+		'warnings'                   => $status_warnings,
 	);
+
+	// Optional canonical URL counts — transient-cached; computed on demand only.
+	if ( $request->get_param( 'include_counts' ) ) {
+		$counts = get_transient( 'rrseo_canonical_counts' );
+		if ( false === $counts ) {
+			$canonical = rr_get_canonical_url_set();
+			$counts    = array(
+				'canonical_url_count' => count( $canonical['urls'] ),
+				'excluded_url_count'  => count( $canonical['excluded'] ),
+				'llms_url_count'      => count( $canonical['urls'] ),
+			);
+			set_transient( 'rrseo_canonical_counts', $counts, 12 * HOUR_IN_SECONDS );
+		}
+		$response = array_merge( $response, $counts );
+
+		if ( $counts['canonical_url_count'] !== $counts['llms_url_count'] ) {
+			$response['warnings'][] = array(
+				'code'    => 'canonical_llms_mismatch',
+				'message' => 'Canonical URL count and llms URL count differ.',
+			);
+		}
+	}
+
+	return rest_ensure_response( $response );
 }
 
 

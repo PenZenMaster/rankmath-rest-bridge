@@ -1,8 +1,8 @@
 {
   "name": "RankRocket SEO Control Layer",
   "slug": "rankmath-rest-bridge",
-  "version": "2.8.0",
-  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.8.0/rankmath-rest-bridge.zip",
+  "version": "2.9.0",
+  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.9.0/rankmath-rest-bridge.zip",
   "author": "Rank Rocket Co.",
   "author_homepage": "https://rankrocket.co",
   "homepage": "https://rankrocket.co",
@@ -11,6 +11,6 @@
   "tested": "6.7",
   "sections": {
     "description": "Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, robots.txt, cache purge, and self-updates.",
-    "changelog": "v2.8.0: Shared Canonical URL Set (rr_get_canonical_url_set) — sitemap, llms.txt, and sitemap preview now use one shared URL set with consistent noindex/utility/duplicate-suffix filtering. robots.txt ensure_sitemap_directive flag. /status expanded with sitemap_index_url, physical_robots_txt_exists, warnings.\nv2.7.0: GET/POST /robots-txt endpoint.\nv2.6.0: Styled sitemaps + per-type sub-sitemaps."
+    "changelog": "v2.9.0: Section classifier for llms.txt grouping; GET /llms/preview; _rrseo_llms_section per-post meta; expanded /llms config (business_facts, sections, exclude_patterns); GET /images/{id}/alt; batch cap on /images/bulk-alt; /status?include_counts=true with transient cache.\nv2.8.0: Shared Canonical URL Set.\nv2.7.0: GET/POST /robots-txt."
   }
 }
