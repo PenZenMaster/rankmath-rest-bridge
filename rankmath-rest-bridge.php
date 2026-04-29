@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name:  RankRocket SEO
- * Description:  Full-stack SEO management plugin for the RankRocket remediation pipeline. Handles title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. RankMath not required.
- * Version:      2.1.4
+ * Plugin Name:  RankRocket SEO Control Layer
+ * Description:  Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates. Reads legacy rank_math_* post-meta as a migration fallback; RankMath not required.
+ * Version:      2.2.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -11,22 +11,43 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'RMB_VERSION',      '2.1.4' );
+define( 'RMB_VERSION',      '2.2.0' );
 define( 'RMB_PLUGIN_FILE',  __FILE__ );
 define( 'RMB_PLUGIN_DIR',   plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
 define( 'RMB_UPDATE_URL',   'https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/update-manifest.json' );
 
+// Native post-meta keys written by this plugin.
+define( 'RR_SEO_META_KEYS', [
+    'title'          => 'rr_seo_title',
+    'description'    => 'rr_seo_description',
+    'focus_keyword'  => 'rr_seo_focus_keyword',
+    'robots'         => 'rr_seo_robots',
+    'og_title'       => 'rr_seo_og_title',
+    'og_description' => 'rr_seo_og_description',
+    'og_image'       => 'rr_seo_og_image',
+] );
+
+// Legacy RankMath keys — read-only migration fallback when native key is absent.
+define( 'RR_SEO_LEGACY_META_KEYS', [
+    'title'          => 'rank_math_title',
+    'description'    => 'rank_math_description',
+    'focus_keyword'  => 'rank_math_focus_keyword',
+    'robots'         => 'rank_math_robots',
+    'og_title'       => 'rank_math_og_title',
+    'og_description' => 'rank_math_og_description',
+    'og_image'       => 'rank_math_og_image',
+] );
+
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
 add_action( 'init', function () {
-    // Plugin update checker
     $puc_loader = RMB_PLUGIN_DIR . 'vendor/plugin-update-checker/plugin-update-checker.php';
     if ( file_exists( $puc_loader ) ) {
         require_once $puc_loader;
         $checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
             RMB_UPDATE_URL,
             RMB_PLUGIN_FILE,
-            'rankmath-rest-bridge'
+            'rankmath-rest-bridge' // GitHub repo slug — must match repo folder name
         );
     }
 } );
@@ -74,23 +95,22 @@ function rmb_output_snippets( $location ) {
     }
 }
 
-// ── SEO meta output (when RankMath is inactive) ───────────────────────────────
+// ── SEO meta output (native rr_seo_* keys; rank_math_* read as migration fallback) ──
 add_action( 'wp_head', function () {
     if ( class_exists( 'RankMath' ) ) return; // RankMath handles it
 
     if ( ! is_singular() ) return;
     $post_id = get_queried_object_id();
 
-    $title = get_post_meta( $post_id, 'rank_math_title', true );
-    $desc  = get_post_meta( $post_id, 'rank_math_description', true );
-    $robots = get_post_meta( $post_id, 'rank_math_robots', true );
+    $title  = rr_get_seo_meta( $post_id, 'title' );
+    $desc   = rr_get_seo_meta( $post_id, 'description' );
+    $robots = rr_get_seo_meta( $post_id, 'robots' );
 
     // Resolve tokens (%sitename%, %title%, %sep%)
     $title = rmb_resolve_tokens( $title, $post_id );
     $desc  = rmb_resolve_tokens( $desc,  $post_id );
 
     if ( $title ) {
-        // Replace WP's default <title> tag
         add_filter( 'pre_get_document_title', function() use ( $title ) { return $title; } );
     }
     if ( $desc ) {
@@ -104,11 +124,10 @@ add_action( 'wp_head', function () {
     }
 
     // og:title / og:description / og:image
-    $og_title = get_post_meta( $post_id, 'rank_math_og_title', true );
-    $og_desc  = get_post_meta( $post_id, 'rank_math_og_description', true );
-    $og_image = get_post_meta( $post_id, 'rank_math_og_image', true );
+    $og_title = rr_get_seo_meta( $post_id, 'og_title' );
+    $og_desc  = rr_get_seo_meta( $post_id, 'og_description' );
+    $og_image = rr_get_seo_meta( $post_id, 'og_image' );
     if ( ! $og_image ) {
-        // Fall back to featured image
         $thumb_id = get_post_thumbnail_id( $post_id );
         if ( $thumb_id ) $og_image = wp_get_attachment_image_url( $thumb_id, 'large' );
     }
@@ -133,12 +152,23 @@ function rmb_resolve_tokens( $str, $post_id ) {
 }
 
 
+// ── SEO meta read helper ──────────────────────────────────────────────────────
+// Reads the native rr_seo_* key; falls back to the legacy rank_math_* key when
+// the native key has never been written (migration path for existing sites).
+function rr_get_seo_meta( $post_id, $field ) {
+    $val = get_post_meta( $post_id, RR_SEO_META_KEYS[ $field ], true );
+    if ( $val === '' || $val === false ) {
+        $val = get_post_meta( $post_id, RR_SEO_LEGACY_META_KEYS[ $field ], true );
+    }
+    return $val;
+}
+
+
 // ── llms.txt generator ────────────────────────────────────────────────────────
 // Intercept /llms.txt at init — earliest hook where WPDB + options are available.
 // Handles both /llms.txt and /llms.txt/ (trailing slash variant).
 add_action( 'init', function () {
     if ( ! isset( $_SERVER['REQUEST_URI'] ) ) return;
-    // Only fire on non-admin, non-REST requests
     if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) return;
     if ( defined( 'DOING_CRON' ) && DOING_CRON ) return;
     $uri = strtok( $_SERVER['REQUEST_URI'], '?' );
@@ -150,10 +180,8 @@ add_action( 'init', function () {
 }, 1 ); // priority 1 — before most plugins, before canonical redirect fires
 
 function rmb_serve_llms_txt() {
-    // Minimal diagnostic: confirm hook fires and headers can be sent
     while ( ob_get_level() ) ob_end_clean();
     if ( headers_sent( $hf, $hl ) ) {
-        // Headers already sent — cannot serve plain text properly
         status_header( 200 );
         echo "# llms.txt\n# Note: headers already sent from {$hf}:{$hl}\n";
         return;
@@ -180,9 +208,9 @@ function rmb_serve_llms_txt() {
     if ( $pages ) {
         $lines[] = '## Pages';
         foreach ( $pages as $page ) {
-            $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
+            $noindex = rr_get_seo_meta( $page->ID, 'robots' );
             if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( (string) $noindex, 'noindex' ) !== false ) ) continue;
-            $desc    = get_post_meta( $page->ID, 'rank_math_description', true );
+            $desc    = rr_get_seo_meta( $page->ID, 'description' );
             $desc    = $desc ? rmb_resolve_tokens( (string) $desc, $page->ID ) : '';
             $lines[] = '- [' . get_the_title( $page ) . '](' . get_permalink( $page->ID ) . ')' . ( $desc ? ': ' . $desc : '' );
         }
@@ -193,9 +221,9 @@ function rmb_serve_llms_txt() {
     if ( $posts ) {
         $lines[] = '## Blog Posts';
         foreach ( $posts as $post ) {
-            $noindex = get_post_meta( $post->ID, 'rank_math_robots', true );
+            $noindex = rr_get_seo_meta( $post->ID, 'robots' );
             if ( $noindex && ( ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) || strpos( (string) $noindex, 'noindex' ) !== false ) ) continue;
-            $desc    = get_post_meta( $post->ID, 'rank_math_description', true );
+            $desc    = rr_get_seo_meta( $post->ID, 'description' );
             $desc    = $desc ? rmb_resolve_tokens( (string) $desc, $post->ID ) : wp_trim_words( $post->post_excerpt ?: $post->post_content, 20 );
             $lines[] = '- [' . get_the_title( $post ) . '](' . get_permalink( $post->ID ) . ')' . ( $desc ? ': ' . $desc : '' );
         }
@@ -241,7 +269,7 @@ function rmb_serve_sitemap_index() {
     echo '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
     echo "  <sitemap><loc>{$site_url}/rmb-sitemap.xml</loc><lastmod>{$now}</lastmod></sitemap>\n";
     echo '</sitemapindex>' . "\n";
-    echo "<!-- XML Sitemap generated by RankRocket SEO v" . RMB_VERSION . " -->\n";
+    echo "<!-- XML Sitemap generated by RankRocket SEO Control Layer v" . RMB_VERSION . " -->\n";
 }
 
 function rmb_serve_sitemap() {
@@ -253,7 +281,7 @@ function rmb_serve_sitemap() {
     $front_page = (int) get_option( 'page_on_front' );
     $pages = get_pages( [ 'post_status' => 'publish' ] );
     foreach ( $pages as $page ) {
-        $noindex = get_post_meta( $page->ID, 'rank_math_robots', true );
+        $noindex = rr_get_seo_meta( $page->ID, 'robots' );
         if ( ! empty( $noindex ) && (
             ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
             ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
@@ -268,7 +296,7 @@ function rmb_serve_sitemap() {
     // Posts
     $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
     foreach ( $posts as $post ) {
-        $noindex = get_post_meta( $post->ID, 'rank_math_robots', true );
+        $noindex = rr_get_seo_meta( $post->ID, 'robots' );
         if ( ! empty( $noindex ) && (
             ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
             ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
@@ -291,7 +319,7 @@ function rmb_serve_sitemap() {
         echo "  </url>\n";
     }
     echo '</urlset>' . "\n";
-    echo "<!-- XML Sitemap generated by RankRocket SEO v" . RMB_VERSION . " -->\n";
+    echo "<!-- XML Sitemap generated by RankRocket SEO Control Layer v" . RMB_VERSION . " -->\n";
 }
 
 
@@ -300,8 +328,8 @@ add_action( 'rest_api_init', function () {
 
     $admin_only = function () { return current_user_can( 'manage_options' ); };
 
-    // ── SEO Meta (RankMath-compatible postmeta) ───────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/update', [
+    // ── SEO Meta ──────────────────────────────────────────────────────────────
+    register_rest_route( 'rankrocket-seo/v1', '/update', [
         'methods'             => 'POST',
         'callback'            => 'rmb_update_meta',
         'permission_callback' => $admin_only,
@@ -317,14 +345,14 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
-    register_rest_route( 'rankmath-bridge/v1', '/get/(?P<id>\d+)', [
+    register_rest_route( 'rankrocket-seo/v1', '/get/(?P<id>\d+)', [
         'methods'             => 'GET',
         'callback'            => 'rmb_get_meta',
         'permission_callback' => $admin_only,
     ] );
 
     // ── Bulk SEO meta read/write ───────────────────────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/meta/bulk-get', [
+    register_rest_route( 'rankrocket-seo/v1', '/meta/bulk-get', [
         'methods'             => 'POST',
         'callback'            => 'rmb_meta_bulk_get',
         'permission_callback' => $admin_only,
@@ -333,7 +361,7 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
-    register_rest_route( 'rankmath-bridge/v1', '/meta/bulk-update', [
+    register_rest_route( 'rankrocket-seo/v1', '/meta/bulk-update', [
         'methods'             => 'POST',
         'callback'            => 'rmb_meta_bulk_update',
         'permission_callback' => $admin_only,
@@ -343,16 +371,14 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // ── Image ALT text ─────────────────────────────────────────────────────────
-    // GET  /images  — list all attachment images with current ALT text
-    register_rest_route( 'rankmath-bridge/v1', '/images', [
+    register_rest_route( 'rankrocket-seo/v1', '/images', [
         'methods'             => 'GET',
         'callback'            => 'rmb_images_list',
         'permission_callback' => $admin_only,
     ] );
 
-    // POST /images/{id}/alt  — set ALT text on one attachment
     // MUST be registered before the wildcard
-    register_rest_route( 'rankmath-bridge/v1', '/images/(?P<id>\d+)/alt', [
+    register_rest_route( 'rankrocket-seo/v1', '/images/(?P<id>\d+)/alt', [
         'methods'             => 'POST',
         'callback'            => 'rmb_image_set_alt',
         'permission_callback' => $admin_only,
@@ -362,8 +388,7 @@ add_action( 'rest_api_init', function () {
         ],
     ] );
 
-    // POST /images/bulk-alt  — set ALT text on multiple attachments atomically
-    register_rest_route( 'rankmath-bridge/v1', '/images/bulk-alt', [
+    register_rest_route( 'rankrocket-seo/v1', '/images/bulk-alt', [
         'methods'             => 'POST',
         'callback'            => 'rmb_images_bulk_alt',
         'permission_callback' => $admin_only,
@@ -373,7 +398,7 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // ── llms.txt config ────────────────────────────────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/llms', [
+    register_rest_route( 'rankrocket-seo/v1', '/llms', [
         [
             'methods'             => 'GET',
             'callback'            => 'rmb_llms_get_config',
@@ -391,14 +416,14 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // ── Sitemap config ─────────────────────────────────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/sitemap/preview', [
+    register_rest_route( 'rankrocket-seo/v1', '/sitemap/preview', [
         'methods'             => 'GET',
         'callback'            => 'rmb_sitemap_preview',
         'permission_callback' => $admin_only,
     ] );
 
     // ── Snippets ──────────────────────────────────────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/snippets', [
+    register_rest_route( 'rankrocket-seo/v1', '/snippets', [
         [
             'methods'             => 'GET',
             'callback'            => 'rmb_snippets_list',
@@ -419,7 +444,7 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // ── Snippets: Replace all — MUST be registered BEFORE {id} wildcard ──────
-    register_rest_route( 'rankmath-bridge/v1', '/snippets/replace-all', [
+    register_rest_route( 'rankrocket-seo/v1', '/snippets/replace-all', [
         'methods'             => 'POST',
         'callback'            => 'rmb_snippets_replace_all',
         'permission_callback' => $admin_only,
@@ -429,7 +454,7 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // ── Snippets: Update / Delete by ID (wildcard — after replace-all) ───────
-    register_rest_route( 'rankmath-bridge/v1', '/snippets/(?P<id>[a-zA-Z0-9_-]+)', [
+    register_rest_route( 'rankrocket-seo/v1', '/snippets/(?P<id>[a-zA-Z0-9_-]+)', [
         [
             'methods'             => 'POST',
             'callback'            => 'rmb_snippets_update',
@@ -443,14 +468,14 @@ add_action( 'rest_api_init', function () {
     ] );
 
     // ── Cache ─────────────────────────────────────────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/cache/purge', [
+    register_rest_route( 'rankrocket-seo/v1', '/cache/purge', [
         'methods'             => 'POST',
         'callback'            => 'rmb_cache_purge',
         'permission_callback' => $admin_only,
     ] );
 
     // ── Status ────────────────────────────────────────────────────────────────
-    register_rest_route( 'rankmath-bridge/v1', '/status', [
+    register_rest_route( 'rankrocket-seo/v1', '/status', [
         'methods'             => 'GET',
         'callback'            => 'rmb_status',
         'permission_callback' => $admin_only,
@@ -467,22 +492,13 @@ function rmb_update_meta( WP_REST_Request $request ) {
         return new WP_Error( 'invalid_post', 'Post not found', [ 'status' => 404 ] );
     }
 
-    $updated = [];
-    $fields  = [
-        'title'          => 'rank_math_title',
-        'description'    => 'rank_math_description',
-        'focus_keyword'  => 'rank_math_focus_keyword',
-        'robots'         => 'rank_math_robots',
-        'og_title'       => 'rank_math_og_title',
-        'og_description' => 'rank_math_og_description',
-        'og_image'       => 'rank_math_og_image',
-    ];
+    $updated   = [];
+    $url_fields = [ 'og_image' ];
 
-    foreach ( $fields as $param => $meta_key ) {
+    foreach ( RR_SEO_META_KEYS as $param => $meta_key ) {
         $value = $request->get_param( $param );
         if ( $value !== null && $value !== '' ) {
-            // og_image stores a URL — esc_url_raw instead of sanitize_text_field
-            $sanitized = ( $param === 'og_image' ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
+            $sanitized = in_array( $param, $url_fields ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
             update_post_meta( $post_id, $meta_key, $sanitized );
             $updated[ $meta_key ] = $sanitized;
         }
@@ -500,18 +516,13 @@ function rmb_get_meta( WP_REST_Request $request ) {
         return new WP_Error( 'invalid_post', 'Post not found', [ 'status' => 404 ] );
     }
 
-    $meta_keys = [
-        'rank_math_title', 'rank_math_description', 'rank_math_focus_keyword',
-        'rank_math_robots', 'rank_math_og_title', 'rank_math_og_description',
-        'rank_math_og_image', 'rank_math_seo_score',
-    ];
-
     $meta = [];
-    foreach ( $meta_keys as $key ) {
-        $meta[ $key ] = get_post_meta( $post_id, $key, true );
+    foreach ( RR_SEO_META_KEYS as $field => $native_key ) {
+        $meta[ $native_key ] = rr_get_seo_meta( $post_id, $field );
     }
+    // seo_score has no native equivalent yet; read legacy key directly
+    $meta['rr_seo_score'] = get_post_meta( $post_id, 'rank_math_seo_score', true );
 
-    // Also include featured image URL for reference
     $thumb_id = get_post_thumbnail_id( $post_id );
     $meta['_featured_image_url'] = $thumb_id ? wp_get_attachment_image_url( $thumb_id, 'large' ) : '';
 
@@ -519,20 +530,17 @@ function rmb_get_meta( WP_REST_Request $request ) {
 }
 
 function rmb_meta_bulk_get( WP_REST_Request $request ) {
-    $post_ids  = array_map( 'intval', $request->get_param( 'post_ids' ) );
-    $meta_keys = [
-        'rank_math_title', 'rank_math_description', 'rank_math_focus_keyword',
-        'rank_math_robots', 'rank_math_og_title', 'rank_math_og_description',
-        'rank_math_seo_score',
-    ];
-    $results = [];
+    $post_ids = array_map( 'intval', $request->get_param( 'post_ids' ) );
+    $results  = [];
+
     foreach ( $post_ids as $pid ) {
         $post = get_post( $pid );
         if ( ! $post ) continue;
         $meta = [];
-        foreach ( $meta_keys as $key ) {
-            $meta[ $key ] = get_post_meta( $pid, $key, true );
+        foreach ( RR_SEO_META_KEYS as $field => $native_key ) {
+            $meta[ $native_key ] = rr_get_seo_meta( $pid, $field );
         }
+        $meta['rr_seo_score'] = get_post_meta( $pid, 'rank_math_seo_score', true );
         $results[] = [
             'post_id' => $pid,
             'slug'    => $post->post_name,
@@ -544,18 +552,10 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
 }
 
 function rmb_meta_bulk_update( WP_REST_Request $request ) {
-    $updates = $request->get_param( 'updates' );
-    $fields  = [
-        'title'          => 'rank_math_title',
-        'description'    => 'rank_math_description',
-        'focus_keyword'  => 'rank_math_focus_keyword',
-        'robots'         => 'rank_math_robots',
-        'og_title'       => 'rank_math_og_title',
-        'og_description' => 'rank_math_og_description',
-        'og_image'       => 'rank_math_og_image',
-    ];
+    $updates    = $request->get_param( 'updates' );
     $url_fields = [ 'og_image' ];
-    $results = [];
+    $results    = [];
+
     foreach ( $updates as $upd ) {
         $post_id = intval( $upd['post_id'] ?? 0 );
         if ( ! $post_id || ! get_post( $post_id ) ) {
@@ -563,7 +563,7 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
             continue;
         }
         $updated = [];
-        foreach ( $fields as $param => $meta_key ) {
+        foreach ( RR_SEO_META_KEYS as $param => $meta_key ) {
             if ( isset( $upd[ $param ] ) && $upd[ $param ] !== '' ) {
                 $sanitized = in_array( $param, $url_fields ) ? esc_url_raw( $upd[ $param ] ) : sanitize_text_field( $upd[ $param ] );
                 update_post_meta( $post_id, $meta_key, $sanitized );
@@ -608,13 +608,11 @@ function rmb_images_list( WP_REST_Request $request ) {
         ];
     }
 
-    $total = wp_count_posts( 'attachment' );
-
     return rest_ensure_response( [
-        'page'     => $page,
-        'per_page' => $per_page,
-        'count'    => count( $images ),
-        'images'   => $images,
+        'page'              => $page,
+        'per_page'          => $per_page,
+        'count'             => count( $images ),
+        'images'            => $images,
         'missing_alt_count' => count( array_filter( $images, fn( $i ) => $i['missing'] ) ),
     ] );
 }
@@ -640,7 +638,7 @@ function rmb_image_set_alt( WP_REST_Request $request ) {
 }
 
 function rmb_images_bulk_alt( WP_REST_Request $request ) {
-    $updates = $request->get_param( 'updates' ); // [ { id: 123, alt: "text" }, ... ]
+    $updates = $request->get_param( 'updates' );
     $results = [];
 
     foreach ( $updates as $upd ) {
@@ -704,7 +702,7 @@ function rmb_sitemap_preview( WP_REST_Request $request ) {
 
     $pages = get_pages( [ 'post_status' => 'publish' ] );
     foreach ( $pages as $page ) {
-        $noindex    = get_post_meta( $page->ID, 'rank_math_robots', true );
+        $noindex    = rr_get_seo_meta( $page->ID, 'robots' );
         $is_noindex = ! empty( $noindex ) && (
             ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
             ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
@@ -722,7 +720,7 @@ function rmb_sitemap_preview( WP_REST_Request $request ) {
 
     $posts = get_posts( [ 'numberposts' => -1, 'post_status' => 'publish' ] );
     foreach ( $posts as $post ) {
-        $noindex    = get_post_meta( $post->ID, 'rank_math_robots', true );
+        $noindex    = rr_get_seo_meta( $post->ID, 'robots' );
         $is_noindex = ! empty( $noindex ) && (
             ( is_array( $noindex ) && in_array( 'noindex', $noindex ) ) ||
             ( is_string( $noindex ) && strpos( $noindex, 'noindex' ) !== false )
@@ -898,7 +896,6 @@ function rmb_cache_purge( WP_REST_Request $request ) {
         if ( ! is_wp_error( $response ) ) {
             $code = wp_remote_retrieve_response_code( $response );
             if ( in_array( $code, [ 200, 201, 204, 404 ] ) ) {
-                // 200/204 = purged; 404 = not cached (still OK)
                 if ( ! in_array( 'Varnish', $purged ) ) {
                     $purged[] = 'Varnish';
                 }
@@ -948,30 +945,28 @@ function rmb_status( WP_REST_Request $request ) {
     $snippets    = get_option( RMB_SNIPPETS_KEY, [] );
     $rankmath_on = class_exists( 'RankMath' );
     return rest_ensure_response( [
-        'plugin'         => 'RankRocket SEO',
-        'version'        => RMB_VERSION,
-        'rankmath_active'=> $rankmath_on,
-        'snippet_count'  => count( $snippets ),
-        'snippet_ids'    => array_keys( $snippets ),
-        'sitemap_url'    => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
-        'llms_url'       => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
-        'update_url'     => RMB_UPDATE_URL,
-        'php_version'    => PHP_VERSION,
-        'wp_version'     => get_bloginfo( 'version' ),
+        'plugin'          => 'RankRocket SEO Control Layer',
+        'version'         => RMB_VERSION,
+        'rankmath_active' => $rankmath_on,
+        'snippet_count'   => count( $snippets ),
+        'snippet_ids'     => array_keys( $snippets ),
+        'sitemap_url'     => rtrim( get_bloginfo( 'url' ), '/' ) . '/rmb-sitemap.xml',
+        'llms_url'        => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
+        'update_url'      => RMB_UPDATE_URL,
+        'php_version'     => PHP_VERSION,
+        'wp_version'      => get_bloginfo( 'version' ),
     ] );
 }
 
 
 // ── Self-Update ───────────────────────────────────────────────────────────────
-// Allows the bridge to pull and install its own update from GitHub without
-// requiring wp-admin login. Uses WP Plugin_Upgrader internally.
-// POST /wp-json/rankmath-bridge/v1/self-update  { "zip_url": "https://..." }
+// POST /wp-json/rankrocket-seo/v1/self-update  { "zip_url": "https://..." }
 // zip_url defaults to the latest release from the GitHub manifest.
 
 add_action( 'rest_api_init', function () {
     $admin_only = function () { return current_user_can( 'manage_options' ); };
 
-    register_rest_route( 'rankmath-bridge/v1', '/self-update', [
+    register_rest_route( 'rankrocket-seo/v1', '/self-update', [
         'methods'             => 'POST',
         'callback'            => 'rmb_self_update',
         'permission_callback' => $admin_only,
@@ -987,7 +982,6 @@ function rmb_self_update( WP_REST_Request $request ) {
     require_once ABSPATH . 'wp-admin/includes/file.php';
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
 
-    // Resolve zip URL — use provided or fetch from manifest
     $zip_url = $request->get_param( 'zip_url' );
     if ( ! $zip_url ) {
         $manifest = wp_remote_get( RMB_UPDATE_URL, [ 'timeout' => 15 ] );
@@ -1007,16 +1001,14 @@ function rmb_self_update( WP_REST_Request $request ) {
 
     $current_ver = RMB_VERSION;
 
-    // Remove any old/deactivated copies with different folder names before upgrading
+    // Remove stale copies before upgrading
     $plugins_dir = WP_PLUGIN_DIR;
     $old_copies  = [ 'rankmath-rest-bridge', 'rankrocket-seo' ];
     foreach ( $old_copies as $folder ) {
         $path = "{$plugins_dir}/{$folder}";
         if ( is_dir( $path ) && $path !== WP_PLUGIN_DIR . '/' . dirname( RMB_PLUGIN_FILE ) ) {
-            // Only remove if it is NOT the currently active plugin folder
             $active = WP_PLUGIN_DIR . '/' . plugin_basename( RMB_PLUGIN_FILE );
             if ( realpath( $path ) !== realpath( dirname( $active ) ) ) {
-                // Safe to remove stale copy
                 WP_Filesystem();
                 global $wp_filesystem;
                 if ( $wp_filesystem ) $wp_filesystem->delete( $path, true );
@@ -1036,7 +1028,7 @@ function rmb_self_update( WP_REST_Request $request ) {
         return new WP_Error( 'upgrade_failed', 'Upgrader returned false — check filesystem permissions', [ 'status' => 500 ] );
     }
 
-    // Re-activate plugin after install
+    // Re-activate plugin after install (GitHub repo folder name is the disk slug)
     $plugin_file = 'rankmath-rest-bridge/rankmath-rest-bridge.php';
     if ( ! is_plugin_active( $plugin_file ) ) {
         activate_plugin( $plugin_file );

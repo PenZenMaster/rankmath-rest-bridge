@@ -1,5 +1,5 @@
 {
-  "version": "2.1.4",
-  "zip_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.1.4/rankmath-rest-bridge.zip",
-  "changelog": "v2.1.4: Varnish PURGE via localhost HTTP + Breeze (Cloudways) cache detection in cache/purge endpoint"
+  "version": "2.2.0",
+  "zip_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.2.0/rankmath-rest-bridge.zip",
+  "changelog": "v2.2.0: Rename mental model to RankRocket SEO Control Layer; native rr_seo_* meta keys replace rank_math_* as primary store (legacy keys read as migration fallback); REST namespace changed to rankrocket-seo/v1"
 }
