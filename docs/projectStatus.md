@@ -1,11 +1,51 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-04-28
+**Last Updated:** 2026-04-29
 **Current Version:** 2.3.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** d39f465 — feat: harden snippets/replace-all with custom capability + deprecation (v2.3.1)
-**Git Status:** Clean (not yet pushed)
+**Last Commit:** 7f55bc0 — chore(checkpoint): 2026-04-28_1946 (pushed)
+**Git Status:** Dirty — manifest fix + v2.3.1 zip pending commit/push
+
+---
+
+## 2026-04-29 Session — Auto-Update Repair — IN PROGRESS
+
+### Session Summary
+Diagnosed and repaired the broken WordPress native auto-update mechanism. Two bugs in
+`update-manifest.json` caused PUC to silently fail on every update check. Manifest rewritten to
+PUC spec. Release zip `releases/v2.3.1/rankmath-rest-bridge.zip` built. Pending push to GitHub.
+Auto-update flagged as a critical plugin feature in all project docs.
+
+### Accomplishments
+
+**Auto-update manifest fix**
+- Root cause 1: `name` field absent — PUC `PluginInfo::validateMetadata()` requires both `name`
+  and `version`; missing `name` returns `WP_Error`, aborting silently with no WP notification
+- Root cause 2: field named `zip_url` — PUC maps JSON keys directly to `PluginInfo` properties;
+  `zip_url` is unknown and gets discarded, leaving `download_url = null`; REST `/self-update` also
+  reads `download_url` and returns "Could not determine zip URL" error
+- Fix: rewrote manifest with `name`, `slug`, `download_url`, `sections`, `author`, `requires`,
+  `requires_php`, `tested` — all required/recommended PUC fields
+
+**Release zip built**
+- `releases/v2.3.1/rankmath-rest-bridge.zip` — 177 KB, 118 entries
+- Structure: `rankmath-rest-bridge/rankmath-rest-bridge.php` + `update-manifest.json` + full
+  `vendor/plugin-update-checker/` tree (required for PUC to function on the installed site)
+
+### Files Changed (this session)
+- `update-manifest.json` — field names fixed, required PUC fields added
+- `releases/v2.3.1/rankmath-rest-bridge.zip` — created (new artifact)
+- `docs/STARTUP_CONTEXT.md` — refreshed; auto-update marked critical
+- `docs/projectStatus.md` — this entry
+
+### Commits
+- Pending
+
+### Known Issues / Gaps
+- Zip + manifest not yet pushed → auto-update download URL still broken on live sites
+- No end-to-end staging test yet (clear transient, bump manifest version, confirm WP Update notice)
+- No `phpcs.xml.dist` — quality gate not runnable
 
 ---
 
@@ -69,9 +109,25 @@ the destructive replace-all endpoint. Three commits landed; working tree is clea
 
 ## Backlog
 
-### Ready to Start
-- [ ] `phpcs.xml.dist` — WordPress Coding Standards config + fix any violations
-- [ ] `releases/v2.3.1/` zip packaging — create zip, push, verify self-update
+### [CRITICAL] Auto-Update (in progress — must complete before any other backlog work)
+- [x] Fix `update-manifest.json` — field names + PUC required fields
+- [x] Build `releases/v2.3.1/rankmath-rest-bridge.zip`
+- [ ] Push to GitHub so `raw.githubusercontent.com` download URL resolves
+- [ ] End-to-end staging test: clear PUC transient, bump manifest version, confirm WP Dashboard
+      Update notice, confirm one-click upgrade succeeds
+
+### Ready to Start (priority order)
+- [ ] **Testing + pre-commit hooks** — No test suite or active hooks exist. Required work:
+      (a) `composer.json` with `phpunit/phpunit`, `wp-phpunit/wp-phpunit`, `yoast/wp-test-utils`
+          as dev dependencies; `phpcs` + `dealerdirect/phpcodesniffer-composer-installer` +
+          `wp-coding-standards/wpcs` for sniffing
+      (b) `phpunit.xml.dist` — bootstrap WP test suite, map `tests/` directory
+      (c) `tests/` — at minimum: bootstrap file, unit tests for `rr_validate_seo_fields()`,
+          `rr_validate_schema()`, `rr_get_seo_meta()` fallback logic, manifest field assertions
+      (d) `phpcs.xml.dist` — WordPress Coding Standards, exclude vendor
+      (e) `.git/hooks/pre-commit` — run `phpcs` (fast); run `phpunit` only if `--all` flag set
+          (keeps commit speed acceptable while enforcing standards on every commit)
+- [ ] `phpcs.xml.dist` — can be bootstrapped independently if full test suite is deferred
 - [ ] `POST /migrate-legacy` — batch-copy `rank_math_*` -> `rr_seo_*` with audit log
 - [ ] I18n pass — wrap user-visible strings with `__()` / `_e()` and text domain
 

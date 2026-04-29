@@ -1,5 +1,16 @@
 {
+  "name": "RankRocket SEO Control Layer",
+  "slug": "rankmath-rest-bridge",
   "version": "2.3.1",
-  "zip_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.3.1/rankmath-rest-bridge.zip",
-  "changelog": "v2.3.1: replace-all guarded by rrseo_replace_all_snippets custom capability (auto-granted to administrator); deprecation notice in response body; target removal v3.0.0"
+  "download_url": "https://raw.githubusercontent.com/PenZenMaster/rankmath-rest-bridge/main/releases/v2.3.1/rankmath-rest-bridge.zip",
+  "author": "Rank Rocket Co.",
+  "author_homepage": "https://rankrocket.co",
+  "homepage": "https://rankrocket.co",
+  "requires": "5.9",
+  "requires_php": "7.4",
+  "tested": "6.7",
+  "sections": {
+    "description": "Native SEO control layer for the RankRocket remediation pipeline. Manages title/meta, schema injection, image ALT text, llms.txt, XML sitemap, cache purge, and self-updates.",
+    "changelog": "v2.3.1: replace-all guarded by rrseo_replace_all_snippets custom capability (auto-granted to administrator); deprecation notice in response body; target removal v3.0.0."
+  }
 }
