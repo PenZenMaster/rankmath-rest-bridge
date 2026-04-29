@@ -49,7 +49,7 @@
 **Git:**
 - Branch: main
 - Version: 2.3.1
-- Last commit: d39f465 (local only — not yet pushed to GitHub)
+- Last commit: 88785ee — chore: add RRSEO session management (pushed)
 - Working tree: clean
 
 **Plugin file:** `rankmath-rest-bridge.php` (single-file plugin, ~1300 lines)
