@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.9.2
+ * Version:      2.9.3
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.9.2' );
+define( 'RMB_VERSION', '2.9.3' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -263,7 +263,8 @@ function rmb_output_snippets( $location ) {
 		}
 
 		if ( $should_output ) {
-			echo "\n" . wp_kses_post( $snippet['content'] ) . "\n";
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- managed snippets are admin-only, capability-guarded at write; must not strip <script>/<style>.
+			echo "\n" . $snippet['content'] . "\n";
 		}
 	}
 }

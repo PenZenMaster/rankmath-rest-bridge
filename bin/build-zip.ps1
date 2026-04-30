@@ -71,13 +71,15 @@ Get-ChildItem $IncludesSrc -File | ForEach-Object {
 }
 
 # ── Copy: vendor/plugin-update-checker ───────────────────────────────────────
-# IMPORTANT: Copy the DIRECTORY, not its contents, to preserve Puc/v5p5/ hierarchy.
-# Never use: Get-ChildItem $Src -Recurse | Copy-Item -Destination $Dst
-# That form flattens subdirectories into the destination without warning.
+# Create the target subdirectory explicitly, then copy contents with a wildcard
+# source. Copy-Item $dir -Destination $existing_dir -Recurse is unreliable on
+# Windows — it can flatten the source directory into the destination instead of
+# creating a subdirectory, which breaks the plugin's loader path check.
 Write-Host "Copying vendor/plugin-update-checker/ (recursive)..." -ForegroundColor Gray
 $PucSrc = Join-Path $Root 'vendor\plugin-update-checker'
-$VendorDst = Join-Path $PluginRoot 'vendor'
-Copy-Item $PucSrc -Destination $VendorDst -Recurse
+$PucDst = Join-Path $PluginRoot 'vendor\plugin-update-checker'
+New-Item -ItemType Directory -Path $PucDst -Force | Out-Null
+Copy-Item (Join-Path $PucSrc '*') -Destination $PucDst -Recurse -Force
 
 # ── Build zip ─────────────────────────────────────────────────────────────────
 Write-Host "Building zip..." -ForegroundColor Gray
