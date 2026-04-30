@@ -2,35 +2,29 @@
 
 **Last Updated:** 2026-04-29
 **Branch:** main
-**Version:** 2.9.2
-**Last Commit:** 0ad343f — fix: legacy namespace alias, register_post_meta, first-paragraph fallback (v2.9.2)
+**Version:** 2.9.3
+**Last Commit:** a9ed4ab — fix: schema visible in footer + PUC loader path mismatch (v2.9.3)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Three P1 gap fixes (v2.9.2)** — All three P1 items from `docs/Gap-Priority-Notes.csv`
-   resolved: (a) `rankmath-bridge/v1` legacy namespace alias via `rest_pre_dispatch` proxy —
-   old automation clients get working responses + `_deprecated` field instead of 404;
-   (b) `register_post_meta` for `_rrseo_llms_section` — `show_in_rest`, WP sanitize layer,
-   `auth_callback` all wired; (c) first-paragraph description fallback bug fixed — was
-   normalizing content before splitting on paragraph boundaries, causing all content-only
-   posts to fall through to thin_description title fallback.
+1. **Two regression fixes verified on production (v2.9.3)** — (a) Schema JSON-LD was
+   rendering as visible plain text in the site footer because `wp_kses_post()` strips
+   `<script>` tags but leaves inner content; replaced with raw echo (admin-only,
+   capability-guarded at write). (b) PUC auto-update notifications were silently disabled
+   because `build-zip.ps1` flattened the `plugin-update-checker/` directory directly into
+   `vendor/` — the `file_exists()` loader check always failed. Fixed build script to use
+   explicit mkdir + wildcard copy; both issues confirmed resolved on shadesofwhitellc.com.
 
-2. **Force Update Check + admin llms.txt tab (v2.9.1)** — `POST /check-updates` clears both
-   the `update_plugins` transient and PUC's `external_updates-rankmath-rest-bridge` option,
-   then calls `wp_update_plugins()`. Admin Overview gets a one-click "Force Update Check"
-   button (replaces WP-CLI-only workflow). Admin llms.txt tab fully rebuilt: shows
-   business_facts, section classifier table, exclude patterns, boolean flags, and a lazy-loaded
-   "Preview Generated llms.txt" panel with section counts, warnings, excluded URLs, and full
-   content. PUC check period now filterable via `rrseo_puc_check_period_hours`.
+2. **Three P1 gap fixes (v2.9.2)** — Legacy `rankmath-bridge/v1` namespace alias via
+   `rest_pre_dispatch` proxy; `register_post_meta` for `_rrseo_llms_section`; first-paragraph
+   description fallback bug (content was normalized before paragraph splitting).
 
-3. **P0 + P1 crawl sync spec (v2.8.0 + v2.9.0)** — Shared `rr_get_canonical_url_set()`
-   helper wired into all sitemaps, llms.txt, and `/sitemap/preview`; section classifier
-   (`rr_classify_url_section`), `GET /llms/preview`, `_rrseo_llms_section` per-post meta,
-   expanded `/llms` config (business_facts, sections object, exclude_patterns,
-   max_description_chars), `GET /images/{id}/alt`, `/images/bulk-alt` batch cap,
-   `/status?include_counts=true` with transient cache.
+3. **Force Update Check + admin llms.txt tab (v2.9.1)** — `POST /check-updates` clears
+   `update_plugins` transient + PUC cache then calls `wp_update_plugins()`. Admin llms.txt
+   tab rebuilt with lazy-loaded preview panel. PUC check period filterable via
+   `rrseo_puc_check_period_hours`.
 
 ---
 
@@ -58,9 +52,9 @@
 
 **Git:**
 - Branch: main
-- Version: 2.9.2
-- Last commit: 0ad343f — pushed, working tree clean
-- All releases v2.3.1–v2.9.2 built and pushed to GitHub
+- Version: 2.9.3
+- Last commit: a9ed4ab — pushed, working tree clean
+- All releases v2.3.1–v2.9.3 built and pushed to GitHub
 
 **Files of note:**
 - Plugin: `rankmath-rest-bridge.php` (~2,700 lines)
