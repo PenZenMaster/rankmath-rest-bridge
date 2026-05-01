@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.11.1
+ * Version:      2.11.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.11.1' );
+define( 'RMB_VERSION', '2.11.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2128,7 +2128,8 @@ function rr_robots_txt_output( string $output, int $is_public ): string { // php
 function rmb_robots_get( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$custom        = get_option( 'rrseo_robots_txt', '' );
 	$physical_path = ABSPATH . 'robots.txt';
-	$has_file      = file_exists( $physical_path );
+	clearstatcache( true, $physical_path );
+	$has_file = file_exists( $physical_path );
 	// Plugin manages the physical file when custom content is stored and the file exists.
 	$plugin_managed = '' !== $custom && $has_file;
 
@@ -2174,6 +2175,9 @@ function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
 	}
 
 	update_option( 'rrseo_robots_txt', $content );
+	// Bust WP object cache so subsequent GET requests read the fresh DB value, not a stale cache entry.
+	wp_cache_delete( 'rrseo_robots_txt', 'options' );
+	wp_cache_delete( 'alloptions', 'options' );
 
 	// Write or remove the physical robots.txt so changes persist if the plugin is ever deactivated.
 	// The web server serves a physical file directly — no WordPress involved.
@@ -2193,6 +2197,7 @@ function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
 		wp_delete_file( $physical_path );
 	}
 
+	clearstatcache( true, $physical_path );
 	$has_file          = file_exists( $physical_path );
 	$missing_directive = '' !== $content && false === stripos( $content, 'Sitemap:' );
 	$response_warnings = array();
@@ -2716,13 +2721,16 @@ function rmb_cache_purge( WP_REST_Request $request ) { // phpcs:ignore Generic.C
  * @return WP_REST_Response
  */
 function rmb_status( WP_REST_Request $request ) {
-	$snippets             = get_option( RMB_SNIPPETS_KEY, array() );
-	$rankmath_on          = class_exists( 'RankMath' );
-	$site_url             = rtrim( get_bloginfo( 'url' ), '/' );
-	$physical_robots_file = file_exists( ABSPATH . 'robots.txt' );
+	$snippets    = get_option( RMB_SNIPPETS_KEY, array() );
+	$rankmath_on = class_exists( 'RankMath' );
+	$site_url    = rtrim( get_bloginfo( 'url' ), '/' );
+	$robots_path = ABSPATH . 'robots.txt';
+	clearstatcache( true, $robots_path );
+	$physical_robots_file = file_exists( $robots_path );
+	$robots_managed       = '' !== (string) get_option( 'rrseo_robots_txt', '' ) && $physical_robots_file;
 
 	$status_warnings = array();
-	if ( $physical_robots_file ) {
+	if ( $physical_robots_file && ! $robots_managed ) {
 		$status_warnings[] = array(
 			'code'    => 'physical_robots_txt_bypass',
 			'message' => 'A physical robots.txt file exists and may bypass RankRocket robots.txt output.',
