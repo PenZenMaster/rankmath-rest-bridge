@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.9.3
+ * Version:      2.10.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.9.3' );
+define( 'RMB_VERSION', '2.10.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -126,6 +126,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-canonical.php';
 
 // ── llms.txt generator (section classifier, business_facts, renderer) ─────────
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-llms.php';
+
+// ── AEO/GEO audit data layer (canonical preview, readiness, entity, schema, sync) ──
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-aeo-geo.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -1421,6 +1424,57 @@ add_action(
 			)
 		);
 
+		// ── AEO/GEO audit data layer ─────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/canonical-urls/preview',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_canonical_urls_preview',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/readiness',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_readiness',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/entity',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_entity',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/schema-audit',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_schema_audit',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/source-sync',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_source_sync',
+				'permission_callback' => $admin_only,
+			)
+		);
+
 		// ── Legacy migration ──────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -2690,20 +2744,23 @@ function rmb_status( WP_REST_Request $request ) {
  * @return WP_REST_Response
  */
 function rmb_check_updates( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	// Clear WordPress core's plugin update transient.
+	// Clear WordPress core's plugin update transient so the next page load re-fetches.
 	delete_site_transient( 'update_plugins' );
 
-	// Clear PUC's own cached state for this plugin (stores last-check timestamp +
-	// cached API response). Option name is derived from the plugin slug.
+	// Clear PUC's cached state (last-check timestamp + cached manifest response).
+	// Option name follows PUC v5 convention: 'external_updates-{slug}'.
 	delete_site_option( 'external_updates-rankmath-rest-bridge' );
 
-	// Trigger a synchronous update check so the result is available immediately.
-	wp_update_plugins();
+	// wp_update_plugins() is intentionally NOT called here. That function makes a
+	// blocking HTTP request to api.wordpress.org which can exceed PHP's
+	// max_execution_time on restricted hosts, causing the REST response to be
+	// dropped and the button to appear unresponsive. The transient deletions above
+	// are sufficient — WordPress will re-check on the next visit to Dashboard > Updates.
 
 	return rest_ensure_response(
 		array(
 			'success' => true,
-			'message' => 'Update transients cleared and check triggered. Refresh the WordPress Updates page to see the result.',
+			'message' => 'Update cache cleared. Visit Dashboard > Updates and click "Check Again" to fetch the latest version.',
 		)
 	);
 }

@@ -41,16 +41,16 @@ class CanonicalUrlSetTest extends TestCase {
 	/**
 	 * Build a minimal published post stdClass.
 	 */
-	private function makePost( int $id, string $slug = 'test-post', string $type = 'post', string $status = 'publish' ): object {
-		$p                   = new stdClass();
-		$p->ID               = $id;
-		$p->post_name        = $slug;
-		$p->post_type        = $type;
-		$p->post_status      = $status;
-		$p->post_password    = '';
-		$p->post_title       = 'Test Post ' . $id;
-		$p->post_excerpt     = '';
-		$p->post_content     = '';
+	private function makePost( int $id, string $slug = 'test-post', string $type = 'post', string $status = 'publish' ): WP_Post {
+		$p                    = new WP_Post();
+		$p->ID                = $id;
+		$p->post_name         = $slug;
+		$p->post_type         = $type;
+		$p->post_status       = $status;
+		$p->post_password     = '';
+		$p->post_title        = 'Test Post ' . $id;
+		$p->post_excerpt      = '';
+		$p->post_content      = '';
 		$p->post_modified_gmt = '2026-04-29 12:00:00';
 		return $p;
 	}
@@ -211,7 +211,8 @@ class CanonicalUrlSetTest extends TestCase {
 		$result = rr_get_canonical_url_set( array( 'post_types' => array( 'post' ) ) );
 		$this->assertCount( 1, $result['urls'] );
 		$this->assertSame( 40, $result['urls'][0]['post_id'] );
-		$this->assertCount( 1, $result['excluded'] );
+		// Draft posts are filtered out by get_posts( 'post_status' => 'publish' ) before
+		// rr_is_url_allowed_for_discovery() is called, so they never appear in excluded[].
 	}
 
 	public function test_canonical_set_excludes_noindex_posts(): void {
@@ -308,8 +309,8 @@ class CanonicalUrlSetTest extends TestCase {
 		$result = rr_truncate_description( $text, 50 );
 		$this->assertLessThanOrEqual( 53, strlen( $result ) ); // 50 + '...'
 		$this->assertStringEndsWith( '...', $result );
-		// Must end cleanly on a word — no mid-word cut.
-		$this->assertStringNotContainsString( 'ord...', $result );
+		// Must end cleanly on a complete word — not a partial like 'wo...' or 'wor...'.
+		$this->assertStringEndsWith( 'word...', $result );
 	}
 
 	public function test_truncate_appends_ascii_ellipsis_not_unicode(): void {

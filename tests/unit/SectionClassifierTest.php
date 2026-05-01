@@ -25,16 +25,16 @@ class SectionClassifierTest extends TestCase {
 		);
 	}
 
-	private function makePost( int $id, string $slug = 'test', string $type = 'page' ): object {
-		$p               = new stdClass();
-		$p->ID           = $id;
-		$p->post_name    = $slug;
-		$p->post_type    = $type;
-		$p->post_status  = 'publish';
-		$p->post_password = '';
-		$p->post_title   = 'Test Post ' . $id;
-		$p->post_excerpt = '';
-		$p->post_content = '';
+	private function makePost( int $id, string $slug = 'test', string $type = 'page' ): WP_Post {
+		$p                    = new WP_Post();
+		$p->ID                = $id;
+		$p->post_name         = $slug;
+		$p->post_type         = $type;
+		$p->post_status       = 'publish';
+		$p->post_password     = '';
+		$p->post_title        = 'Test Post ' . $id;
+		$p->post_excerpt      = '';
+		$p->post_content      = '';
 		$p->post_modified_gmt = '2026-04-29 10:00:00';
 		return $p;
 	}
