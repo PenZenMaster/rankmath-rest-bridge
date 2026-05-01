@@ -353,7 +353,7 @@ class AeoGeoReadinessTest extends TestCase {
 		$this->assertSame( 'synced', $result['sync_status'] );
 		$this->assertSame( 100, $result['sync_score'] );
 		$this->assertCount( 2, $result['in_all_three'] );
-		$this->assertEmpty( $result['canonical_only'] );
+		$this->assertEmpty( $result['canonical_and_llms_not_sitemap'] );
 	}
 
 	public function test_source_sync_product_url_in_canonical_and_llms_not_sitemap(): void {
@@ -391,11 +391,9 @@ class AeoGeoReadinessTest extends TestCase {
 
 		$result = rr_aeo_compute_source_sync();
 
-		// Product URLs appear in canonical (full allowlist) but not in sitemap (post+page only).
-		// They are also in llms (no exclude_patterns), so they end up in canonical_and_llms_not_sitemap.
-		if ( in_array( 'https://example.test/shop/my-product/', $result['canonical_urls_flat'] ?? array(), true ) ||
-			in_array( 'https://example.test/shop/my-product/', $result['canonical_and_llms_not_sitemap'], true ) ) {
-			$this->assertNotContains( 'https://example.test/shop/my-product/', $result['canonical_and_sitemap_not_llms'] );
+		// Product URLs are in canonical + llms but not in sitemap (post+page only).
+		if ( in_array( 'https://example.test/shop/my-product/', $result['canonical_and_llms_not_sitemap'], true ) ) {
+			$this->assertNotContains( 'https://example.test/shop/my-product/', $result['in_all_three'] );
 		} else {
 			// Product type not returned by default post_types — acceptable.
 			$this->assertSame( 0, $result['canonical_url_count'] );

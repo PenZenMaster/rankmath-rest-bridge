@@ -191,7 +191,8 @@ function rr_aeo_compute_entity_signals(): array {
  *   - FAQPage schema (no_faqpage_anywhere).
  *   - BreadcrumbList schema (no_breadcrumblist_anywhere).
  *
- * @param array $args Optional args forwarded to rr_get_canonical_url_set().
+ * @param array      $args             Optional args forwarded to rr_get_canonical_url_set().
+ * @param array|null $canonical_result Pre-fetched rr_get_canonical_url_set() result, or null to fetch.
  * @return array{
  *   urls: array,
  *   summary: array{
@@ -204,9 +205,9 @@ function rr_aeo_compute_entity_signals(): array {
  *   global_warnings: string[]
  * }
  */
-function rr_aeo_compute_schema_audit( array $args = array() ): array {
-	$canonical   = rr_get_canonical_url_set( $args );
-	$site_base   = rtrim( home_url( '/' ), '/' ) . '/';
+function rr_aeo_compute_schema_audit( array $args = array(), array $canonical_result = null ): array {
+	$canonical   = $canonical_result ?? rr_get_canonical_url_set( $args );
+	$site_base   = home_url( '/' );
 	$urls_out    = array();
 	$type_counts = array();
 	$with_schema = 0;
@@ -233,7 +234,7 @@ function rr_aeo_compute_schema_audit( array $args = array() ): array {
 				: array( $schema['@type'] );
 
 			foreach ( $schema_types as $t ) {
-				$type_counts[ $t ] = ( isset( $type_counts[ $t ] ) ? $type_counts[ $t ] : 0 ) + 1;
+				$type_counts[ $t ] = ( $type_counts[ $t ] ?? 0 ) + 1;
 				if ( in_array( $t, RR_AEO_LOCAL_ENTITY_TYPES, true ) ) {
 					$global_has_local_entity = true;
 				}
@@ -303,94 +304,61 @@ function rr_aeo_compute_schema_audit( array $args = array() ): array {
 }
 
 /**
- * Returns a three-way sync comparison: canonical URL set vs sitemap vs llms.txt.
+ * Returns a sync comparison: canonical URL set vs sitemap vs llms.txt.
  *
- * Sets:
- *   Canonical — all URLs from rr_get_canonical_url_set() with default post types.
- *   Sitemap   — canonical URLs whose post_type is 'post' or 'page'.
- *   llms      — identical to the canonical set: rr_is_utility_url() applies the llms
- *               exclude_patterns during canonical URL construction, so no URL that
- *               is excluded from llms.txt survives into the canonical set.
+ * Because rr_is_utility_url() applies the llms exclude_patterns during canonical
+ * set construction, llms.txt always contains exactly the canonical URL set. The
+ * meaningful distinction is therefore canonical+llms vs the XML sitemap, which
+ * only indexes 'post' and 'page' post types (RR_AEO_SITEMAP_POST_TYPES).
  *
- * Sync score: 100 * (in_all_three count) / (union count). 100 when union is empty.
+ * Sync score: 100 * (in_all_three count) / (canonical count). 100 when empty.
  * Sync status: 'synced' (score = 100), 'partial' (score >= 70), 'mismatch' (< 70).
  *
+ * @param array|null $canonical_result Pre-fetched rr_get_canonical_url_set() result, or null to fetch.
  * @return array{
  *   canonical_url_count: int,
  *   sitemap_url_count: int,
  *   llms_url_count: int,
  *   in_all_three: string[],
- *   canonical_only: string[],
- *   sitemap_only: string[],
- *   llms_only: string[],
- *   canonical_and_sitemap_not_llms: string[],
  *   canonical_and_llms_not_sitemap: string[],
  *   sync_status: string,
  *   sync_score: int,
  *   warnings: string[]
  * }
  */
-function rr_aeo_compute_source_sync(): array {
-	// Full canonical set (all allowed post types).
-	$canonical_result = rr_get_canonical_url_set();
+function rr_aeo_compute_source_sync( array $canonical_result = null ): array {
+	$canonical_result = $canonical_result ?? rr_get_canonical_url_set();
 
-	// Build URL string arrays from the canonical result.
 	$canonical_urls = array();
 	$sitemap_urls   = array();
 
 	foreach ( $canonical_result['urls'] as $entry ) {
-		$url = (string) $entry['url'];
-
+		$url              = (string) $entry['url'];
 		$canonical_urls[] = $url;
-
 		if ( in_array( $entry['post_type'], RR_AEO_SITEMAP_POST_TYPES, true ) ) {
 			$sitemap_urls[] = $url;
 		}
 	}
 
-	// llms.txt includes the same URLs as the canonical set (exclude_patterns are
-	// applied during canonical set construction, not again at render time).
-	$llms_urls = $canonical_urls;
-
-	// Three-way diff over the union of all three sets.
-	$canonical_set = array_flip( $canonical_urls );
-	$sitemap_set   = array_flip( $sitemap_urls );
-	$llms_set      = array_flip( $llms_urls );
-
-	$union = array_unique( array_merge( $canonical_urls, $sitemap_urls, $llms_urls ) );
-
+	// Partition canonical into in-sitemap vs not-in-sitemap.
+	// llms = canonical always, so every canonical URL is also in llms.txt.
+	$sitemap_set                    = array_flip( $sitemap_urls );
 	$in_all_three                   = array();
-	$canonical_only                 = array();
-	$sitemap_only                   = array();
-	$llms_only                      = array();
-	$canonical_and_sitemap_not_llms = array();
 	$canonical_and_llms_not_sitemap = array();
 
-	foreach ( $union as $url ) {
-		$in_c = isset( $canonical_set[ $url ] );
-		$in_s = isset( $sitemap_set[ $url ] );
-		$in_l = isset( $llms_set[ $url ] );
-
-		if ( $in_c && $in_s && $in_l ) {
+	foreach ( $canonical_urls as $url ) {
+		if ( isset( $sitemap_set[ $url ] ) ) {
 			$in_all_three[] = $url;
-		} elseif ( $in_c && $in_s ) {
-			$canonical_and_sitemap_not_llms[] = $url;
-		} elseif ( $in_c && $in_l ) {
+		} else {
 			$canonical_and_llms_not_sitemap[] = $url;
-		} elseif ( $in_c ) {
-			$canonical_only[] = $url;
-		} elseif ( $in_s ) {
-			$sitemap_only[] = $url;
-		} elseif ( $in_l ) {
-			$llms_only[] = $url;
 		}
 	}
 
-	$union_count  = count( $union );
-	$in_all_count = count( $in_all_three );
-	$sync_score   = ( $union_count > 0 ) ? (int) round( 100.0 * $in_all_count / $union_count ) : 100;
+	$canonical_count = count( $canonical_urls );
+	$in_all_count    = count( $in_all_three );
+	$sync_score      = ( $canonical_count > 0 ) ? (int) round( 100.0 * $in_all_count / $canonical_count ) : 100;
 
-	if ( 100 === $sync_score || 0 === $union_count ) {
+	if ( 100 === $sync_score || 0 === $canonical_count ) {
 		$sync_status = 'synced';
 	} elseif ( $sync_score >= 70 ) {
 		$sync_status = 'partial';
@@ -398,27 +366,15 @@ function rr_aeo_compute_source_sync(): array {
 		$sync_status = 'mismatch';
 	}
 
-	$warnings = array();
-	if ( ! empty( $sitemap_only ) ) {
-		$warnings[] = 'urls_in_sitemap_not_in_canonical';
-	}
-	if ( ! empty( $llms_only ) ) {
-		$warnings[] = 'urls_in_llms_not_in_canonical';
-	}
-
 	return array(
-		'canonical_url_count'            => count( $canonical_urls ),
+		'canonical_url_count'            => $canonical_count,
 		'sitemap_url_count'              => count( $sitemap_urls ),
-		'llms_url_count'                 => count( $llms_urls ),
+		'llms_url_count'                 => $canonical_count,
 		'in_all_three'                   => $in_all_three,
-		'canonical_only'                 => $canonical_only,
-		'sitemap_only'                   => $sitemap_only,
-		'llms_only'                      => $llms_only,
-		'canonical_and_sitemap_not_llms' => $canonical_and_sitemap_not_llms,
 		'canonical_and_llms_not_sitemap' => $canonical_and_llms_not_sitemap,
 		'sync_status'                    => $sync_status,
 		'sync_score'                     => $sync_score,
-		'warnings'                       => $warnings,
+		'warnings'                       => array(),
 	);
 }
 
@@ -448,9 +404,12 @@ function rr_aeo_compute_source_sync(): array {
  * }
  */
 function rr_aeo_compute_readiness(): array {
+	// Fetch the canonical URL set once; pass to sub-callers to avoid repeated DB queries.
+	$canonical_result = rr_get_canonical_url_set();
+
 	$entity = rr_aeo_compute_entity_signals();
-	$sync   = rr_aeo_compute_source_sync();
-	$schema = rr_aeo_compute_schema_audit();
+	$sync   = rr_aeo_compute_source_sync( $canonical_result );
+	$schema = rr_aeo_compute_schema_audit( array(), $canonical_result );
 
 	$config = get_option( RR_LLMS_CONFIG_KEY, array() );
 	$config = is_array( $config ) ? $config : array();
@@ -547,8 +506,7 @@ function rr_aeo_compute_readiness(): array {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_canonical_urls_preview( WP_REST_Request $request ): WP_REST_Response {
-	unset( $request );
+function rmb_canonical_urls_preview( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return new WP_REST_Response( rr_aeo_compute_canonical_preview(), 200 );
 }
 
@@ -558,8 +516,7 @@ function rmb_canonical_urls_preview( WP_REST_Request $request ): WP_REST_Respons
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_aeo_geo_readiness( WP_REST_Request $request ): WP_REST_Response {
-	unset( $request );
+function rmb_aeo_geo_readiness( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return new WP_REST_Response( rr_aeo_compute_readiness(), 200 );
 }
 
@@ -569,8 +526,7 @@ function rmb_aeo_geo_readiness( WP_REST_Request $request ): WP_REST_Response {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_aeo_geo_entity( WP_REST_Request $request ): WP_REST_Response {
-	unset( $request );
+function rmb_aeo_geo_entity( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return new WP_REST_Response( rr_aeo_compute_entity_signals(), 200 );
 }
 
@@ -580,8 +536,7 @@ function rmb_aeo_geo_entity( WP_REST_Request $request ): WP_REST_Response {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_aeo_geo_schema_audit( WP_REST_Request $request ): WP_REST_Response {
-	unset( $request );
+function rmb_aeo_geo_schema_audit( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return new WP_REST_Response( rr_aeo_compute_schema_audit(), 200 );
 }
 
@@ -591,7 +546,6 @@ function rmb_aeo_geo_schema_audit( WP_REST_Request $request ): WP_REST_Response 
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_aeo_geo_source_sync( WP_REST_Request $request ): WP_REST_Response {
-	unset( $request );
+function rmb_aeo_geo_source_sync( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return new WP_REST_Response( rr_aeo_compute_source_sync(), 200 );
 }
