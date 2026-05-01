@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.10.0
+ * Version:      2.10.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.10.0' );
+define( 'RMB_VERSION', '2.10.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -141,13 +141,15 @@ if ( is_admin() ) {
 
 
 // ── Auto-update via plugin-update-checker ─────────────────────────────────────
+// Stored globally so rmb_check_updates() can trigger an immediate manifest
+// fetch without contacting WordPress.org (this is a private plugin).
 add_action(
 	'init',
 	function () {
 		$puc_loader = RMB_PLUGIN_DIR . 'vendor/plugin-update-checker/plugin-update-checker.php';
 		if ( file_exists( $puc_loader ) ) {
 			require_once $puc_loader;
-			$checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+			$GLOBALS['rrseo_puc_checker'] = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 				RMB_UPDATE_URL,
 				RMB_PLUGIN_FILE,
 				'rankmath-rest-bridge', // GitHub repo slug; must match repo folder name.
@@ -2744,23 +2746,25 @@ function rmb_status( WP_REST_Request $request ) {
  * @return WP_REST_Response
  */
 function rmb_check_updates( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	// Clear WordPress core's plugin update transient so the next page load re-fetches.
-	delete_site_transient( 'update_plugins' );
-
-	// Clear PUC's cached state (last-check timestamp + cached manifest response).
-	// Option name follows PUC v5 convention: 'external_updates-{slug}'.
+	// Clear PUC's cached state so the next check fetches a fresh manifest.
+	// We do NOT touch update_plugins site transient — that would trigger
+	// WordPress.org communication for all plugins, which is wrong for a private plugin.
 	delete_site_option( 'external_updates-rankmath-rest-bridge' );
 
-	// wp_update_plugins() is intentionally NOT called here. That function makes a
-	// blocking HTTP request to api.wordpress.org which can exceed PHP's
-	// max_execution_time on restricted hosts, causing the REST response to be
-	// dropped and the button to appear unresponsive. The transient deletions above
-	// are sufficient — WordPress will re-check on the next visit to Dashboard > Updates.
+	// Trigger an immediate fetch of our private GitHub manifest via PUC.
+	// This contacts only our own manifest URL, never WordPress.org.
+	$message = 'You are running the latest version.';
+	if ( isset( $GLOBALS['rrseo_puc_checker'] ) ) {
+		$update = $GLOBALS['rrseo_puc_checker']->checkForUpdates();
+		if ( $update && ! empty( $update->version ) ) {
+			$message = 'Version ' . sanitize_text_field( $update->version ) . ' is available. Visit Dashboard > Updates to install.';
+		}
+	}
 
 	return rest_ensure_response(
 		array(
 			'success' => true,
-			'message' => 'Update cache cleared. Visit Dashboard > Updates and click "Check Again" to fetch the latest version.',
+			'message' => $message,
 		)
 	);
 }
