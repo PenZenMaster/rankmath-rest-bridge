@@ -128,8 +128,8 @@
 			// Force update check card.
 			html += '<div class="rrseo-card">';
 			html += '<h2>Plugin Update Check</h2>';
-			html += '<p>PUC caches the update-check result for 12 hours. Use this button to force an immediate re-check of the update manifest.</p>';
-			html += '<button id="rrseo-check-updates-btn" class="button">Force Update Check</button>';
+			html += '<p>Clears the WordPress and PUC update caches. After clicking, visit <a href="update-core.php">Dashboard &rsaquo; Updates</a> and click &ldquo;Check Again&rdquo; to fetch the latest version.</p>';
+			html += '<button id="rrseo-check-updates-btn" class="button">Clear Update Cache</button>';
 			html += '<div id="rrseo-check-updates-result" style="margin-top:8px;"></div>';
 			html += '</div>';
 
@@ -160,19 +160,19 @@
 				var btn    = this;
 				var result = document.getElementById( 'rrseo-check-updates-result' );
 				btn.disabled    = true;
-				btn.textContent = 'Checking…';
+				btn.textContent = 'Clearing…';
 				result.innerHTML = '';
 
 				apiFetch( { path: '/rankrocket-seo/v1/check-updates', method: 'POST' } )
 					.then( function ( r ) {
 						result.innerHTML = '<p class="rrseo-success">' + esc( r.message ) + '</p>';
 						btn.disabled    = false;
-						btn.textContent = 'Force Update Check';
+						btn.textContent = 'Clear Update Cache';
 					} )
 					.catch( function ( e ) {
-						result.innerHTML = errHtml( e.message || 'Update check failed.' );
+						result.innerHTML = errHtml( e.message || 'Cache clear failed.' );
 						btn.disabled    = false;
-						btn.textContent = 'Force Update Check';
+						btn.textContent = 'Clear Update Cache';
 					} );
 			} );
 		} ).catch( function ( e ) {

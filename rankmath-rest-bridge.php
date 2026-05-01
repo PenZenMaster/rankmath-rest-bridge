@@ -2744,20 +2744,23 @@ function rmb_status( WP_REST_Request $request ) {
  * @return WP_REST_Response
  */
 function rmb_check_updates( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	// Clear WordPress core's plugin update transient.
+	// Clear WordPress core's plugin update transient so the next page load re-fetches.
 	delete_site_transient( 'update_plugins' );
 
-	// Clear PUC's own cached state for this plugin (stores last-check timestamp +
-	// cached API response). Option name is derived from the plugin slug.
+	// Clear PUC's cached state (last-check timestamp + cached manifest response).
+	// Option name follows PUC v5 convention: 'external_updates-{slug}'.
 	delete_site_option( 'external_updates-rankmath-rest-bridge' );
 
-	// Trigger a synchronous update check so the result is available immediately.
-	wp_update_plugins();
+	// wp_update_plugins() is intentionally NOT called here. That function makes a
+	// blocking HTTP request to api.wordpress.org which can exceed PHP's
+	// max_execution_time on restricted hosts, causing the REST response to be
+	// dropped and the button to appear unresponsive. The transient deletions above
+	// are sufficient — WordPress will re-check on the next visit to Dashboard > Updates.
 
 	return rest_ensure_response(
 		array(
 			'success' => true,
-			'message' => 'Update transients cleared and check triggered. Refresh the WordPress Updates page to see the result.',
+			'message' => 'Update cache cleared. Visit Dashboard > Updates and click "Check Again" to fetch the latest version.',
 		)
 	);
 }
