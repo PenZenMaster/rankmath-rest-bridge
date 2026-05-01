@@ -1,11 +1,58 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-04-29
-**Current Version:** 2.9.2
+**Last Updated:** 2026-05-01
+**Current Version:** 2.10.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
-**Branch:** main
-**Last Commit:** 0ad343f — fix: legacy namespace alias, register_post_meta, first-paragraph fallback (v2.9.2, pushed)
-**Git Status:** Clean
+**Branch:** feature/aeo-geo-audit-data-layer
+**Last Commit:** 3695b84 — fix(aeo-geo): ?array nullable type hints (v2.10.0, NOT YET PUSHED)
+**Git Status:** 5 commits ahead of origin; not merged to main; release zip not built
+
+---
+
+## 2026-05-01 Session — v2.10.0 AEO/GEO Audit Data Layer — IN PROGRESS (branch not merged)
+
+### Session Summary
+AEO/GEO audit data layer implemented and reviewed. `check-updates` regression diagnosed and fixed.
+PHP 8.4 test suite healed. Two full simplify passes completed.
+
+### Accomplishments
+
+**v2.10.0 — AEO/GEO Audit Data Layer**
+- `includes/class-rrseo-aeo-geo.php` (new, ~550 lines) — 5 helper functions + 5 REST callbacks
+- `GET /canonical-urls/preview` — machine-readable canonical URL set; resolves P2 backlog gap
+- `GET /aeo-geo/readiness` — entity clarity, source guidance, schema depth, llms completeness scores
+- `GET /aeo-geo/entity` — NAP, business_facts, homepage schema types, source priority label
+- `GET /aeo-geo/schema-audit` — per-URL schema type inventory + missing-opportunity detection
+- `GET /aeo-geo/source-sync` — canonical vs sitemap partition (post/page vs product-type URLs)
+- `tests/unit/AeoGeoReadinessTest.php` (new) — 24 tests, 76 assertions
+
+**Regression Fix (also v2.10.0)**
+- `POST /check-updates` — removed blocking `wp_update_plugins()` call; was causing HTTP timeout
+  on restricted hosts, making button appear unresponsive
+- Admin "Clear Update Cache" button + description updated to direct user to Dashboard > Updates
+
+**Test Suite Repairs (PHP 8.4)**
+- `tests/bootstrap.php` — `WP_Post` stub class + `is_admin()` stub
+- `makePost()`/`makePage()` → `WP_Post` in all 3 test files
+- `CanonicalUrlSetTest.php` — fixed 2 pre-existing assertion bugs
+
+**Simplify Passes**
+- `rr_aeo_compute_readiness()` caches `rr_get_canonical_url_set()` — 3 DB calls → 1
+- `rr_aeo_compute_source_sync()` simplified from 6-branch diff to 2-branch partition; dead variables removed
+- `?array` nullable type hints, `??` idiom, `home_url('/')` simplification, `phpcs:ignore` pattern
+
+### Commits (this session, branch only)
+- `78f6aef` — feat(aeo-geo): canonical-urls/preview + AEO/GEO readiness endpoints (v2.10.0)
+- `56aa7c5` — fix: remove wp_update_plugins() from check-updates handler
+- `093895f` — test: fix 2 pre-existing CanonicalUrlSetTest failures (PHP 8.4 era)
+- `915a610` — refactor(aeo-geo): simplify source_sync, cut DB queries in readiness, fix idioms
+- `3695b84` — fix(aeo-geo): ?array nullable type hints on optional canonical_result params
+
+### Known Issues / Next Steps
+- Branch not pushed or merged to main
+- v2.10.0 release zip not built
+- `check-updates` regression affects v2.9.3 live sites (hotfix or v2.10.0 release needed)
+- Staging auto-update verify still outstanding
 
 ---
 
@@ -147,7 +194,7 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 - [x] ~~First-paragraph description fallback bug~~ — fixed v2.9.2
 - [ ] Self-canonical/redirect check — use `get_canonical_url()` per post (~10 lines)
 - [ ] `/sitemap_index.xml` lastmod — derive from canonical set, not raw `get_posts()`
-- [ ] `/canonical-urls/preview` endpoint alias (explicitly P2)
+- [x] ~~`/canonical-urls/preview` endpoint alias~~ — delivered in v2.10.0 AEO/GEO layer
 - [ ] Expand test-placeholder pattern list beyond `please-do-not-delete-this-*`
 
 ### [DONE] llms.txt Structured Config
@@ -190,6 +237,8 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 
 | Version | Date       | Summary                                                              |
 |---------|------------|----------------------------------------------------------------------|
+| 2.10.0  | 2026-05-01 | AEO/GEO audit data layer (5 endpoints); fix check-updates regression |
+| 2.9.3   | 2026-04-29 | Fix schema JSON-LD in footer; fix PUC vendor path mismatch           |
 | 2.9.2   | 2026-04-29 | rankmath-bridge/v1 alias; register_post_meta; first-para bug fix    |
 | 2.9.1   | 2026-04-29 | Force Update Check button + POST /check-updates; admin llms tab     |
 | 2.9.0   | 2026-04-29 | P1 crawl sync: section classifier, /llms/preview, _rrseo_llms_section |
