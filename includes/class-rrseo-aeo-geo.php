@@ -205,7 +205,7 @@ function rr_aeo_compute_entity_signals(): array {
  *   global_warnings: string[]
  * }
  */
-function rr_aeo_compute_schema_audit( array $args = array(), array $canonical_result = null ): array {
+function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_result = null ): array {
 	$canonical   = $canonical_result ?? rr_get_canonical_url_set( $args );
 	$site_base   = home_url( '/' );
 	$urls_out    = array();
@@ -326,7 +326,7 @@ function rr_aeo_compute_schema_audit( array $args = array(), array $canonical_re
  *   warnings: string[]
  * }
  */
-function rr_aeo_compute_source_sync( array $canonical_result = null ): array {
+function rr_aeo_compute_source_sync( ?array $canonical_result = null ): array {
 	$canonical_result = $canonical_result ?? rr_get_canonical_url_set();
 
 	$canonical_urls = array();
