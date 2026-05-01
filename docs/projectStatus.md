@@ -161,6 +161,15 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 - [ ] Verify llms.txt raw-content upload support (old backlog item)
 - [ ] I18n pass — wrap user-visible strings with `__()` / `_e()`
 
+### After AEO/GEO Audit Data Layer
+- [ ] **White Labeling** — agency/developer rebranding capabilities:
+  - Rename plugin name, description, and icon in Plugins menu and sidebar
+  - Hide or restrict main menu / sub-menus for non-admin users
+  - Remove plugin logos, upgrade badges, and "Powered by" footers from settings pages
+  - Replace default "View Details" / "Support" links with custom agency URL
+  - All settings lockable via `wp-config.php` constant to prevent client revert
+  - Use case: client handoff — hide third-party branding, reinforce agency identity
+
 ### Future / Deferred
 - [ ] Native `rr_seo_score` postmeta key + scoring endpoint
 - [ ] Remove `replace-all` endpoint (v3.0.0 milestone)
@@ -168,6 +177,12 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 - [ ] `GET /schema/bulk`
 - [ ] OpenGraph image dimension validation
 - [ ] Centralized multi-site hub (MainWP-style) — separate future plugin
+- [ ] **[P3] RankMath Reference Purge** — remove all external and internal RankMath artifacts:
+  - Remove visible RankMath references from admin UI, plugin headers, and REST responses
+  - Refactor `rr_get_seo_meta()` migration fallback: make `rank_math_*` read-path opt-in (constant/option) rather than always-on, so sites without RankMath do not incur fallback overhead or surface RankMath key names in responses
+  - Optionally rename remaining internal `rank_math_*` / `rankmath` identifiers to `rrseo_*` equivalents in a coordinated search-and-replace pass
+  - Use case: new client builds with no RankMath installed; sites migrating off Yoast or AIO SEO where RankMath was never present
+  - Prerequisite: confirm no active clients rely on the `rank_math_*` read-path fallback before removing it
 
 ---
 

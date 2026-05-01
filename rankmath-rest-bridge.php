@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.9.3
+ * Version:      2.10.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.9.3' );
+define( 'RMB_VERSION', '2.10.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -126,6 +126,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-canonical.php';
 
 // ── llms.txt generator (section classifier, business_facts, renderer) ─────────
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-llms.php';
+
+// ── AEO/GEO audit data layer (canonical preview, readiness, entity, schema, sync) ──
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-aeo-geo.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -1418,6 +1421,57 @@ add_action(
 						),
 					),
 				),
+			)
+		);
+
+		// ── AEO/GEO audit data layer ─────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/canonical-urls/preview',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_canonical_urls_preview',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/readiness',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_readiness',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/entity',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_entity',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/schema-audit',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_schema_audit',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/aeo-geo/source-sync',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_aeo_geo_source_sync',
+				'permission_callback' => $admin_only,
 			)
 		);
 

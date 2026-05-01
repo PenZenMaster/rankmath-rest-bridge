@@ -43,6 +43,11 @@ if ( ! function_exists( 'get_post' ) ) {
     }
 }
 
+// WP_Post — extends stdClass so properties can be set dynamically in tests.
+if ( ! class_exists( 'WP_Post' ) ) {
+    class WP_Post extends stdClass {}
+}
+
 if ( ! class_exists( 'WP_Error' ) ) {
     class WP_Error {
         public $code;
@@ -70,6 +75,13 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 // ------------------------------------------------------------------
 // Additional stubs for unit tests that call helper functions directly
 // ------------------------------------------------------------------
+
+// is_admin — always false in test context; admin classes are not loaded.
+if ( ! function_exists( 'is_admin' ) ) {
+    function is_admin() {
+        return false;
+    }
+}
 
 // is_singular / get_queried_object_id — configured per test via $GLOBALS.
 if ( ! function_exists( 'is_singular' ) ) {
