@@ -43,6 +43,7 @@ class RRSEO_Admin {
 	public function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_menus' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'admin_footer', array( $this, 'deactivation_warning_script' ) );
 	}
 
 	/**
@@ -243,6 +244,52 @@ class RRSEO_Admin {
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Injects a deactivation confirmation dialog on the Plugins screen.
+	 *
+	 * Intercepts clicks on the Deactivate link for this plugin and presents a
+	 * native confirm() dialog listing which features will stop working. The
+	 * physical robots.txt file is explicitly noted as persisting. The dialog
+	 * does not block deactivation — it only ensures the admin is informed.
+	 */
+	public function deactivation_warning_script(): void {
+		$screen = get_current_screen();
+		if ( ! $screen || 'plugins' !== $screen->id ) {
+			return;
+		}
+		$plugin_slug = esc_js( plugin_basename( RMB_PLUGIN_FILE ) );
+		?>
+		<script>
+		( function () {
+			'use strict';
+			var row = document.querySelector( '[data-plugin="<?php echo $plugin_slug; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>"]' );
+			if ( ! row ) { return; }
+			var link = row.querySelector( '.deactivate a' );
+			if ( ! link ) { return; }
+			link.addEventListener( 'click', function ( e ) {
+				var stops = [
+					'• Schema JSON-LD injection into page <head>',
+					'• Custom page title overrides',
+					'• XML sitemap endpoint (/sitemap_index.xml)',
+					'• llms.txt endpoint'
+				];
+				var persists = [
+					'• All SEO metadata (stored in post meta — rr_seo_* keys)',
+					'• robots.txt (physical file at webroot — web server serves it directly)'
+				];
+				var msg = 'Deactivating RankRocket SEO Control Layer\n\n'
+					+ 'Will STOP working:\n' + stops.join( '\n' ) + '\n\n'
+					+ 'Will PERSIST after deactivation:\n' + persists.join( '\n' ) + '\n\n'
+					+ 'Proceed with deactivation?';
+				if ( ! window.confirm( msg ) ) {
+					e.preventDefault();
+				}
+			} );
+		}() );
+		</script>
 		<?php
 	}
 }

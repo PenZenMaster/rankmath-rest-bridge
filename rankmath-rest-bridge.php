@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.10.1
+ * Version:      2.11.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.10.1' );
+define( 'RMB_VERSION', '2.11.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -160,6 +160,20 @@ add_action(
 	}
 );
 
+
+// ── Activation hook ──────────────────────────────────────────────────────────
+// On activation (including upgrades), sync any existing rrseo_robots_txt content
+// to a physical file at the webroot so it persists even when the plugin is inactive.
+register_activation_hook(
+	RMB_PLUGIN_FILE,
+	function () {
+		$content = (string) get_option( 'rrseo_robots_txt', '' );
+		if ( '' !== $content && ! file_exists( ABSPATH . 'robots.txt' ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			file_put_contents( ABSPATH . 'robots.txt', $content );
+		}
+	}
+);
 
 // ── Capability provisioning ───────────────────────────────────────────────────
 // Grants RR_REPLACE_ALL_CAP to the administrator role on first load.
@@ -2112,16 +2126,22 @@ function rmb_robots_get( WP_REST_Request $request ): WP_REST_Response { // phpcs
 	$custom        = get_option( 'rrseo_robots_txt', '' );
 	$physical_path = ABSPATH . 'robots.txt';
 	$has_file      = file_exists( $physical_path );
+	// Plugin manages the physical file when custom content is stored and the file exists.
+	$plugin_managed = '' !== $custom && $has_file;
+
+	$warning = null;
+	if ( $has_file && ! $plugin_managed ) {
+		$warning = 'A physical robots.txt exists at the webroot but no custom content is stored. '
+			. 'The web server serves it directly. Save content via POST /robots-txt to take ownership.';
+	}
 
 	return rest_ensure_response(
 		array(
-			'content'              => $custom,
-			'source'               => '' !== $custom ? 'custom' : 'wordpress_default',
-			'physical_file_exists' => $has_file,
-			'warning'              => $has_file
-				? 'A physical robots.txt file exists at the WordPress root.'
-						. ' The web server serves it directly; this setting has no effect until the file is removed.'
-				: null,
+			'content'               => $custom,
+			'source'                => '' !== $custom ? 'custom' : 'wordpress_default',
+			'physical_file_exists'  => $has_file,
+			'physical_file_managed' => $plugin_managed,
+			'warning'               => $warning,
 		)
 	);
 }
@@ -2144,7 +2164,6 @@ function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
 		? (bool) $request->get_param( 'preferred_sitemap_only' )
 		: true;
 	$physical_path    = ABSPATH . 'robots.txt';
-	$has_file         = file_exists( $physical_path );
 
 	if ( $ensure_directive && '' !== $content ) {
 		$preferred_url = rtrim( get_bloginfo( 'url' ), '/' ) . '/sitemap_index.xml';
@@ -2153,29 +2172,49 @@ function rmb_robots_set( WP_REST_Request $request ): WP_REST_Response {
 
 	update_option( 'rrseo_robots_txt', $content );
 
+	// Write or remove the physical robots.txt so changes persist if the plugin is ever deactivated.
+	// The web server serves a physical file directly — no WordPress involved.
+	$physical_managed = false;
+	$physical_error   = null;
+
+	if ( '' !== $content ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		$bytes = file_put_contents( $physical_path, $content );
+		if ( false === $bytes ) {
+			$physical_error = 'Could not write robots.txt to the webroot — check directory permissions. Content saved to database only.';
+		} else {
+			$physical_managed = true;
+		}
+	} elseif ( file_exists( $physical_path ) ) {
+		// Content cleared — remove physical file so WP virtual robots.txt takes over.
+		wp_delete_file( $physical_path );
+	}
+
+	$has_file          = file_exists( $physical_path );
 	$missing_directive = '' !== $content && false === stripos( $content, 'Sitemap:' );
 	$response_warnings = array();
+
 	if ( $missing_directive ) {
 		$response_warnings[] = array(
 			'code'    => 'missing_sitemap_directive',
 			'message' => 'robots.txt content has no Sitemap: directive. Pass ensure_sitemap_directive:true to auto-add it.',
 		);
 	}
-	if ( $has_file ) {
+	if ( null !== $physical_error ) {
 		$response_warnings[] = array(
-			'code'    => 'physical_robots_txt_bypass',
-			'message' => 'A physical robots.txt file exists at the WordPress root.'
-				. ' The web server serves it directly; this setting has no effect until the file is removed.',
+			'code'    => 'physical_file_write_failed',
+			'message' => $physical_error,
 		);
 	}
 
 	return rest_ensure_response(
 		array(
-			'success'              => true,
-			'content'              => $content,
-			'source'               => '' !== $content ? 'custom' : 'wordpress_default',
-			'physical_file_exists' => $has_file,
-			'warnings'             => $response_warnings,
+			'success'               => true,
+			'content'               => $content,
+			'source'                => '' !== $content ? 'custom' : 'wordpress_default',
+			'physical_file_exists'  => $has_file,
+			'physical_file_managed' => $physical_managed,
+			'warnings'              => $response_warnings,
 		)
 	);
 }
