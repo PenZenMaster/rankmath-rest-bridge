@@ -133,10 +133,16 @@ When asked for changes in this repo:
 phpcs --standard=phpcs.xml.dist rankmath-rest-bridge.php
 ```
 
-* WordPress Coding Standards enforced.
-* Sanitize all inputs; escape all outputs; nonce + capability checks on every write.
-* I18n: wrap user-visible strings (future — not yet implemented).
-* No inline `<script>` unless unavoidable; enqueue properly.
+Ref: [Plugin Best Practices](https://developer.wordpress.org/plugins/plugin-basics/best-practices/) · [Security](https://developer.wordpress.org/apis/security/) · [Coding Standards](https://developer.wordpress.org/coding-standards/)
+
+* WordPress Coding Standards enforced via phpcs — treat lint errors as build failures.
+* **Validate** inputs; **sanitize** before storing; **escape as late as possible** before output.
+* Nonce verification + capability check on every write endpoint or form handler.
+* All database queries use `$wpdb->prepare()` with typed placeholders (`%d`, `%s`, `%f`, `%i`) — never interpolate variables into SQL strings.
+* Strict comparisons (`===`/`!==`) throughout; Yoda conditions where WPCS requires them.
+* Never use `extract()`, `eval()`, or the backtick operator.
+* I18n: wrap user-visible strings with `__()` / `_e()` / `esc_html__()` (future pass — flag new strings).
+* No inline `<script>` unless unavoidable; enqueue via `wp_enqueue_script()`.
 
 ---
 
