@@ -1,9 +1,9 @@
 # RankRocket SEO Control Layer — Startup Context
 
-**Last Updated:** 2026-05-01
+**Last Updated:** 2026-05-01 (shutdown)
 **Branch:** main
 **Version:** 2.11.2
-**Last Commit:** 02163f8 — chore: release v2.11.2 zip
+**Last Commit:** 3c60ab8 — chore(checkpoint): 2026-05-01_2350
 
 ---
 
@@ -35,10 +35,6 @@
 2. **P2/P3 gap items** — review `docs/Gap-Priority-Notes.csv` for next
    backlog items now that AEO/GEO layer is complete.
 
-3. **PHPCS global install** — WPCS not installed globally on dev machine;
-   quality gate only runs via pre-commit hook. Consider `composer global
-   require wp-coding-standards/wpcs` to enable `composer run lint` locally.
-
 ---
 
 ## Current State
@@ -46,7 +42,7 @@
 **Git:**
 - Branch: `main`
 - Version: 2.11.2
-- Last commit: `02163f8` — pushed, up to date with origin/main
+- Last commit: `3c60ab8` — pushed, up to date with origin/main
 - Working tree: clean (3 untracked: `.claude/settings.local.json`,
   `.phpunit.result.cache`, `composer.lock`)
 
@@ -81,6 +77,10 @@
    GSC/GA4/GBP fetchers, normalization, and report generation live in the
    external audit engine. Plugin exposes 5 REST endpoints for the engine.
 
-4. **Legacy namespace alias** — `rr_legacy_namespace_proxy()` intercepts
+4. **WPCS installed globally** — `wp-coding-standards/wpcs` v3.1 installed
+   via `composer global require`. `phpcs --standard=phpcs.xml.dist` and
+   `composer run lint` both work locally without the pre-commit hook.
+
+5. **Legacy namespace alias** — `rr_legacy_namespace_proxy()` intercepts
    `/rankmath-bridge/v1/...` via `rest_pre_dispatch` and re-dispatches to
    `/rankrocket-seo/v1/...`. No route duplication.
