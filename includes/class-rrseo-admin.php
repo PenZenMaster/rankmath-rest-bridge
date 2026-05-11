@@ -38,6 +38,18 @@ class RRSEO_Admin {
 	private array $page_hooks = array();
 
 	/**
+	 * Returns a white-label-aware page title for the browser tab and <h1> headings.
+	 *
+	 * @param string $sub_page Sub-page label, e.g. 'Overview'. Empty string returns the
+	 *                         plugin name alone.
+	 * @return string
+	 */
+	private function page_title( string $sub_page = '' ): string {
+		$name = RRSEO_White_Label::wl_name();
+		return '' === $sub_page ? $name : $name . ' \xe2\x80\x94 ' . $sub_page;
+	}
+
+	/**
 	 * Wires up WordPress admin hooks.
 	 */
 	public function __construct() {
@@ -51,8 +63,8 @@ class RRSEO_Admin {
 	 */
 	public function register_menus(): void {
 		$this->page_hooks['overview'] = add_menu_page(
-			__( 'RankRocket SEO', 'rankrocket-seo' ),
-			__( 'RankRocket SEO', 'rankrocket-seo' ),
+			RRSEO_White_Label::wl_name(),
+			RRSEO_White_Label::wl_name(),
 			'manage_options',
 			'rankrocket-seo',
 			array( $this, 'render_overview' ),
@@ -72,7 +84,7 @@ class RRSEO_Admin {
 
 		$this->page_hooks['posts'] = add_submenu_page(
 			'rankrocket-seo',
-			__( 'Posts & Pages — RankRocket SEO', 'rankrocket-seo' ),
+			$this->page_title( __( 'Posts & Pages', 'rankrocket-seo' ) ),
 			__( 'Posts & Pages', 'rankrocket-seo' ),
 			'manage_options',
 			'rankrocket-seo-posts',
@@ -81,7 +93,7 @@ class RRSEO_Admin {
 
 		$this->page_hooks['images'] = add_submenu_page(
 			'rankrocket-seo',
-			__( 'Image ALT Text — RankRocket SEO', 'rankrocket-seo' ),
+			$this->page_title( __( 'Image ALT Text', 'rankrocket-seo' ) ),
 			__( 'Image ALT', 'rankrocket-seo' ),
 			'manage_options',
 			'rankrocket-seo-images',
@@ -90,7 +102,7 @@ class RRSEO_Admin {
 
 		$this->page_hooks['snippets'] = add_submenu_page(
 			'rankrocket-seo',
-			__( 'Snippets — RankRocket SEO', 'rankrocket-seo' ),
+			$this->page_title( __( 'Snippets', 'rankrocket-seo' ) ),
 			__( 'Snippets', 'rankrocket-seo' ),
 			'manage_options',
 			'rankrocket-seo-snippets',
@@ -99,7 +111,7 @@ class RRSEO_Admin {
 
 		$this->page_hooks['llms'] = add_submenu_page(
 			'rankrocket-seo',
-			__( 'llms.txt — RankRocket SEO', 'rankrocket-seo' ),
+			$this->page_title( __( 'llms.txt', 'rankrocket-seo' ) ),
 			__( 'llms.txt', 'rankrocket-seo' ),
 			'manage_options',
 			'rankrocket-seo-llms',
@@ -108,7 +120,7 @@ class RRSEO_Admin {
 
 		$this->page_hooks['sitemap'] = add_submenu_page(
 			'rankrocket-seo',
-			__( 'Sitemap Preview — RankRocket SEO', 'rankrocket-seo' ),
+			$this->page_title( __( 'Sitemap Preview', 'rankrocket-seo' ) ),
 			__( 'Sitemap', 'rankrocket-seo' ),
 			'manage_options',
 			'rankrocket-seo-sitemap',
@@ -169,7 +181,7 @@ class RRSEO_Admin {
 	public function render_overview(): void {
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'RankRocket SEO — Overview', 'rankrocket-seo' ); ?></h1>
+			<h1><?php echo esc_html( $this->page_title( __( 'Overview', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-overview">
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
@@ -183,7 +195,7 @@ class RRSEO_Admin {
 	public function render_posts(): void {
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'RankRocket SEO — Posts & Pages', 'rankrocket-seo' ); ?></h1>
+			<h1><?php echo esc_html( $this->page_title( __( 'Posts & Pages', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-posts">
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
@@ -197,7 +209,7 @@ class RRSEO_Admin {
 	public function render_images(): void {
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'RankRocket SEO — Image ALT Text', 'rankrocket-seo' ); ?></h1>
+			<h1><?php echo esc_html( $this->page_title( __( 'Image ALT Text', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-images">
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
@@ -211,7 +223,7 @@ class RRSEO_Admin {
 	public function render_snippets(): void {
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'RankRocket SEO — Snippets', 'rankrocket-seo' ); ?></h1>
+			<h1><?php echo esc_html( $this->page_title( __( 'Snippets', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-snippets">
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
@@ -225,7 +237,7 @@ class RRSEO_Admin {
 	public function render_llms(): void {
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'RankRocket SEO — llms.txt', 'rankrocket-seo' ); ?></h1>
+			<h1><?php echo esc_html( $this->page_title( __( 'llms.txt', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-llms">
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
@@ -239,7 +251,7 @@ class RRSEO_Admin {
 	public function render_sitemap(): void {
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'RankRocket SEO — Sitemap Preview', 'rankrocket-seo' ); ?></h1>
+			<h1><?php echo esc_html( $this->page_title( __( 'Sitemap Preview', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-sitemap">
 				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
 			</div>
@@ -260,7 +272,13 @@ class RRSEO_Admin {
 		if ( ! $screen || 'plugins' !== $screen->id ) {
 			return;
 		}
-		$plugin_slug = esc_js( plugin_basename( RMB_PLUGIN_FILE ) );
+		// When the plugin is hidden from the Plugins screen there is no row or
+		// Deactivate link to intercept — skip the script entirely.
+		if ( RRSEO_White_Label::wl_hidden() ) {
+			return;
+		}
+		$plugin_slug    = esc_js( plugin_basename( RMB_PLUGIN_FILE ) );
+		$plugin_name_js = wp_json_encode( RRSEO_White_Label::wl_name() );
 		?>
 		<script>
 		( function () {
@@ -280,7 +298,7 @@ class RRSEO_Admin {
 					'• All SEO metadata (stored in post meta — rr_seo_* keys)',
 					'• robots.txt (physical file at webroot — web server serves it directly)'
 				];
-				var msg = 'Deactivating RankRocket SEO Control Layer\n\n'
+				var msg = 'Deactivating ' + <?php echo $plugin_name_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?> + '\n\n'
 					+ 'Will STOP working:\n' + stops.join( '\n' ) + '\n\n'
 					+ 'Will PERSIST after deactivation:\n' + persists.join( '\n' ) + '\n\n'
 					+ 'Proceed with deactivation?';

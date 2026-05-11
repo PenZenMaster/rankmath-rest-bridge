@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.11.6
+ * Version:      2.12.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.11.6' );
+define( 'RMB_VERSION', '2.12.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -143,8 +143,10 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-aeo-geo.php';
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
 if ( is_admin() ) {
+	require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-white-label.php';
 	require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-admin.php';
 	require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-metabox.php';
+	new RRSEO_White_Label();
 	new RRSEO_Admin();
 	new RRSEO_MetaBox();
 }

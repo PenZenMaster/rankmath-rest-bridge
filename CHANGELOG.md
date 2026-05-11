@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.12.0
+
+White-label support — Tier 1 (rename) and Tier 2 (hide) via `wp-config.php` constants.
+
+### New feature
+
+A new `RRSEO_White_Label` class (`includes/class-rrseo-white-label.php`) is
+loaded in the admin and wires up two WordPress filters.
+
+**Tier 1 — Rename** (swap branding, plugin still visible in Plugins screen):
+
+- `RRSEO_WL_NAME` — Plugin name in Plugins list and admin sidebar/page headings
+- `RRSEO_WL_DESCRIPTION` — Plugin description in Plugins list
+- `RRSEO_WL_AUTHOR` — Author name in Plugins list
+- `RRSEO_WL_AUTHOR_URL` — Author URL in Plugins list
+- `RRSEO_WL_SUPPORT_URL` — Appends a custom Support link to the plugin row meta
+
+**Tier 2 — Hide** (remove plugin from Plugins screen entirely):
+
+- `RRSEO_WL_HIDE_PLUGIN` (bool `true`) — Removes plugin entry from Plugins
+  screen; deactivation warning script is also suppressed.
+
+All constants are optional. When none are defined, default RankRocket branding
+is used unchanged. Define constants in `wp-config.php` only — they cannot be
+overridden from the database or settings UI.
+
+Admin menu titles and all six settings-page headings now read the WL name via
+`RRSEO_White_Label::wl_name()`. Deactivation warning dialog injects the WL
+name dynamically via `wp_json_encode`.
+
+---
+
 ## v2.11.6
 
 Accept `code` as an alias for `content` in snippet write endpoints.
