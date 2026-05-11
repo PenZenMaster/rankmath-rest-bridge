@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.11.6
+
+Accept `code` as an alias for `content` in snippet write endpoints.
+
+### Fix
+
+- `POST /snippets` — `code` is now an accepted optional field alongside
+  `content`. If neither is provided a `400 missing_content` error is returned
+  with a message naming both accepted field names. `content` was previously
+  marked `required` in the args schema, which rejected callers sending `code`.
+- `POST /snippets/{id}` — update handler now falls back to the `code` param
+  when `content` is absent.
+- `POST /snippets/replace-all` — each item in the `snippets` array now falls
+  back to `item['code']` when `item['content']` is absent.
+
+---
+
 ## v2.11.5
 
 Fix exclusion pattern case normalization in `rr_is_utility_url()`.

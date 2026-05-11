@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.11.5
+ * Version:      2.11.6
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.11.5' );
+define( 'RMB_VERSION', '2.11.6' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -1585,7 +1585,11 @@ add_action(
 							'type'     => 'string',
 						),
 						'content'    => array(
-							'required' => true,
+							'required' => false,
+							'type'     => 'string',
+						),
+						'code'       => array(
+							'required' => false,
 							'type'     => 'string',
 						),
 						'location'   => array(
@@ -2878,6 +2882,15 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 	$title = sanitize_text_field( $request->get_param( 'title' ) );
 	$id    = sanitize_title( $title );
 
+	// Accept 'code' as an alias for 'content' so both field names work.
+	$body = $request->get_param( 'content' );
+	if ( null === $body ) {
+		$body = $request->get_param( 'code' );
+	}
+	if ( null === $body || '' === $body ) {
+		return new WP_Error( 'missing_content', 'A snippet body is required. Send it as "content" or "code".', array( 'status' => 400 ) );
+	}
+
 	if ( isset( $snippets[ $id ] ) ) {
 		$id = $id . '_' . time();
 	}
@@ -2885,7 +2898,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 	$snippet = array(
 		'id'         => $id,
 		'title'      => $title,
-		'content'    => $request->get_param( 'content' ),
+		'content'    => $body,
 		'location'   => sanitize_text_field( $request->get_param( 'location' ) ),
 		'display_on' => sanitize_text_field( $request->get_param( 'display_on' ) ),
 		'status'     => sanitize_text_field( $request->get_param( 'status' ) ),
@@ -2925,7 +2938,11 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 		}
 	}
 
+	// Accept 'code' as an alias for 'content'.
 	$content = $request->get_param( 'content' );
+	if ( null === $content ) {
+		$content = $request->get_param( 'code' );
+	}
 	if ( null !== $content ) {
 		$snippets[ $id ]['content'] = $content;
 	}
@@ -2980,7 +2997,7 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
 		$clean_store[ $id ] = array(
 			'id'         => $id,
 			'title'      => sanitize_text_field( $snippet['title'] ?? '' ),
-			'content'    => $snippet['content'] ?? '',
+			'content'    => $snippet['content'] ?? $snippet['code'] ?? '',
 			'location'   => sanitize_text_field( $snippet['location'] ?? 'footer' ),
 			'display_on' => sanitize_text_field( $snippet['display_on'] ?? 'entire_website' ),
 			'status'     => sanitize_text_field( $snippet['status'] ?? 'active' ),
