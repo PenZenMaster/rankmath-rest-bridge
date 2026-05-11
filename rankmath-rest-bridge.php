@@ -1218,35 +1218,35 @@ add_action(
 				'callback'            => 'rmb_update_meta',
 				'permission_callback' => $admin_only,
 				'args'                => array(
-					'post_id'        => array(
+					'post_id'             => array(
 						'required' => true,
 						'type'     => 'integer',
 					),
-					'title'          => array(
+					'title'               => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'description'    => array(
+					'description'         => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'focus_keyword'  => array(
+					'focus_keyword'       => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'robots'         => array(
+					'robots'              => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'og_title'       => array(
+					'og_title'            => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'og_description' => array(
+					'og_description'      => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'og_image'       => array(
+					'og_image'            => array(
 						'required' => false,
 						'type'     => 'string',
 					),
@@ -1293,35 +1293,35 @@ add_action(
 				'callback'            => 'rmb_preview_update',
 				'permission_callback' => $admin_only,
 				'args'                => array(
-					'post_id'        => array(
+					'post_id'             => array(
 						'required' => true,
 						'type'     => 'integer',
 					),
-					'title'          => array(
+					'title'               => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'description'    => array(
+					'description'         => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'focus_keyword'  => array(
+					'focus_keyword'       => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'robots'         => array(
+					'robots'              => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'og_title'       => array(
+					'og_title'            => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'og_description' => array(
+					'og_description'      => array(
 						'required' => false,
 						'type'     => 'string',
 					),
-					'og_image'       => array(
+					'og_image'            => array(
 						'required' => false,
 						'type'     => 'string',
 					),
@@ -1840,8 +1840,8 @@ function rmb_update_meta( WP_REST_Request $request ) {
 	$request_id    = rr_request_id( $request );
 
 	foreach ( $raw_fields as $param => $value ) {
-		$meta_key  = RR_SEO_META_KEYS[ $param ];
-		$before    = rr_get_seo_meta( $post_id, $param );
+		$meta_key = RR_SEO_META_KEYS[ $param ];
+		$before   = rr_get_seo_meta( $post_id, $param );
 		if ( in_array( $param, $url_fields, true ) ) {
 			$sanitized = esc_url_raw( $value );
 		} elseif ( 'twitter_card' === $param ) {
@@ -1987,7 +1987,7 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
 		$meta['rr_seo_twitter_description'] = $meta['_rr_seo_twitter_description'] ?? '';
 		$meta['rr_seo_twitter_image']       = $meta['_rr_seo_twitter_image'] ?? '';
 		$stored_section                     = get_post_meta( $pid, META_LLMS_SECTION, true );
-		$results[]            = array(
+		$results[]                          = array(
 			'post_id'                => $pid,
 			'slug'                   => $post->post_name,
 			'title'                  => get_the_title( $post ),
@@ -2435,12 +2435,12 @@ function rr_robots_txt_output( string $output, int $is_public ): string { // php
 		return $output;
 	}
 
-	$site_url     = rtrim( get_bloginfo( 'url' ), '/' );
-	$rr_sitemap   = $site_url . '/sitemap_index.xml';
-	$wp_sitemap   = $site_url . '/wp-sitemap.xml';
-	$lines        = explode( "\n", str_replace( "\r\n", "\n", $output ) );
-	$kept         = array();
-	$has_rr_line  = false;
+	$site_url    = rtrim( get_bloginfo( 'url' ), '/' );
+	$rr_sitemap  = $site_url . '/sitemap_index.xml';
+	$wp_sitemap  = $site_url . '/wp-sitemap.xml';
+	$lines       = explode( "\n", str_replace( "\r\n", "\n", $output ) );
+	$kept        = array();
+	$has_rr_line = false;
 
 	foreach ( $lines as $line ) {
 		$trim = trim( $line );
@@ -2513,7 +2513,7 @@ function rr_merge_wp_robots( array $directives ): array {
 		// key=value directives (e.g. max-image-preview:large) preserve their value;
 		// boolean directives (index/noindex/follow/nofollow/...) flip a flag.
 		if ( false !== strpos( $value, ':' ) ) {
-			list( $k, $v ) = array_map( 'trim', explode( ':', $value, 2 ) );
+			list( $k, $v )    = array_map( 'trim', explode( ':', $value, 2 ) );
 			$directives[ $k ] = $v;
 		} else {
 			$directives[ $value ] = true;
