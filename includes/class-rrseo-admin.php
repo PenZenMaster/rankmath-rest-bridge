@@ -153,7 +153,7 @@ class RRSEO_Admin {
 				'root'       => esc_url_raw( rest_url() ),
 				'nonce'      => wp_create_nonce( 'wp_rest' ),
 				'version'    => RMB_VERSION,
-				'batch'      => RR_BATCH_MAX,
+				'batch'      => rrseo_batch_max(),
 				'titleMax'   => RR_TITLE_MAX,
 				'titleWarnH' => RR_TITLE_WARN_MAX,
 				'titleWarnL' => RR_TITLE_WARN_MIN,

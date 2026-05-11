@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.12.0
+ * Version:      2.12.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.12.0' );
+define( 'RMB_VERSION', '2.12.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -118,10 +118,25 @@ define( 'RR_TITLE_WARN_MIN', 30 ); // Chars; warning below this.
 define( 'RR_DESC_MAX', 320 ); // Chars; hard error above this.
 define( 'RR_DESC_WARN_MAX', 160 ); // Chars; warning above this.
 define( 'RR_DESC_WARN_MIN', 50 ); // Chars; warning below this.
-define( 'RR_BATCH_MAX', 20 ); // Items; hard error above this.
+define( 'RR_BATCH_MAX', 100 ); // Default batch cap; override via rrseo_batch_max filter.
 
 // llms.txt config option key (replaces legacy 'rmb_llms_config'; both are read during migration).
 define( 'RR_LLMS_CONFIG_KEY', 'rrseo_llms_config' );
+
+/**
+ * Returns the effective batch size cap for bulk REST endpoints.
+ *
+ * Filterable via the rrseo_batch_max filter so individual sites can raise or
+ * lower the limit without modifying plugin code.
+ *
+ * Example (wp-config.php or a mu-plugin):
+ *   add_filter( 'rrseo_batch_max', function() { return 200; } );
+ *
+ * @return int
+ */
+function rrseo_batch_max(): int {
+	return (int) apply_filters( 'rrseo_batch_max', RR_BATCH_MAX );
+}
 
 // robots.txt directive config option key.
 define( 'RR_ROBOTS_CONFIG_KEY', 'rrseo_robots_config' );
@@ -1962,8 +1977,8 @@ function rmb_get_meta( WP_REST_Request $request ) {
 function rmb_meta_bulk_get( WP_REST_Request $request ) {
 	$post_ids = array_map( 'intval', $request->get_param( 'post_ids' ) );
 
-	if ( count( $post_ids ) > RR_BATCH_MAX ) {
-		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . RR_BATCH_MAX, array( 'status' => 422 ) );
+	if ( count( $post_ids ) > rrseo_batch_max() ) {
+		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . rrseo_batch_max(), array( 'status' => 422 ) );
 	}
 
 	$results = array();
@@ -2011,8 +2026,8 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 	$url_fields = array( 'og_image', 'canonical', 'twitter_image' );
 	$request_id = rr_request_id( $request );
 
-	if ( count( $updates ) > RR_BATCH_MAX ) {
-		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . RR_BATCH_MAX, array( 'status' => 422 ) );
+	if ( count( $updates ) > rrseo_batch_max() ) {
+		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . rrseo_batch_max(), array( 'status' => 422 ) );
 	}
 
 	$results = array();
@@ -2364,8 +2379,8 @@ function rmb_image_get_alt( WP_REST_Request $request ) {
 function rmb_images_bulk_alt( WP_REST_Request $request ) {
 	$updates = $request->get_param( 'updates' );
 
-	if ( count( $updates ) > RR_BATCH_MAX ) {
-		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . RR_BATCH_MAX, array( 'status' => 422 ) );
+	if ( count( $updates ) > rrseo_batch_max() ) {
+		return new WP_Error( 'batch_too_large', 'Batch size exceeds maximum of ' . rrseo_batch_max(), array( 'status' => 422 ) );
 	}
 
 	$results = array();
@@ -3258,10 +3273,10 @@ function rmb_migrate_legacy( WP_REST_Request $request ) {
 	$dry_run    = (bool) $request->get_param( 'dry_run' );
 	$request_id = rr_request_id( $request );
 
-	if ( count( $post_ids ) > RR_BATCH_MAX ) {
+	if ( count( $post_ids ) > rrseo_batch_max() ) {
 		return new WP_Error(
 			'batch_too_large',
-			'Batch size exceeds maximum of ' . RR_BATCH_MAX,
+			'Batch size exceeds maximum of ' . rrseo_batch_max(),
 			array( 'status' => 422 )
 		);
 	}

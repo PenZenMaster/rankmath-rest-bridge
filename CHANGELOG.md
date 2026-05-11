@@ -1,5 +1,27 @@
 # Changelog
 
+## v2.12.1
+
+Raise default batch cap and expose a filter for per-site tuning.
+
+### Changes
+
+- `RR_BATCH_MAX` raised from `20` to `100`.
+- New `rrseo_batch_max()` helper wraps `apply_filters( 'rrseo_batch_max', RR_BATCH_MAX )`.
+  All four bulk endpoints (`/meta/bulk-get`, `/meta/bulk-update`,
+  `/images/bulk-alt`, `/migrate`) now enforce `rrseo_batch_max()` instead of
+  the bare constant, so the limit can be changed at runtime without touching
+  plugin code.
+- Admin JS `per_page` query param now reads `rrseo_batch_max()` via
+  `wp_localize_script` so it stays in sync with the server-side cap.
+
+To override (add to a mu-plugin or `wp-config.php`):
+```php
+add_filter( 'rrseo_batch_max', function() { return 200; } );
+```
+
+---
+
 ## v2.12.0
 
 White-label support — Tier 1 (rename) and Tier 2 (hide) via `wp-config.php` constants.
