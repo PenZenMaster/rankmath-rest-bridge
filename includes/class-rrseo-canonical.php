@@ -50,8 +50,8 @@ function rr_has_noindex( $robots ): bool {
  * Normalizes a URL path for prefix and exact-path comparison.
  *
  * Adds a leading slash, adds a trailing slash, and lowercases the result.
- * Applied to URL paths only — NOT to url_patterns config strings, which are
- * used as-is (some are partial slug stems without a trailing slash).
+ * Applied to URL paths before comparison; exclusion patterns are also
+ * normalized to lowercase so both sides of strpos() share the same case.
  *
  * @param string $path Raw URL path.
  * @return string Normalized path.
@@ -111,10 +111,14 @@ function rr_is_utility_url( string $url ): bool {
 
 	// When exclude_utility_pages is true (or absent — default true), apply built-in list.
 	$use_defaults = ! isset( $config['exclude_utility_pages'] ) || ! empty( $config['exclude_utility_pages'] );
-	$active       = $use_defaults ? array_merge( $default_patterns, $custom_patterns ) : $custom_patterns;
+	$raw_active   = $use_defaults ? array_merge( $default_patterns, $custom_patterns ) : $custom_patterns;
+
+	// Normalize patterns to lowercase once so strpos() compares like-cased strings.
+	// $path is already lowercased by rr_normalize_url_path().
+	$active = array_map( 'strtolower', array_map( 'strval', $raw_active ) );
 
 	foreach ( $active as $pattern ) {
-		if ( '' !== $pattern && false !== strpos( $path, strtolower( (string) $pattern ) ) ) {
+		if ( '' !== $pattern && false !== strpos( $path, $pattern ) ) {
 			return true;
 		}
 	}

@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.11.5
+
+Fix exclusion pattern case normalization in `rr_is_utility_url()`.
+
+### Fix
+
+- Patterns were being lowercased on every `strpos()` call inside the loop
+  (`strtolower( (string) $pattern )`). Now lowercased once when building
+  `$active` via `array_map( 'strtolower', array_map( 'strval', ... ) )`,
+  so both the path (lowercased by `rr_normalize_url_path()`) and patterns
+  share the same lowercase invariant before comparison.
+- Updated `rr_normalize_url_path()` docblock to accurately document that
+  exclusion patterns are also normalized to lowercase, not used as-is.
+
+---
+
 ## v2.11.4
 
 Fix sitemap index lastmod consistency. `rmb_serve_sitemap_index()` previously
