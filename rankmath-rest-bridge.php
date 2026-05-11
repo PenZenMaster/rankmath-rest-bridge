@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.12.1
+ * Version:      2.12.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.12.1' );
+define( 'RMB_VERSION', '2.12.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -244,38 +244,99 @@ add_action(
 
 
 // ── Output managed snippets ───────────────────────────────────────────────────
-/**
- * Outputs managed snippets for the given head/footer location.
- *
- * @param string $location 'head' or 'footer'.
- */
+// Three location hooks. Priorities are chosen so snippets render AFTER the
+// v2.11.3 canonical / Twitter / robots emission (which lives at wp_head:1):
+//
+// head      → wp_head:20
+// body_open → wp_body_open:10
+// footer    → wp_footer:10
+//
+// rmb_output_snippets() short-circuits on admin / REST / AJAX requests and on
+// the rrseo_emit_snippets option, so the hooks are cheap when disabled.
 add_action(
 	'wp_head',
 	function () {
 		rmb_output_snippets( 'head' );
 	},
-	5
+	20
+);
+add_action(
+	'wp_body_open',
+	function () {
+		rmb_output_snippets( 'body_open' );
+	},
+	10
 );
 add_action(
 	'wp_footer',
 	function () {
 		rmb_output_snippets( 'footer' );
 	},
-	99
+	10
 );
 
 /**
- * Outputs active snippets for the given location.
+ * Outputs active managed snippets for the given location.
  *
- * @param string $location 'head' or 'footer'.
+ * Storage lives in the `rmb_managed_snippets` option (an associative array
+ * keyed by snippet id, see RMB_SNIPPETS_KEY). Snippet bodies are written by
+ * authenticated administrators via /snippets and are emitted verbatim — they
+ * are HTML/JSON-LD <script> blocks that must not be escaped through
+ * wp_kses_post or esc_html.
+ *
+ * Supported `location` values: `head`, `body_open`, `footer`. Unknown values
+ * are silently skipped.
+ *
+ * Supported `display_on` values:
+ *   sitewide           → every front-end page (also: all, entire_website)
+ *   home               → is_front_page() || is_home() (also: homepage, front_page)
+ *   singular           → is_singular() (any single post/page/CPT)
+ *   all_pages          → is_page() (legacy)
+ *   all_posts          → is_single() (legacy)
+ *   page_id:NNN        → singular page whose queried object id is NNN
+ *   post_type:slug     → is_singular( 'slug' )
+ *   NNN (bare integer) → singular page whose queried object id is NNN (legacy)
+ *
+ * Unknown display_on values are silently skipped to keep the renderer
+ * forward-compatible with new RankRocket targeting values.
+ *
+ * @param string $location One of: head, body_open, footer.
+ * @return void
  */
 function rmb_output_snippets( $location ) {
-	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
-	if ( empty( $snippets ) ) {
+	// Never emit inside admin screens, REST calls, or AJAX endpoints — those
+	// surfaces don't render a public page and would inject script bodies into
+	// API responses, which can corrupt JSON payloads.
+	if ( is_admin() ) {
+		return;
+	}
+	if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+		return;
+	}
+	if ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) {
 		return;
 	}
 
-	foreach ( $snippets as $snippet ) {
+	// Killswitch — admins can disable emission without deleting snippets.
+	if ( ! (bool) get_option( 'rrseo_emit_snippets', true ) ) {
+		return;
+	}
+
+	// Per-request filter — themes / mu-plugins can suppress emission
+	// (for example, on a maintenance template).
+	if ( ! apply_filters( 'rrseo_render_snippets', true ) ) {
+		return;
+	}
+
+	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
+	if ( empty( $snippets ) || ! is_array( $snippets ) ) {
+		return;
+	}
+
+	foreach ( $snippets as $id => $snippet ) {
+		if ( ! is_array( $snippet ) ) {
+			continue;
+		}
 		if ( ( $snippet['status'] ?? 'active' ) !== 'active' ) {
 			continue;
 		}
@@ -283,39 +344,69 @@ function rmb_output_snippets( $location ) {
 			continue;
 		}
 
-		$display_on    = $snippet['display_on'] ?? 'entire_website';
-		$should_output = false;
-
-		switch ( $display_on ) {
-			case 'all':            // RankRocket canonical value for sitewide.
-			case 'entire_website': // Legacy alias.
-				$should_output = true;
-				break;
-			case 'home':
-			case 'homepage':
-			case 'front_page':
-				$should_output = is_front_page();
-				break;
-			case 'all_pages':
-				$should_output = is_page();
-				break;
-			case 'all_posts':
-				$should_output = is_single();
-				break;
-			default:
-				if ( str_starts_with( $display_on, 'page_id:' ) ) {
-					$page_id       = intval( substr( $display_on, 8 ) );
-					$should_output = ( get_queried_object_id() === $page_id );
-				} elseif ( is_numeric( $display_on ) ) {
-					$should_output = ( get_queried_object_id() === intval( $display_on ) );
-				}
+		$content = (string) ( $snippet['content'] ?? '' );
+		if ( '' === $content ) {
+			continue;
 		}
 
-		if ( $should_output ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- managed snippets are admin-only, capability-guarded at write; must not strip <script>/<style>.
-			echo "\n" . $snippet['content'] . "\n";
+		if ( ! rmb_snippet_matches_display( (string) ( $snippet['display_on'] ?? 'sitewide' ) ) ) {
+			continue;
 		}
+
+		$marker_id = is_string( $id ) || is_int( $id ) ? (string) $id : '';
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- managed snippets are admin-only, capability-guarded at write; must not strip <script>/<style>/JSON-LD.
+		echo "\n<!-- rrseo:snippet id=\"" . esc_attr( $marker_id ) . "\" -->\n" . $content . "\n<!-- /rrseo:snippet -->\n";
 	}
+}
+
+/**
+ * Returns true when the current request matches the snippet's display_on rule.
+ *
+ * See rmb_output_snippets() for the supported value vocabulary. Unknown values
+ * return false so the renderer skips them silently.
+ *
+ * @param string $display_on Targeting rule from the snippet record.
+ * @return bool
+ */
+function rmb_snippet_matches_display( string $display_on ): bool {
+	$display_on = trim( $display_on );
+	if ( '' === $display_on ) {
+		return false;
+	}
+
+	switch ( $display_on ) {
+		case 'sitewide':
+		case 'all':
+		case 'entire_website':
+			return true;
+		case 'home':
+		case 'homepage':
+		case 'front_page':
+			return is_front_page() || is_home();
+		case 'singular':
+			return is_singular();
+		case 'all_pages':
+			return is_page();
+		case 'all_posts':
+			return is_single();
+	}
+
+	if ( str_starts_with( $display_on, 'page_id:' ) ) {
+		$page_id = (int) substr( $display_on, 8 );
+		return $page_id > 0 && is_singular() && get_queried_object_id() === $page_id;
+	}
+
+	if ( str_starts_with( $display_on, 'post_type:' ) ) {
+		$slug = trim( substr( $display_on, 10 ) );
+		return '' !== $slug && is_singular( $slug );
+	}
+
+	if ( is_numeric( $display_on ) ) {
+		$page_id = (int) $display_on;
+		return $page_id > 0 && is_singular() && get_queried_object_id() === $page_id;
+	}
+
+	return false;
 }
 
 
@@ -3185,6 +3276,7 @@ function rmb_status( WP_REST_Request $request ) {
 		'physical_robots_txt_exists' => $physical_robots_file,
 		'robots_txt_auto_sync'       => (bool) get_option( 'rrseo_robots_txt_auto_sync', true ),
 		'consolidate_wp_robots'      => (bool) get_option( 'rrseo_consolidate_wp_robots', true ),
+		'emit_snippets'              => (bool) get_option( 'rrseo_emit_snippets', true ),
 		'snippet_count'              => count( $snippets ),
 		'snippet_ids'                => array_keys( $snippets ),
 		'update_url'                 => RMB_UPDATE_URL,

@@ -1,5 +1,57 @@
 # Changelog
 
+## v2.12.2
+
+P6 — Snippet renderer covers the targeting vocabulary RankRocket actually sends
+and the operational guards live sites need.
+
+### Bug
+
+On linkonlogsportables.com running v2.11.6, `POST /snippets` successfully
+created an active head snippet with `display_on: sitewide` and a valid
+`<script type="application/ld+json">` body, but the rendered HTML contained
+zero `application/ld+json` matches after cache purge. The previous switch
+inside `rmb_output_snippets()` handled `all` and `entire_website` but not
+`sitewide`, so the snippet fell through the default branch and emitted nothing.
+
+### Behaviour
+
+- **Targeting**: add `sitewide`, `singular`, `post_type:slug`. Preserve
+  the legacy values `all`, `entire_website`, `home`, `homepage`,
+  `front_page`, `all_pages`, `all_posts`, `page_id:NNN`, and bare integer.
+  Unknown values are silently skipped so the renderer stays forward
+  compatible with new RankRocket targeting strings.
+- **Locations**: `head` now fires at `wp_head:20` (after the
+  canonical/Twitter/robots emission added in v2.11.3 at priority 1). New
+  `body_open` location fires at `wp_body_open:10`. `footer` continues to
+  emit at `wp_footer:10`. Unknown locations are silently skipped.
+- **Output**: each snippet is wrapped in
+  `<!-- rrseo:snippet id="ID" -->...<!-- /rrseo:snippet -->` for
+  debuggability. Content is echoed verbatim — no `esc_html` or
+  `wp_kses_post` — because JSON-LD `<script>` bodies must not be stripped.
+- **Operational guards**: short-circuits on `is_admin()`, `REST_REQUEST`,
+  and `wp_doing_ajax()` so snippet bodies never land inside admin screens
+  or JSON API responses.
+
+### New option
+
+- `rrseo_emit_snippets` — boolean, default `true`. Set to `false` to
+  killswitch all emission without deleting snippets. Surfaced in `/status`
+  as `emit_snippets`.
+
+### New filter
+
+- `rrseo_render_snippets( bool $emit )` — per-request override.
+  Themes/mu-plugins can `return false` to suppress emission on a specific
+  template (maintenance pages, AMP shells, etc.).
+
+### Internal
+
+- Targeting logic extracted to `rmb_snippet_matches_display()` so the
+  matcher is unit-testable and the main renderer reads as a linear loop.
+
+---
+
 ## v2.12.1
 
 Raise default batch cap and expose a filter for per-site tuning.
