@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.12.1
+ * Version:      2.12.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.12.1' );
+define( 'RMB_VERSION', '2.12.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -247,9 +247,9 @@ add_action(
 // Three location hooks. Priorities are chosen so snippets render AFTER the
 // v2.11.3 canonical / Twitter / robots emission (which lives at wp_head:1):
 //
-//   head      → wp_head:20
-//   body_open → wp_body_open:10
-//   footer    → wp_footer:10
+// head      → wp_head:20
+// body_open → wp_body_open:10
+// footer    → wp_footer:10
 //
 // rmb_output_snippets() short-circuits on admin / REST / AJAX requests and on
 // the rrseo_emit_snippets option, so the hooks are cheap when disabled.
