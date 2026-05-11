@@ -571,7 +571,7 @@ add_action(
 		}
 		if ( ! $description ) {
 			$excerpt     = $post->post_excerpt ? $post->post_excerpt : $post->post_content;
-			$description = wp_trim_words( wp_strip_all_tags( $excerpt ), 30 );
+			$description = rr_trim_chars( wp_strip_all_tags( $excerpt ), 200 );
 		}
 		$description = rmb_resolve_tokens( $description, $post_id );
 
@@ -622,6 +622,44 @@ add_action(
 	},
 	5
 );
+
+
+// ── Character-bounded word-safe trim ──────────────────────────────────────────
+/**
+ * Trims a string to at most $max characters without cutting mid-word.
+ *
+ * Used for the Twitter description excerpt fallback where the social card
+ * surface caps display at roughly 200 characters. We trim to the byte limit,
+ * back off to the last whitespace, then append an ellipsis when truncation
+ * occurred. Multibyte-safe via mb_substr / mb_strlen when available.
+ *
+ * @param string $text Source text (already strip-tagged).
+ * @param int    $max  Maximum character count for the returned string,
+ *                     excluding the trailing ellipsis. Default 200.
+ * @return string
+ */
+function rr_trim_chars( string $text, int $max = 200 ): string {
+	$text = trim( preg_replace( '/\s+/', ' ', $text ) );
+	if ( '' === $text ) {
+		return '';
+	}
+	if ( function_exists( 'mb_strlen' ) ) {
+		if ( mb_strlen( $text ) <= $max ) {
+			return $text;
+		}
+		$slice = mb_substr( $text, 0, $max );
+	} else {
+		if ( strlen( $text ) <= $max ) {
+			return $text;
+		}
+		$slice = substr( $text, 0, $max );
+	}
+	$last_space = strrpos( $slice, ' ' );
+	if ( false !== $last_space && $last_space > 0 ) {
+		$slice = substr( $slice, 0, $last_space );
+	}
+	return rtrim( $slice ) . '…';
+}
 
 
 // ── Token resolver ────────────────────────────────────────────────────────────
@@ -770,9 +808,14 @@ function rr_validate_seo_fields( array $fields, $post_id = null ) {
 	}
 
 	if ( isset( $fields['twitter_card'] ) && '' !== $fields['twitter_card'] ) {
-		$allowed_cards = array( 'summary', 'summary_large_image', 'app', 'player' );
-		if ( ! in_array( $fields['twitter_card'], $allowed_cards, true ) ) {
-			$errors[] = 'twitter_card: invalid value. Allowed: ' . implode( ', ', $allowed_cards );
+		// Twitter/X has historically added card types (e.g. summary_large_image, app,
+		// player, and forthcoming variants). We prefer caller flexibility over
+		// rejecting forward-compatible values, so only enforce a permissive sanitised
+		// shape: a slug-like token of <= 32 chars. The runtime emitter passes the
+		// value through esc_attr() before rendering.
+		$len = strlen( $fields['twitter_card'] );
+		if ( $len > 32 ) {
+			$errors[] = "twitter_card: {$len} chars — exceeds hard limit of 32";
 		}
 	}
 
@@ -1799,7 +1842,14 @@ function rmb_update_meta( WP_REST_Request $request ) {
 	foreach ( $raw_fields as $param => $value ) {
 		$meta_key  = RR_SEO_META_KEYS[ $param ];
 		$before    = rr_get_seo_meta( $post_id, $param );
-		$sanitized = in_array( $param, $url_fields, true ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
+		if ( in_array( $param, $url_fields, true ) ) {
+			$sanitized = esc_url_raw( $value );
+		} elseif ( 'twitter_card' === $param ) {
+			// sanitize_key lowercases and strips to [a-z0-9_-] — slug-like, permissive.
+			$sanitized = sanitize_key( $value );
+		} else {
+			$sanitized = sanitize_text_field( $value );
+		}
 		update_post_meta( $post_id, $meta_key, $sanitized );
 		$updated[ $meta_key ]    = $sanitized;
 		$audit_changes[ $param ] = array(
@@ -1995,9 +2045,15 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 		$audit_changes = array();
 
 		foreach ( $raw_fields as $param => $value ) {
-			$meta_key  = RR_SEO_META_KEYS[ $param ];
-			$before    = rr_get_seo_meta( $post_id, $param );
-			$sanitized = in_array( $param, $url_fields, true ) ? esc_url_raw( $value ) : sanitize_text_field( $value );
+			$meta_key = RR_SEO_META_KEYS[ $param ];
+			$before   = rr_get_seo_meta( $post_id, $param );
+			if ( in_array( $param, $url_fields, true ) ) {
+				$sanitized = esc_url_raw( $value );
+			} elseif ( 'twitter_card' === $param ) {
+				$sanitized = sanitize_key( $value );
+			} else {
+				$sanitized = sanitize_text_field( $value );
+			}
 			update_post_meta( $post_id, $meta_key, $sanitized );
 			$updated[ $meta_key ]    = $value;
 			$audit_changes[ $param ] = array(
