@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.11.2
+ * Version:      2.11.3
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.11.2' );
+define( 'RMB_VERSION', '2.11.3' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -28,13 +28,18 @@ define( 'RMB_UPDATE_URL', 'https://raw.githubusercontent.com/PenZenMaster/rankma
 define(
 	'RR_SEO_META_KEYS',
 	array(
-		'title'          => 'rr_seo_title',
-		'description'    => 'rr_seo_description',
-		'focus_keyword'  => 'rr_seo_focus_keyword',
-		'robots'         => 'rr_seo_robots',
-		'og_title'       => 'rr_seo_og_title',
-		'og_description' => 'rr_seo_og_description',
-		'og_image'       => 'rr_seo_og_image',
+		'title'               => 'rr_seo_title',
+		'description'         => 'rr_seo_description',
+		'focus_keyword'       => 'rr_seo_focus_keyword',
+		'robots'              => 'rr_seo_robots',
+		'og_title'            => 'rr_seo_og_title',
+		'og_description'      => 'rr_seo_og_description',
+		'og_image'            => 'rr_seo_og_image',
+		'canonical'           => '_rr_seo_canonical',
+		'twitter_card'        => '_rr_seo_twitter_card',
+		'twitter_title'       => '_rr_seo_twitter_title',
+		'twitter_description' => '_rr_seo_twitter_description',
+		'twitter_image'       => '_rr_seo_twitter_image',
 	)
 );
 
@@ -42,13 +47,18 @@ define(
 define(
 	'RR_SEO_LEGACY_META_KEYS',
 	array(
-		'title'          => 'rank_math_title',
-		'description'    => 'rank_math_description',
-		'focus_keyword'  => 'rank_math_focus_keyword',
-		'robots'         => 'rank_math_robots',
-		'og_title'       => 'rank_math_og_title',
-		'og_description' => 'rank_math_og_description',
-		'og_image'       => 'rank_math_og_image',
+		'title'               => 'rank_math_title',
+		'description'         => 'rank_math_description',
+		'focus_keyword'       => 'rank_math_focus_keyword',
+		'robots'              => 'rank_math_robots',
+		'og_title'            => 'rank_math_og_title',
+		'og_description'      => 'rank_math_og_description',
+		'og_image'            => 'rank_math_og_image',
+		'canonical'           => 'rank_math_canonical_url',
+		'twitter_card'        => 'rank_math_twitter_card_type',
+		'twitter_title'       => 'rank_math_twitter_title',
+		'twitter_description' => 'rank_math_twitter_description',
+		'twitter_image'       => 'rank_math_twitter_image',
 	)
 );
 
@@ -369,6 +379,14 @@ function rr_legacy_namespace_proxy( $result, WP_REST_Server $server, WP_REST_Req
 // precedence at the web-server level and bypasses this filter entirely.
 add_filter( 'robots_txt', 'rr_robots_txt_output', 99, 2 );
 
+// ── wp_robots() consolidation ─────────────────────────────────────────────────
+// Merges per-post robots directives into the single <meta name="robots"> tag
+// WordPress core emits via wp_robots(). When rrseo_consolidate_wp_robots is
+// enabled (default), the standalone tag previously written by the RankRocket
+// wp_head callback is suppressed and the directives are folded into core's
+// associative array — preserving max-image-preview:large alongside our values.
+add_filter( 'wp_robots', 'rr_merge_wp_robots', 20 );
+
 // ── SEO meta output — description, robots, OG tags ───────────────────────────
 // Title is handled above via pre_get_document_title; only echoed tags go here.
 add_action(
@@ -390,7 +408,11 @@ add_action(
 		if ( $desc ) {
 			echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
 		}
-		if ( $robots && ! empty( $robots ) ) {
+		// Emit a standalone <meta name="robots"> only when consolidation with WP
+		// core's wp_robots() is disabled. When enabled, rr_merge_wp_robots()
+		// merges our directives into the single tag core renders.
+		$consolidate = (bool) get_option( 'rrseo_consolidate_wp_robots', true );
+		if ( ! $consolidate && $robots && ! empty( $robots ) ) {
 			$robots_val = is_array( $robots ) ? implode( ',', $robots ) : $robots;
 			if ( $robots_val ) {
 				echo '<meta name="robots" content="' . esc_attr( $robots_val ) . '">' . "\n";
@@ -414,6 +436,166 @@ add_action(
 		}
 		if ( $og_image ) {
 			echo '<meta property="og:image" content="' . esc_url( $og_image ) . '">' . "\n";
+		}
+	},
+	1
+);
+
+
+// ── Canonical URL emission ────────────────────────────────────────────────────
+// Emits <link rel="canonical"> for singular posts/pages/products in the allowed
+// post types. Source precedence: (1) per-post _rr_seo_canonical override,
+// (2) computed canonical from rr_get_post_canonical_url(), (3) get_permalink().
+// Suppressed when the post robots meta declares noindex, when another emitter
+// has already written a canonical tag during this request, or when the
+// rrseo_emit_canonical filter returns false.
+add_action(
+	'wp_head',
+	function () {
+		if ( class_exists( 'RankMath' ) ) {
+			return; // RankMath handles its own canonical.
+		}
+		if ( ! is_singular() ) {
+			return;
+		}
+		$post_id = get_queried_object_id();
+		if ( ! $post_id ) {
+			return;
+		}
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return;
+		}
+
+		$allowed_types = apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES );
+		if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
+			return;
+		}
+
+		// Suppress when the post is marked noindex.
+		$robots = rr_get_seo_meta( $post_id, 'robots' );
+		if ( $robots ) {
+			$robots_val = is_array( $robots ) ? implode( ',', $robots ) : (string) $robots;
+			if ( false !== stripos( $robots_val, 'noindex' ) ) {
+				return;
+			}
+		}
+
+		// Allow external suppression (e.g. another SEO plugin already emitted one).
+		if ( ! apply_filters( 'rrseo_emit_canonical', true, $post_id ) ) {
+			return;
+		}
+
+		// Source priority: per-post override → computed canonical → permalink.
+		$override = (string) get_post_meta( $post_id, '_rr_seo_canonical', true );
+		if ( '' === $override ) {
+			// Legacy RankMath fallback.
+			$override = (string) get_post_meta( $post_id, 'rank_math_canonical_url', true );
+		}
+
+		if ( '' !== $override ) {
+			$canonical_url = $override;
+		} else {
+			$canonical_url = (string) get_permalink( $post );
+		}
+
+		$canonical_url = (string) apply_filters( 'rrseo_canonical_url', $canonical_url, $post_id );
+
+		if ( '' === $canonical_url ) {
+			return;
+		}
+
+		echo '<link rel="canonical" href="' . esc_url( $canonical_url ) . '">' . "\n";
+	},
+	1
+);
+
+
+// ── Twitter Card emission ─────────────────────────────────────────────────────
+// Emits twitter:card, twitter:title, twitter:description, and twitter:image for
+// singular posts in the allowed post types. Per-post _rr_seo_twitter_* values
+// take precedence; otherwise we fall back to OG fields, then post defaults.
+add_action(
+	'wp_head',
+	function () {
+		if ( class_exists( 'RankMath' ) ) {
+			return; // RankMath handles its own Twitter tags.
+		}
+		if ( ! is_singular() ) {
+			return;
+		}
+		$post_id = get_queried_object_id();
+		if ( ! $post_id ) {
+			return;
+		}
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return;
+		}
+
+		$allowed_types = apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES );
+		if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
+			return;
+		}
+
+		if ( ! apply_filters( 'rrseo_emit_twitter_cards', true, $post_id ) ) {
+			return;
+		}
+
+		// Card type — default summary_large_image, overridable per post.
+		$card = rr_get_seo_meta( $post_id, 'twitter_card' );
+		if ( ! $card ) {
+			$card = 'summary_large_image';
+		}
+
+		// Title precedence: twitter_title → og_title → rr_seo_title → post title.
+		$title = rr_get_seo_meta( $post_id, 'twitter_title' );
+		if ( ! $title ) {
+			$title = rr_get_seo_meta( $post_id, 'og_title' );
+		}
+		if ( ! $title ) {
+			$title = rr_get_seo_meta( $post_id, 'title' );
+		}
+		if ( ! $title ) {
+			$title = get_the_title( $post );
+		}
+		$title = rmb_resolve_tokens( $title, $post_id );
+
+		// Description precedence: twitter_description → og_description → rr_seo_description → excerpt.
+		$description = rr_get_seo_meta( $post_id, 'twitter_description' );
+		if ( ! $description ) {
+			$description = rr_get_seo_meta( $post_id, 'og_description' );
+		}
+		if ( ! $description ) {
+			$description = rr_get_seo_meta( $post_id, 'description' );
+		}
+		if ( ! $description ) {
+			$excerpt     = $post->post_excerpt ? $post->post_excerpt : $post->post_content;
+			$description = wp_trim_words( wp_strip_all_tags( $excerpt ), 30 );
+		}
+		$description = rmb_resolve_tokens( $description, $post_id );
+
+		// Image precedence: twitter_image → og_image → featured image.
+		$image = rr_get_seo_meta( $post_id, 'twitter_image' );
+		if ( ! $image ) {
+			$image = rr_get_seo_meta( $post_id, 'og_image' );
+		}
+		if ( ! $image ) {
+			$thumb_id = get_post_thumbnail_id( $post_id );
+			if ( $thumb_id ) {
+				$image = wp_get_attachment_image_url( $thumb_id, 'large' );
+			}
+		}
+
+		echo '<meta name="twitter:card" content="' . esc_attr( $card ) . '">' . "\n";
+		if ( $title ) {
+			echo '<meta name="twitter:title" content="' . esc_attr( $title ) . '">' . "\n";
+		}
+		if ( $description ) {
+			echo '<meta name="twitter:description" content="' . esc_attr( $description ) . '">' . "\n";
+		}
+		if ( $image ) {
+			echo '<meta name="twitter:image" content="' . esc_url( $image ) . '">' . "\n";
 		}
 	},
 	1
@@ -572,6 +754,25 @@ function rr_validate_seo_fields( array $fields, $post_id = null ) {
 	if ( isset( $fields['og_image'] ) && '' !== $fields['og_image'] ) {
 		if ( ! filter_var( $fields['og_image'], FILTER_VALIDATE_URL ) ) {
 			$errors[] = 'og_image: not a valid URL';
+		}
+	}
+
+	if ( isset( $fields['canonical'] ) && '' !== $fields['canonical'] ) {
+		if ( ! filter_var( $fields['canonical'], FILTER_VALIDATE_URL ) ) {
+			$errors[] = 'canonical: not a valid URL';
+		}
+	}
+
+	if ( isset( $fields['twitter_image'] ) && '' !== $fields['twitter_image'] ) {
+		if ( ! filter_var( $fields['twitter_image'], FILTER_VALIDATE_URL ) ) {
+			$errors[] = 'twitter_image: not a valid URL';
+		}
+	}
+
+	if ( isset( $fields['twitter_card'] ) && '' !== $fields['twitter_card'] ) {
+		$allowed_cards = array( 'summary', 'summary_large_image', 'app', 'player' );
+		if ( ! in_array( $fields['twitter_card'], $allowed_cards, true ) ) {
+			$errors[] = 'twitter_card: invalid value. Allowed: ' . implode( ', ', $allowed_cards );
 		}
 	}
 
@@ -1006,6 +1207,26 @@ add_action(
 						'required' => false,
 						'type'     => 'string',
 					),
+					'canonical'           => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_card'        => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_title'       => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_description' => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_image'       => array(
+						'required' => false,
+						'type'     => 'string',
+					),
 				),
 			)
 		);
@@ -1058,6 +1279,26 @@ add_action(
 						'type'     => 'string',
 					),
 					'og_image'       => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'canonical'           => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_card'        => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_title'       => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_description' => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'twitter_image'       => array(
 						'required' => false,
 						'type'     => 'string',
 					),
@@ -1528,7 +1769,7 @@ add_action(
  */
 function rmb_update_meta( WP_REST_Request $request ) {
 	$post_id    = intval( $request->get_param( 'post_id' ) );
-	$url_fields = array( 'og_image' );
+	$url_fields = array( 'og_image', 'canonical', 'twitter_image' );
 	$raw_fields = array();
 
 	foreach ( RR_SEO_META_KEYS as $param => $native_key ) {
@@ -1625,6 +1866,14 @@ function rmb_get_meta( WP_REST_Request $request ) {
 	}
 	$meta['rr_seo_score'] = get_post_meta( $post_id, 'rank_math_seo_score', true );
 
+	// Alias the underscore-prefixed canonical/twitter keys so external consumers can
+	// reference them without knowing they are stored as hidden post meta.
+	$meta['rr_seo_canonical']           = $meta['_rr_seo_canonical'] ?? '';
+	$meta['rr_seo_twitter_card']        = $meta['_rr_seo_twitter_card'] ?? '';
+	$meta['rr_seo_twitter_title']       = $meta['_rr_seo_twitter_title'] ?? '';
+	$meta['rr_seo_twitter_description'] = $meta['_rr_seo_twitter_description'] ?? '';
+	$meta['rr_seo_twitter_image']       = $meta['_rr_seo_twitter_image'] ?? '';
+
 	$thumb_id                    = get_post_thumbnail_id( $post_id );
 	$meta['_featured_image_url'] = $thumb_id ? wp_get_attachment_image_url( $thumb_id, 'large' ) : '';
 
@@ -1681,8 +1930,13 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
 		foreach ( RR_SEO_META_KEYS as $field => $native_key ) {
 			$meta[ $native_key ] = rr_get_seo_meta( $pid, $field );
 		}
-		$meta['rr_seo_score'] = get_post_meta( $pid, 'rank_math_seo_score', true );
-		$stored_section       = get_post_meta( $pid, META_LLMS_SECTION, true );
+		$meta['rr_seo_score']               = get_post_meta( $pid, 'rank_math_seo_score', true );
+		$meta['rr_seo_canonical']           = $meta['_rr_seo_canonical'] ?? '';
+		$meta['rr_seo_twitter_card']        = $meta['_rr_seo_twitter_card'] ?? '';
+		$meta['rr_seo_twitter_title']       = $meta['_rr_seo_twitter_title'] ?? '';
+		$meta['rr_seo_twitter_description'] = $meta['_rr_seo_twitter_description'] ?? '';
+		$meta['rr_seo_twitter_image']       = $meta['_rr_seo_twitter_image'] ?? '';
+		$stored_section                     = get_post_meta( $pid, META_LLMS_SECTION, true );
 		$results[]            = array(
 			'post_id'                => $pid,
 			'slug'                   => $post->post_name,
@@ -1708,7 +1962,7 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
  */
 function rmb_meta_bulk_update( WP_REST_Request $request ) {
 	$updates    = $request->get_param( 'updates' );
-	$url_fields = array( 'og_image' );
+	$url_fields = array( 'og_image', 'canonical', 'twitter_image' );
 	$request_id = rr_request_id( $request );
 
 	if ( count( $updates ) > RR_BATCH_MAX ) {
@@ -2116,7 +2370,109 @@ function rr_robots_txt_output( string $output, int $is_public ): string { // php
 	if ( '' !== $custom ) {
 		return $custom;
 	}
-	return $output;
+
+	// Auto-sync: strip Sitemap: lines pointing to WP core's /wp-sitemap.xml and
+	// append the RankRocket sitemap_index.xml directive so robots.txt agrees with
+	// the active sitemap. Gated by rrseo_robots_txt_auto_sync (default on).
+	$auto_sync = (bool) get_option( 'rrseo_robots_txt_auto_sync', true );
+	if ( ! $auto_sync ) {
+		return $output;
+	}
+
+	$site_url     = rtrim( get_bloginfo( 'url' ), '/' );
+	$rr_sitemap   = $site_url . '/sitemap_index.xml';
+	$wp_sitemap   = $site_url . '/wp-sitemap.xml';
+	$lines        = explode( "\n", str_replace( "\r\n", "\n", $output ) );
+	$kept         = array();
+	$has_rr_line  = false;
+
+	foreach ( $lines as $line ) {
+		$trim = trim( $line );
+		if ( 0 === stripos( $trim, 'Sitemap:' ) ) {
+			$url_part = trim( substr( $trim, 8 ) );
+			if ( strtolower( $url_part ) === strtolower( $wp_sitemap ) ) {
+				continue; // Drop core's directive.
+			}
+			if ( strtolower( $url_part ) === strtolower( $rr_sitemap ) ) {
+				$has_rr_line = true;
+			}
+		}
+		$kept[] = $line;
+	}
+
+	// Trim trailing blanks before appending.
+	while ( ! empty( $kept ) && '' === trim( end( $kept ) ) ) {
+		array_pop( $kept );
+	}
+
+	if ( ! $has_rr_line ) {
+		$kept[] = '';
+		$kept[] = 'Sitemap: ' . $rr_sitemap;
+	}
+
+	return implode( "\n", $kept ) . "\n";
+}
+
+/**
+ * Merges per-post robots directives into WordPress core's wp_robots array.
+ *
+ * Core's wp_robots() callback emits a single <meta name="robots"> tag built from
+ * the associative array returned by the wp_robots filter (e.g. max-image-preview
+ * is added by wp_robots_max_image_preview_large()). This callback folds the
+ * post-level rr_seo_robots value into that array on singular requests so only
+ * one robots tag renders.
+ *
+ * Gated by rrseo_consolidate_wp_robots (default true) so the previous two-tag
+ * behaviour remains available for users who opt out.
+ *
+ * @param array $directives Existing directives keyed by name.
+ * @return array
+ */
+function rr_merge_wp_robots( array $directives ): array {
+	if ( ! (bool) get_option( 'rrseo_consolidate_wp_robots', true ) ) {
+		return $directives;
+	}
+	if ( class_exists( 'RankMath' ) ) {
+		return $directives;
+	}
+	if ( ! is_singular() ) {
+		return $directives;
+	}
+
+	$post_id = get_queried_object_id();
+	if ( ! $post_id ) {
+		return $directives;
+	}
+
+	$robots = rr_get_seo_meta( $post_id, 'robots' );
+	if ( ! $robots ) {
+		return $directives;
+	}
+
+	$values = is_array( $robots ) ? $robots : array_map( 'trim', explode( ',', (string) $robots ) );
+	foreach ( $values as $value ) {
+		if ( '' === $value ) {
+			continue;
+		}
+		// key=value directives (e.g. max-image-preview:large) preserve their value;
+		// boolean directives (index/noindex/follow/nofollow/...) flip a flag.
+		if ( false !== strpos( $value, ':' ) ) {
+			list( $k, $v ) = array_map( 'trim', explode( ':', $value, 2 ) );
+			$directives[ $k ] = $v;
+		} else {
+			$directives[ $value ] = true;
+		}
+	}
+
+	// noindex wins over index when both are present.
+	if ( ! empty( $directives['noindex'] ) ) {
+		unset( $directives['index'] );
+	}
+	if ( ! empty( $directives['nofollow'] ) ) {
+		unset( $directives['follow'] );
+	}
+
+	return $directives;
 }
 
 /**
@@ -2747,6 +3103,8 @@ function rmb_status( WP_REST_Request $request ) {
 		'llms_url'                   => $site_url . '/llms.txt',
 		'robots_txt_url'             => $site_url . '/robots.txt',
 		'physical_robots_txt_exists' => $physical_robots_file,
+		'robots_txt_auto_sync'       => (bool) get_option( 'rrseo_robots_txt_auto_sync', true ),
+		'consolidate_wp_robots'      => (bool) get_option( 'rrseo_consolidate_wp_robots', true ),
 		'snippet_count'              => count( $snippets ),
 		'snippet_ids'                => array_keys( $snippets ),
 		'update_url'                 => RMB_UPDATE_URL,
