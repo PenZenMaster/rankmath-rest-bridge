@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.11.3
+ * Version:      2.11.4
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.11.3' );
+define( 'RMB_VERSION', '2.11.4' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -1071,31 +1071,21 @@ function rmb_serve_sitemap_index(): void {
 	$xsl_url  = $site_url . '/rmb-sitemap.xsl';
 	$fallback = gmdate( 'Y-m-d\TH:i:s+00:00' );
 
-	// Real lastmod per type — use post_modified_gmt for accurate UTC timestamp.
-	$last_post = get_posts(
-		array(
-			'numberposts' => 1,
-			'orderby'     => 'modified',
-			'order'       => 'DESC',
-			'post_status' => 'publish',
-		)
-	);
-	$posts_mod = $last_post
-		? mysql2date( 'Y-m-d\TH:i:s+00:00', $last_post[0]->post_modified_gmt )
-		: $fallback;
-
-	$last_page = get_posts(
-		array(
-			'post_type'   => 'page',
-			'numberposts' => 1,
-			'orderby'     => 'modified',
-			'order'       => 'DESC',
-			'post_status' => 'publish',
-		)
-	);
-	$pages_mod = $last_page
-		? mysql2date( 'Y-m-d\TH:i:s+00:00', $last_page[0]->post_modified_gmt )
-		: $fallback;
+	// Derive lastmod from the same filtered set the child sitemaps use so that
+	// excluded posts (utility pages, noindex, test placeholders) cannot push the
+	// index timestamp ahead of what the child sitemaps actually contain.
+	$canonical      = rr_get_canonical_url_set( array( 'post_types' => array( 'post', 'page' ) ) );
+	$posts_lastmods = array();
+	$pages_lastmods = array();
+	foreach ( $canonical['urls'] as $entry ) {
+		if ( 'post' === $entry['post_type'] ) {
+			$posts_lastmods[] = $entry['lastmod'];
+		} else {
+			$pages_lastmods[] = $entry['lastmod'];
+		}
+	}
+	$posts_mod = ! empty( $posts_lastmods ) ? max( $posts_lastmods ) : $fallback;
+	$pages_mod = ! empty( $pages_lastmods ) ? max( $pages_lastmods ) : $fallback;
 
 	header( 'Content-Type: application/xml; charset=UTF-8' );
 	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- XML document; all values are from trusted WP functions or esc_url/esc_html.

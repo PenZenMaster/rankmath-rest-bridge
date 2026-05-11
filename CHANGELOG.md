@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.11.4
+
+Fix sitemap index lastmod consistency. `rmb_serve_sitemap_index()` previously
+derived its per-sub-sitemap `<lastmod>` values from raw `get_posts()` queries
+that returned the most recently modified post/page regardless of whether that
+post was actually included in the child sitemap. This meant the index could
+show a timestamp ahead of the child sitemap's actual newest entry when utility
+pages, noindex posts, or test placeholders were the last-modified items.
+
+### Fix
+
+- Replace two raw `get_posts()` calls in `rmb_serve_sitemap_index()` with a
+  single `rr_get_canonical_url_set()` call (the same filtered set that
+  `rmb_serve_sitemap_type()` uses). Lastmod is now `max()` over the included
+  URL entries only, guaranteeing index and child sitemap timestamps are
+  consistent.
+
+---
+
 ## v2.11.3
 
 Surfaces in the live SEO audit on linkonlogsportables.com identified four head/robots gaps. This release closes all four with conservative defaults and gating options so behaviour can be reverted per-site.

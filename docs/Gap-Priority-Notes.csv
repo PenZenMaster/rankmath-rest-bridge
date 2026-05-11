@@ -4,6 +4,6 @@
 "Self-canonical / redirect override logic","P1","Canonical is effectively treated as permalink; deeper canonical/redirect logic is not implemented."
 "Placeholder/test exclusion list is narrow","P2","Currently only catches please-do-not-delete-this-*."
 "/canonical-urls/preview alias","P2","Missing, but was explicitly P2. /sitemap/preview currently carries the needed diagnostics."
-"/sitemap_index.xml lastmod helper usage","P2","Child sitemap URL selection uses the shared helper; index lastmod still uses raw post query."
+"/sitemap_index.xml lastmod helper usage","P2 CLOSED v2.11.4","rmb_serve_sitemap_index() now uses rr_get_canonical_url_set() — same filtered set as child sitemaps. max() over included lastmods only."
 "Description fallback first-content step","P2","It does not appear to have a distinct “first N words of content” fallback before title."
 "Pattern strings lowercased","P3","Practically fine because matching is case-insensitive, but technically not “as-is.”"
