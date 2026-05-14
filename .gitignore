@@ -1,6 +1,15 @@
 # Composer dev-dependencies (PHPUnit, phpcs, wpcs)
 dev-vendor/
 
+# Composer lock (vendor/ is committed directly; lock is redundant for a plugin)
+composer.lock
+
+# Test artifacts
+.phpunit.result.cache
+
+# Claude Code local overrides (machine-specific)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
