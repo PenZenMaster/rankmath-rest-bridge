@@ -360,10 +360,37 @@ function rmb_output_snippets( $location ) {
 }
 
 /**
+ * Returns true when the current request is any taxonomy archive page.
+ *
+ * WordPress's is_tax() returns false for built-in category and tag archives;
+ * those only satisfy is_category() and is_tag() respectively. This helper
+ * normalises all three into a single boolean.
+ *
+ * @return bool
+ */
+function rr_is_any_tax_archive(): bool {
+	return is_tax() || is_category() || is_tag();
+}
+
+
+/**
  * Returns true when the current request matches the snippet's display_on rule.
  *
- * See rmb_output_snippets() for the supported value vocabulary. Unknown values
- * return false so the renderer skips them silently.
+ * Supported value vocabulary:
+ *   sitewide / all / entire_website   -- every front-end page
+ *   home / homepage / front_page      -- front page only
+ *   singular                          -- any singular post/page/CPT
+ *   all_pages                         -- is_page()
+ *   all_posts                         -- is_single()
+ *   page_id:<int>                     -- specific post/page by ID
+ *   post_type:<slug>                  -- singular CPT by post_type slug
+ *   term:<taxonomy>:<slug>            -- specific term archive
+ *   term_id:<int>                     -- any term archive by term ID
+ *   tax:<taxonomy>                    -- all archives for a taxonomy
+ *   url:/<path>                       -- exact URL path match
+ *   <int>                             -- legacy bare integer (= page_id:<int>)
+ *
+ * Unknown values return false so the renderer skips them silently.
  *
  * @param string $display_on Targeting rule from the snippet record.
  * @return bool
@@ -399,6 +426,56 @@ function rmb_snippet_matches_display( string $display_on ): bool {
 	if ( str_starts_with( $display_on, 'post_type:' ) ) {
 		$slug = trim( substr( $display_on, 10 ) );
 		return '' !== $slug && is_singular( $slug );
+	}
+
+	if ( str_starts_with( $display_on, 'term:' ) ) {
+		$rest = substr( $display_on, 5 );
+		$sep  = strpos( $rest, ':' );
+		if ( false === $sep ) {
+			return false;
+		}
+		$taxonomy = substr( $rest, 0, $sep );
+		$slug     = substr( $rest, $sep + 1 );
+		if ( '' === $taxonomy || '' === $slug ) {
+			return false;
+		}
+		if ( 'category' === $taxonomy ) {
+			return is_category( $slug );
+		}
+		if ( 'post_tag' === $taxonomy ) {
+			return is_tag( $slug );
+		}
+		return is_tax( $taxonomy, $slug );
+	}
+
+	if ( str_starts_with( $display_on, 'term_id:' ) ) {
+		$term_id = (int) substr( $display_on, 8 );
+		return $term_id > 0 && rr_is_any_tax_archive() && (int) get_queried_object_id() === $term_id;
+	}
+
+	if ( str_starts_with( $display_on, 'tax:' ) ) {
+		$taxonomy = trim( substr( $display_on, 4 ) );
+		if ( '' === $taxonomy ) {
+			return false;
+		}
+		if ( 'category' === $taxonomy ) {
+			return is_category();
+		}
+		if ( 'post_tag' === $taxonomy ) {
+			return is_tag();
+		}
+		return is_tax( $taxonomy );
+	}
+
+	if ( str_starts_with( $display_on, 'url:' ) ) {
+		$pattern = substr( $display_on, 4 );
+		if ( '' === $pattern ) {
+			return false;
+		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- path is only compared, never output or used in DB.
+		$request_uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
+		$current_path = (string) wp_parse_url( $request_uri, PHP_URL_PATH );
+		return rtrim( $current_path, '/' ) === rtrim( $pattern, '/' );
 	}
 
 	if ( is_numeric( $display_on ) ) {
