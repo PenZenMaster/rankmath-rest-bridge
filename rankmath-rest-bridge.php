@@ -696,6 +696,121 @@ add_action(
 );
 
 
+// ── Taxonomy archive SEO meta output ──────────────────────────────────────────
+// Emits description, robots (when consolidation is off), and OG tags for
+// taxonomy archive pages (categories, tags, custom taxonomies). Reads from
+// term meta written by /update; falls back to the term's own description field
+// when no explicit rr_seo_description has been stored.
+add_action(
+	'wp_head',
+	function () {
+		if ( class_exists( 'RankMath' ) ) {
+			return;
+		}
+		if ( ! rr_is_any_tax_archive() ) {
+			return;
+		}
+		$term_id = get_queried_object_id();
+		if ( ! $term_id ) {
+			return;
+		}
+
+		$desc = rr_get_term_seo_meta( $term_id, 'description' );
+		if ( ! $desc ) {
+			$term = get_queried_object();
+			if ( $term && ! empty( $term->description ) ) {
+				$desc = rr_trim_chars( wp_strip_all_tags( $term->description ), 160 );
+			}
+		}
+		if ( $desc ) {
+			echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
+		}
+
+		$consolidate = (bool) get_option( 'rrseo_consolidate_wp_robots', true );
+		if ( ! $consolidate ) {
+			$robots = rr_get_term_seo_meta( $term_id, 'robots' );
+			if ( $robots ) {
+				$robots_val = is_array( $robots ) ? implode( ',', $robots ) : $robots;
+				if ( $robots_val ) {
+					echo '<meta name="robots" content="' . esc_attr( $robots_val ) . '">' . "\n";
+				}
+			}
+		}
+
+		$og_title = rr_get_term_seo_meta( $term_id, 'og_title' );
+		$og_desc  = rr_get_term_seo_meta( $term_id, 'og_description' );
+		$og_image = rr_get_term_seo_meta( $term_id, 'og_image' );
+		if ( ! $og_image ) {
+			$term     = isset( $term ) ? $term : get_queried_object();
+			$thumb_id = $term ? (int) get_term_meta( $term_id, 'thumbnail_id', true ) : 0;
+			if ( $thumb_id ) {
+				$og_image = (string) wp_get_attachment_image_url( $thumb_id, 'large' );
+			}
+		}
+		if ( $og_title ) {
+			echo '<meta property="og:title" content="' . esc_attr( $og_title ) . '">' . "\n";
+		}
+		if ( $og_desc ) {
+			echo '<meta property="og:description" content="' . esc_attr( $og_desc ) . '">' . "\n";
+		}
+		if ( $og_image ) {
+			echo '<meta property="og:image" content="' . esc_url( $og_image ) . '">' . "\n";
+		}
+	},
+	1
+);
+
+
+// ── Taxonomy archive canonical emission ───────────────────────────────────────
+// Emits <link rel="canonical"> for taxonomy archive pages. Source precedence:
+// (1) per-term _rr_seo_canonical override via /update, (2) get_term_link().
+// Suppressed when the term's rr_seo_robots declares noindex.
+add_action(
+	'wp_head',
+	function () {
+		if ( class_exists( 'RankMath' ) ) {
+			return;
+		}
+		if ( ! rr_is_any_tax_archive() ) {
+			return;
+		}
+		$term_id = get_queried_object_id();
+		if ( ! $term_id ) {
+			return;
+		}
+
+		$robots = rr_get_term_seo_meta( $term_id, 'robots' );
+		if ( $robots ) {
+			$robots_val = is_array( $robots ) ? implode( ',', $robots ) : (string) $robots;
+			if ( false !== stripos( $robots_val, 'noindex' ) ) {
+				return;
+			}
+		}
+
+		if ( ! apply_filters( 'rrseo_emit_canonical', true, $term_id ) ) {
+			return;
+		}
+
+		$override = rr_get_term_seo_meta( $term_id, 'canonical' );
+		if ( '' !== $override ) {
+			$canonical_url = $override;
+		} else {
+			$term          = get_queried_object();
+			$link          = $term ? get_term_link( $term ) : '';
+			$canonical_url = is_wp_error( $link ) ? '' : (string) $link;
+		}
+
+		$canonical_url = (string) apply_filters( 'rrseo_canonical_url', $canonical_url, $term_id );
+		if ( '' === $canonical_url ) {
+			return;
+		}
+
+		echo '<link rel="canonical" href="' . esc_url( $canonical_url ) . '">' . "\n";
+	},
+	1
+);
+
+
 // ── Twitter Card emission ─────────────────────────────────────────────────────
 // Emits twitter:card, twitter:title, twitter:description, and twitter:image for
 // singular posts in the allowed post types. Per-post _rr_seo_twitter_* values
@@ -885,15 +1000,22 @@ function rr_override_document_title( $title ) {
 	if ( class_exists( 'RankMath' ) ) {
 		return $title;
 	}
-	if ( ! is_singular() ) {
-		return $title;
+	if ( is_singular() ) {
+		$post_id   = get_queried_object_id();
+		$seo_title = rr_get_seo_meta( $post_id, 'title' );
+		if ( ! $seo_title ) {
+			return $title;
+		}
+		return rmb_resolve_tokens( $seo_title, $post_id );
 	}
-	$post_id   = get_queried_object_id();
-	$seo_title = rr_get_seo_meta( $post_id, 'title' );
-	if ( ! $seo_title ) {
-		return $title;
+	if ( rr_is_any_tax_archive() ) {
+		$term_id   = get_queried_object_id();
+		$seo_title = rr_get_term_seo_meta( $term_id, 'title' );
+		if ( $seo_title ) {
+			return $seo_title;
+		}
 	}
-	return rmb_resolve_tokens( $seo_title, $post_id );
+	return $title;
 }
 
 
@@ -2832,16 +2954,20 @@ function rr_merge_wp_robots( array $directives ): array {
 	if ( class_exists( 'RankMath' ) ) {
 		return $directives;
 	}
-	if ( ! is_singular() ) {
-		return $directives;
+
+	$robots = '';
+	if ( is_singular() ) {
+		$post_id = get_queried_object_id();
+		if ( $post_id ) {
+			$robots = rr_get_seo_meta( $post_id, 'robots' );
+		}
+	} elseif ( rr_is_any_tax_archive() ) {
+		$term_id = get_queried_object_id();
+		if ( $term_id ) {
+			$robots = rr_get_term_seo_meta( $term_id, 'robots' );
+		}
 	}
 
-	$post_id = get_queried_object_id();
-	if ( ! $post_id ) {
-		return $directives;
-	}
-
-	$robots = rr_get_seo_meta( $post_id, 'robots' );
 	if ( ! $robots ) {
 		return $directives;
 	}
