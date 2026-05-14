@@ -18,3 +18,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# mu-plugin scratch file (lives in rrc-mu-toolkit repo)
+plugin-usage-audit.php
