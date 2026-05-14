@@ -1,11 +1,29 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-13
+**Last Updated:** 2026-05-14
 **Current Version:** 2.12.2
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 83e70a4 — chore: .gitignore cleanup
+**Last Commit:** a79b18a — docs(gaps): migrate G-16 through G-19
 **Git Status:** clean
+
+---
+
+## 2026-05-14 Session — Housekeeping + v2.13.0 planning — COMPLETE
+
+### Session Summary
+Triaged untracked `plugin-usage-audit.php` into its own repo (`rrc-mu-toolkit`).
+Committed the Salvo gap report as the new roadmap document, retired the old CSV,
+and planned the full v2.13.0 implementation (G-01, G-02, G-08).
+
+### Accomplishments
+- `rrc-mu-toolkit` repo scaffolded locally with initial commit `4c7e017`
+- `docs/RankRocket_SEO_Functionality_Gaps.md` committed (19 gaps, G-01 to G-19)
+- `docs/Gap-Priority-Notes.csv` retired; 4 surviving items migrated as G-16 to G-19
+- v2.13.0 implementation plan defined (5 commits, risks documented)
+
+### Next
+Implement v2.13.0: G-01 (taxonomy display_on) -> G-08 (validation) -> G-02 (term meta + emission)
 
 ---
 
