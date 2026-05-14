@@ -25,6 +25,10 @@
 | G-13 | No event hook for "snippet emitted" or "snippet skipped" | Could not log why a snippet did not render | Fire `do_action('rrseo_snippet_emitted', $snippet, $context)` and `do_action('rrseo_snippet_skipped', $snippet, $reason)` for observability | LOW |
 | G-14 | No conditional emission based on logged-in vs anonymous | All snippets emit identically for anonymous and logged-in visitors | Add optional `display_on_user:anonymous` and `display_on_user:logged_in` filter to snippet config | LOW |
 | G-15 | No support for hreflang at scale | N/A for Salvo (English-only) but a gap for multilingual clients | Future-state: per-post `hreflang` array + sitewide language config | DEFERRED |
+| G-16 | `register_post_meta` not called for `_rrseo_llms_section` | Write/read logic works but meta is undeclared to WP; no REST schema, no type coercion | Call `register_post_meta()` with correct type, sanitize callback, and `show_in_rest: true` for all `rr_seo_*` keys | MEDIUM |
+| G-17 | Placeholder/test content exclusion list is too narrow | No workaround; test pages may appear in sitemaps or receive snippets unintentionally | Expand exclusion patterns to cover WooCommerce core pages and common test slugs; expose list via `POST /settings` | LOW |
+| G-18 | `/canonical-urls/preview` endpoint alias is missing | Used `/sitemap/preview` for canonical diagnostics as a workaround | Add `GET /canonical-urls/preview` as a thin alias over the existing canonical URL set logic | LOW |
+| G-19 | Description fallback skips "first N words of content" step | All pages without explicit descriptions fell back to title rather than content excerpt | Insert a content-excerpt step (first 155 chars of stripped `post_content`) between explicit description and title fallback | LOW |
 
 ---
 
@@ -299,15 +303,100 @@ Not relevant to Salvo (English-only) but flagged for multilingual sites: there i
 
 ---
 
+## G-16 (MEDIUM) — `register_post_meta` not called for `_rrseo_llms_section`
+
+Write and read logic for the `_rrseo_llms_section` postmeta key exists in the plugin, but `register_post_meta()` is never called for it. This means:
+- The key is absent from the WP REST API schema (no type hint, no sanitization contract declared to core)
+- `show_in_rest` defaults to false — REST clients cannot discover or read the field via the standard meta endpoint
+- No type coercion; bad data written directly to the option row is silently accepted
+
+### Source
+Internal gap tracker (Gap-Priority-Notes.csv, pre-v2.13.0), priority P1.
+
+### Suggested fix
+Add a `register_post_meta()` call on `init` for every `rr_seo_*` / `_rrseo_*` key the plugin owns:
+
+```php
+register_post_meta( '', '_rrseo_llms_section', array(
+    'type'              => 'string',
+    'single'            => true,
+    'show_in_rest'      => true,
+    'sanitize_callback' => 'sanitize_textarea_field',
+    'auth_callback'     => function () { return current_user_can( 'edit_posts' ); },
+) );
+```
+
+The empty string for `$object_type` registers for all post types. Repeat the pattern for all owned meta keys. Once registered, writes through `update_post_meta()` will be type-coerced and the keys will be visible in REST `?context=edit` responses.
+
+---
+
+## G-17 (LOW) — Placeholder/test content exclusion list is too narrow
+
+The plugin's exclusion list for test or placeholder content currently matches only slugs prefixed with `please-do-not-delete-this-*`. Any other test pages, staging-only posts, or WooCommerce placeholder pages that have non-standard slugs may appear in sitemaps or receive snippets unintentionally.
+
+### Source
+Internal gap tracker (Gap-Priority-Notes.csv, pre-v2.13.0), priority P2.
+
+### Suggested fix
+Expand the exclusion pattern list to cover:
+- WooCommerce core pages: `cart`, `checkout`, `my-account`, `shop` (if not already excluded via `is_wc_endpoint_url()`)
+- Common test/staging slugs: `test`, `test-page`, `staging-*`, `do-not-index-*`
+
+Expose the list via `POST /settings` as `excluded_slugs: [...]` so operators can add site-specific patterns without code changes.
+
+---
+
+## G-18 (LOW) — `/canonical-urls/preview` endpoint alias is missing
+
+The REST surface does not expose a `GET /canonical-urls/preview` endpoint. During the audit, `GET /sitemap/preview` was used as a workaround because it returns canonical URL diagnostics as a side-effect. The two concerns (sitemap generation vs. canonical URL set) are distinct and should not share a single debug surface.
+
+### Source
+Internal gap tracker (Gap-Priority-Notes.csv, pre-v2.13.0), priority P2. Note: `/sitemap/preview` currently carries the needed diagnostics, so this is a polish gap, not a functional blocker.
+
+### Suggested fix
+Add `GET /canonical-urls/preview` returning:
+
+```json
+{
+  "canonical_url_count": 142,
+  "sample": ["https://example.com/page-1/", "..."],
+  "excluded_count": 8,
+  "excluded_sample": ["https://example.com/cart/", "..."]
+}
+```
+
+Can be a thin alias over the existing canonical URL set logic that already runs for sitemap generation.
+
+---
+
+## G-19 (LOW) — Description fallback skips "first N words of content" step
+
+When a post or page has no explicit `rr_seo_description` and no RankMath fallback, the plugin falls back directly to the post title. A content-excerpt step between explicit description and title fallback is standard SEO plugin behavior and produces more useful auto-descriptions for content-rich pages.
+
+### Source
+Internal gap tracker (Gap-Priority-Notes.csv, pre-v2.13.0), priority P2.
+
+### Suggested fix
+Insert a content-excerpt step in the description resolution chain:
+
+1. `rr_seo_description` postmeta (explicit)
+2. `rank_math_description` postmeta (migration fallback, if enabled)
+3. **First 155 characters of `post_content` stripped of HTML and shortcodes** *(new step)*
+4. Post title (existing last-resort fallback)
+
+Implement with a filterable constant `RRSEO_EXCERPT_FALLBACK_LENGTH` (default `155`) so operators can tune it. Skip the content step when `post_content` is empty or renders as whitespace after stripping (common with full Elementor/Gutenberg block markup).
+
+---
+
 # Recommended plugin roadmap order
 
 | Milestone | Bundled gaps | Plugin version |
 |---|---|---|
 | v2.13.0 | G-01, G-02, G-08 (taxonomy routing + REST + validation) | 2.13.0 |
-| v2.14.0 | G-03 (consolidate_canonical), G-11 (GET /snippets), G-12 (regenerate llms.txt) | 2.14.0 |
+| v2.14.0 | G-03 (consolidate_canonical), G-11 (GET /snippets), G-12 (regenerate llms.txt), G-16 (register_post_meta), G-18 (canonical-urls/preview alias) | 2.14.0 |
 | v2.15.0 | G-04, G-05 (Performance module: dequeue + defer) | 2.15.0 |
 | v2.16.0 | G-06 (migrate-legacy template detection), G-07 (elementor cache helper) | 2.16.0 |
-| v2.17.0 | G-09 (sitemap term exclusion), G-10 (bulk snippets), G-13 (observability hooks) | 2.17.0 |
+| v2.17.0 | G-09 (sitemap term exclusion), G-10 (bulk snippets), G-13 (observability hooks), G-17 (exclusion list), G-19 (description fallback) | 2.17.0 |
 | Future | G-14 (per-user-state), G-15 (hreflang) | TBD |
 
 Once v2.13.0 ships, three of the mu-plugin modules in T-01 of the dev spec (`RRC_SEO_TAX_META_DESC`, `RRC_SEO_TAX_META_OG`, and the schemas that depend on taxonomy targeting) can be retired in favor of native RankRocket snippets. After v2.14.0, retire `RRC_SEO_DEDUP_CANONICAL`. After v2.15.0, retire `RRC_SEO_WC_DEQUEUE` and `RRC_SEO_DEFER_NONCRIT`. After all of those, the mu-plugin returns to its pre-Salvo state as a pure telemetry tool.
