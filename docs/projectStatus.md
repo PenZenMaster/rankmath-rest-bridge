@@ -4,12 +4,24 @@
 **Current Version:** 2.12.2
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** pending — white-label doc + v1.01 PUC suppression
-**Git Status:** clean after this commit
+**Last Commit:** 83e70a4 — chore: .gitignore cleanup
+**Git Status:** clean
 
 ---
 
-## 2026-05-13 Session — White-label doc + Tier 2 update suppression — COMPLETE
+## 2026-05-13 Session 2 — .gitignore cleanup — COMPLETE
+
+### Session Summary
+Identified three untracked files that did not belong in source control.
+Updated `.gitignore` and pushed.
+
+### Accomplishments
+- `.gitignore` — added `composer.lock`, `.phpunit.result.cache`,
+  `.claude/settings.local.json`; working tree now clean
+
+---
+
+## 2026-05-13 Session 1 — White-label doc + Tier 2 update suppression — COMPLETE
 
 ### Session Summary
 Created white-label configuration guide. Identified and fixed Tier 2 gap: plugin

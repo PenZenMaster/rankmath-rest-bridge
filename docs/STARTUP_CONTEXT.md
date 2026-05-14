@@ -3,24 +3,22 @@
 **Last Updated:** 2026-05-13 (shutdown)
 **Branch:** main
 **Version:** 2.12.2
-**Last Commit:** 6de11a1 — feat: merge v2.12.2 snippet renderer (P6 — sitewide/singular/body_open/killswitch)
+**Last Commit:** 83e70a4 — chore: .gitignore cleanup
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **White-label doc created** (`docs/white-label-configuration.md`) — covers
-   Tier 1 rename constants, Tier 2 hide constant, and an "Updates when hidden"
-   section with auto-update filter snippet, WP-CLI command, and manual zip steps.
+1. **`.gitignore` cleaned up** — `composer.lock`, `.phpunit.result.cache`, and
+   `.claude/settings.local.json` added; working tree is now fully clean.
 
-2. **Tier 2 update-row suppression shipped** (`class-rrseo-white-label.php`
-   v1.01) — `RRSEO_WL_HIDE_PLUGIN` now also hooks
-   `puc_pre_inject_update-rankmath-rest-bridge` and
-   `puc_pre_inject_info-rankmath-rest-bridge` so the plugin does not appear on
-   Dashboard > Updates or in the version-details modal.
+2. **White-label doc created** (`docs/white-label-configuration.md`) — covers
+   Tier 1 rename constants, Tier 2 hide constant, and update delivery options
+   for hidden installs (auto-update filter, WP-CLI, manual zip).
 
-3. **v2.12.2 shipped (prior session)** — snippet renderer merged with full
-   coverage: sitewide, singular, `body_open`, post-type targeting, and killswitch.
+3. **Tier 2 update-row suppression shipped** (`class-rrseo-white-label.php`
+   v1.01) — `puc_pre_inject_update` and `puc_pre_inject_info` filters added so
+   the plugin does not appear on Dashboard > Updates or the details modal.
 
 ---
 
@@ -28,13 +26,13 @@
 
 1. **Staging auto-update verify** — install v2.12.2 on staging; with Tier 2
    active, test update delivery via WP-CLI (`wp plugin update rankmath-rest-bridge`)
-   since the update row is now suppressed on Dashboard > Updates.
+   since the update row is suppressed on Dashboard > Updates.
 
 2. **P2/P3 gap items** — review `docs/Gap-Priority-Notes.csv` for next backlog
    items now that white-label and snippet renderer are complete.
 
-3. **projectStatus.md refresh** — file is stale (shows v2.10.0, 2026-05-01);
-   needs sprint history catch-up for v2.11.x and v2.12.x.
+3. **projectStatus.md sprint catch-up** — file is missing v2.11.x and v2.12.x
+   history; needs a full update.
 
 ---
 
@@ -43,9 +41,7 @@
 **Git:**
 - Branch: `main`
 - Version: 2.12.2
-- Pending commit after shutdown: white-label doc + v1.01 PUC suppression fix
-- Working tree: clean after commit (3 untracked: `.claude/settings.local.json`,
-  `.phpunit.result.cache`, `composer.lock`)
+- Last commit: `83e70a4` — pushed, working tree clean
 
 **Files of note:**
 - Plugin: `rankmath-rest-bridge.php` (~2,810 lines)
@@ -63,8 +59,8 @@
 ## Key Context Notes
 
 1. **Tier 2 update flow** — when `RRSEO_WL_HIDE_PLUGIN` is `true`, updates are
-   silent (no UI row). Delivery options: auto-update filter, WP-CLI, or manual
-   zip upload. See `docs/white-label-configuration.md`.
+   silent (no UI row on Plugins screen or Dashboard > Updates). Delivery options:
+   auto-update filter, WP-CLI, or manual zip. See `docs/white-label-configuration.md`.
 
 2. **Always use `bin/build-zip.ps1 v<version>` for releases** — verifies 4
    structural requirements and exits non-zero on failure.
