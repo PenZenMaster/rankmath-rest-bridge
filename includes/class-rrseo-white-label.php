@@ -20,9 +20,10 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-05-10
- * Last Modified Date: 2026-05-10
+ * Last Modified Date: 2026-05-12
  *
  * Comments:
+ * v1.01 - Tier 2: suppress PUC update row and details modal on Dashboard > Updates.
  * v1.00 - Initial release. Tier 1 (rename) and Tier 2 (hide) white-label support.
  *
  * @package RankRocket_SEO
@@ -36,7 +37,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Handles white-label filtering of the WordPress Plugins screen.
  *
  * Tier 1 (Rename): swap plugin name, description, author, and support link.
- * Tier 2 (Hide):   remove the plugin entry from the Plugins list entirely.
+ * Tier 2 (Hide):   remove the plugin entry from the Plugins screen and suppress
+ *                  its update row on Dashboard > Updates via PUC filters.
  *
  * Static helpers wl_name() and wl_hidden() are the public API for other
  * admin classes that need to read the white-label config.
@@ -74,11 +76,19 @@ class RRSEO_White_Label {
 
 	/**
 	 * Wires up WordPress Plugins-screen filters.
+	 *
+	 * Tier 2: also hooks PUC pre-inject filters so the plugin does not appear
+	 * on Dashboard > Updates and the version-details modal is suppressed.
 	 */
 	public function __construct() {
 		$this->basename = plugin_basename( RMB_PLUGIN_FILE );
 		add_filter( 'all_plugins', array( $this, 'filter_plugins_list' ) );
 		add_filter( 'plugin_row_meta', array( $this, 'filter_row_meta' ), 10, 2 );
+
+		if ( self::wl_hidden() ) {
+			add_filter( 'puc_pre_inject_update-rankmath-rest-bridge', '__return_null' );
+			add_filter( 'puc_pre_inject_info-rankmath-rest-bridge', '__return_false' );
+		}
 	}
 
 	/**

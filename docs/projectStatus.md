@@ -1,11 +1,31 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-01
-**Current Version:** 2.10.0
+**Last Updated:** 2026-05-13
+**Current Version:** 2.12.2
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
-**Branch:** feature/aeo-geo-audit-data-layer
-**Last Commit:** 3695b84 — fix(aeo-geo): ?array nullable type hints (v2.10.0, NOT YET PUSHED)
-**Git Status:** 5 commits ahead of origin; not merged to main; release zip not built
+**Branch:** main
+**Last Commit:** pending — white-label doc + v1.01 PUC suppression
+**Git Status:** clean after this commit
+
+---
+
+## 2026-05-13 Session — White-label doc + Tier 2 update suppression — COMPLETE
+
+### Session Summary
+Created white-label configuration guide. Identified and fixed Tier 2 gap: plugin
+name leaked on Dashboard > Updates. Fixed via PUC `puc_pre_inject_update` and
+`puc_pre_inject_info` filters in `class-rrseo-white-label.php` v1.01.
+
+### Accomplishments
+- `docs/white-label-configuration.md` — Tier 1/Tier 2 config guide with update
+  delivery options for hidden-plugin scenario
+- `includes/class-rrseo-white-label.php` v1.01 — PUC suppression hooks added to
+  constructor; plugin no longer surfaces on Dashboard > Updates under Tier 2
+
+### Next
+- Staging auto-update verify (WP-CLI path for Tier 2 installs)
+- P2/P3 gap review (`docs/Gap-Priority-Notes.csv`)
+- `docs/projectStatus.md` full sprint catch-up for v2.11.x / v2.12.x
 
 ---
 

@@ -1,39 +1,40 @@
 # RankRocket SEO Control Layer — Startup Context
 
-**Last Updated:** 2026-05-01 (shutdown)
+**Last Updated:** 2026-05-13 (shutdown)
 **Branch:** main
-**Version:** 2.11.2
-**Last Commit:** 3c60ab8 — chore(checkpoint): 2026-05-01_2350
+**Version:** 2.12.2
+**Last Commit:** 6de11a1 — feat: merge v2.12.2 snippet renderer (P6 — sitewide/singular/body_open/killswitch)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v2.11.2 shipped** — robots.txt read-side stale-state bug fixed. POST
-   /robots-txt now busts WP object cache after `update_option` so GET
-   /robots-txt returns live content instead of a cached empty string.
-   `clearstatcache` added to GET, POST, and status handlers. Status bypass
-   warning no longer fires when plugin manages the physical file.
+1. **White-label doc created** (`docs/white-label-configuration.md`) — covers
+   Tier 1 rename constants, Tier 2 hide constant, and an "Updates when hidden"
+   section with auto-update filter snippet, WP-CLI command, and manual zip steps.
 
-2. **v2.11.1 shipped** — fixed snippet renderer ignoring `display_on: all`.
-   Switch statement handled `entire_website` but not `all` (the value
-   RankRocket sends); added `all` as primary case plus `home`/`homepage`
-   aliases for front_page.
+2. **Tier 2 update-row suppression shipped** (`class-rrseo-white-label.php`
+   v1.01) — `RRSEO_WL_HIDE_PLUGIN` now also hooks
+   `puc_pre_inject_update-rankmath-rest-bridge` and
+   `puc_pre_inject_info-rankmath-rest-bridge` so the plugin does not appear on
+   Dashboard > Updates or in the version-details modal.
 
-3. **v2.11.0 shipped** — robots.txt written as a physical file on every POST
-   save. Activation hook syncs existing DB content on upgrade. Deactivation
-   confirmation dialog added to Plugins screen.
+3. **v2.12.2 shipped (prior session)** — snippet renderer merged with full
+   coverage: sitewide, singular, `body_open`, post-type targeting, and killswitch.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Staging auto-update verify** — install v2.11.2 on staging, click
-   "Check for Updates" on Dashboard > Updates, confirm PUC delivers zip and
-   installs cleanly. Steps in `docs/staging-verify-autoupdate.md`.
+1. **Staging auto-update verify** — install v2.12.2 on staging; with Tier 2
+   active, test update delivery via WP-CLI (`wp plugin update rankmath-rest-bridge`)
+   since the update row is now suppressed on Dashboard > Updates.
 
-2. **P2/P3 gap items** — review `docs/Gap-Priority-Notes.csv` for next
-   backlog items now that AEO/GEO layer is complete.
+2. **P2/P3 gap items** — review `docs/Gap-Priority-Notes.csv` for next backlog
+   items now that white-label and snippet renderer are complete.
+
+3. **projectStatus.md refresh** — file is stale (shows v2.10.0, 2026-05-01);
+   needs sprint history catch-up for v2.11.x and v2.12.x.
 
 ---
 
@@ -41,45 +42,40 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.11.2
-- Last commit: `3c60ab8` — pushed, up to date with origin/main
-- Working tree: clean (3 untracked: `.claude/settings.local.json`,
+- Version: 2.12.2
+- Pending commit after shutdown: white-label doc + v1.01 PUC suppression fix
+- Working tree: clean after commit (3 untracked: `.claude/settings.local.json`,
   `.phpunit.result.cache`, `composer.lock`)
 
 **Files of note:**
 - Plugin: `rankmath-rest-bridge.php` (~2,810 lines)
-- AEO/GEO layer: `includes/class-rrseo-aeo-geo.php`
-- Canonical set: `includes/class-rrseo-canonical.php`
-- llms generator: `includes/class-rrseo-llms.php`
-- Admin panel: `includes/class-rrseo-admin.php`, `admin.js`, `admin.css`
+- White-label: `includes/class-rrseo-white-label.php` (v1.01)
+- White-label doc: `docs/white-label-configuration.md`
 - Release builder: `bin/build-zip.ps1` — always use this for releases
 - Gap tracker: `docs/Gap-Priority-Notes.csv` — P1s done; P2/P3 remain
 - Staging checklist: `docs/staging-verify-autoupdate.md`
 
 **Blockers:**
-- None. v2.11.2 on main, pushed, zip committed.
+- None.
 
 ---
 
 ## Key Context Notes
 
-1. **Always use `bin/build-zip.ps1 v<version>` for releases** — script
-   verifies 4 structural requirements (PUC Puc/v5p5/, includes/, plugin
-   file, loader) and exits non-zero on failure. Pass version without double-v
-   (e.g. `v2.11.2`), then rename `releases/vv*/` to `releases/v*/` if the
-   double-v bug reappears.
+1. **Tier 2 update flow** — when `RRSEO_WL_HIDE_PLUGIN` is `true`, updates are
+   silent (no UI row). Delivery options: auto-update filter, WP-CLI, or manual
+   zip upload. See `docs/white-label-configuration.md`.
 
-2. **robots.txt option key is `rrseo_robots_txt`** — not
-   `rrseo_robots_txt_content`. Any tooling or audit engine reading this
-   option must use the correct key.
+2. **Always use `bin/build-zip.ps1 v<version>` for releases** — verifies 4
+   structural requirements and exits non-zero on failure.
 
 3. **AEO/GEO plugin boundary** — plugin is a read-only data provider. OAuth,
-   GSC/GA4/GBP fetchers, normalization, and report generation live in the
-   external audit engine. Plugin exposes 5 REST endpoints for the engine.
+   fetchers, normalization, and report generation live in the external audit
+   engine. Plugin exposes 5 REST endpoints for the engine.
 
-4. **WPCS installed globally** — `wp-coding-standards/wpcs` v3.1 installed
-   via `composer global require`. `phpcs --standard=phpcs.xml.dist` and
-   `composer run lint` both work locally without the pre-commit hook.
+4. **WPCS installed globally** — `wp-coding-standards/wpcs` v3.1 via
+   `composer global require`. `phpcs --standard=phpcs.xml.dist` and
+   `composer run lint` both work locally.
 
 5. **Legacy namespace alias** — `rr_legacy_namespace_proxy()` intercepts
    `/rankmath-bridge/v1/...` via `rest_pre_dispatch` and re-dispatches to
