@@ -907,7 +907,7 @@ function rr_invalidate_canonical_cache(): void {
 }
 
 
-// ── SEO meta read helper ──────────────────────────────────────────────────────
+// ── SEO meta read helpers ─────────────────────────────────────────────────────
 /**
  * Reads the native rr_seo_* key; falls back to rank_math_* when unset.
  *
@@ -921,6 +921,64 @@ function rr_get_seo_meta( $post_id, $field ) {
 		$val = get_post_meta( $post_id, RR_SEO_LEGACY_META_KEYS[ $field ], true );
 	}
 	return $val;
+}
+
+/**
+ * Reads the rr_seo_* term meta key for a taxonomy term.
+ *
+ * No RankMath fallback -- term meta was never written by RankMath's migration.
+ *
+ * @param int    $term_id Term ID.
+ * @param string $field   Field key (e.g. 'title', 'description').
+ * @return string
+ */
+function rr_get_term_seo_meta( int $term_id, string $field ): string {
+	if ( ! isset( RR_SEO_META_KEYS[ $field ] ) ) {
+		return '';
+	}
+	$val = get_term_meta( $term_id, RR_SEO_META_KEYS[ $field ], true );
+	if ( false === $val || '' === $val ) {
+		return '';
+	}
+	return (string) $val;
+}
+
+/**
+ * Resolves an integer ID to either a WP_Post or a WP_Term.
+ *
+ * Post IDs and term IDs share the same numeric namespace in WordPress.
+ * This helper tries get_post() first (the common case), then get_term().
+ * Returns an array with 'type' ('post', 'term', or 'none') and 'object'
+ * (the resolved object or null).
+ *
+ * @param int $id The integer ID to resolve.
+ * @return array{type: string, object: WP_Post|WP_Term|null}
+ */
+function rr_resolve_id( int $id ): array {
+	if ( $id <= 0 ) {
+		return array(
+			'type'   => 'none',
+			'object' => null,
+		);
+	}
+	$post = get_post( $id );
+	if ( $post instanceof WP_Post ) {
+		return array(
+			'type'   => 'post',
+			'object' => $post,
+		);
+	}
+	$term = get_term( $id );
+	if ( $term instanceof WP_Term ) {
+		return array(
+			'type'   => 'term',
+			'object' => $term,
+		);
+	}
+	return array(
+		'type'   => 'none',
+		'object' => null,
+	);
 }
 
 
@@ -2032,15 +2090,27 @@ add_action(
 
 // ── SEO Meta Handlers ─────────────────────────────────────────────────────────
 /**
- * Handles POST /update — writes SEO meta for a single post.
+ * Handles POST /update — writes SEO meta for a single post or taxonomy term.
+ *
+ * The post_id parameter accepts both post IDs and term IDs; the handler
+ * resolves which type it received and routes writes accordingly.
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response|WP_Error
  */
 function rmb_update_meta( WP_REST_Request $request ) {
-	$post_id    = intval( $request->get_param( 'post_id' ) );
+	$id         = intval( $request->get_param( 'post_id' ) );
+	$resolved   = rr_resolve_id( $id );
 	$url_fields = array( 'og_image', 'canonical', 'twitter_image' );
 	$raw_fields = array();
+
+	if ( 'none' === $resolved['type'] ) {
+		return new WP_Error(
+			'not_found',
+			"ID {$id} does not resolve to a post or term.",
+			array( 'status' => 422 )
+		);
+	}
 
 	foreach ( RR_SEO_META_KEYS as $param => $native_key ) {
 		$value = $request->get_param( $param );
@@ -2049,7 +2119,9 @@ function rmb_update_meta( WP_REST_Request $request ) {
 		}
 	}
 
-	$validation = rr_validate_seo_fields( $raw_fields, $post_id );
+	// Pass $id for posts so rr_validate_seo_fields() checks post type; pass null for terms.
+	$validation_id = 'post' === $resolved['type'] ? $id : null;
+	$validation    = rr_validate_seo_fields( $raw_fields, $validation_id );
 	if ( ! empty( $validation['errors'] ) ) {
 		return new WP_Error(
 			'validation_failed',
@@ -2065,10 +2137,10 @@ function rmb_update_meta( WP_REST_Request $request ) {
 	$updated       = array();
 	$audit_changes = array();
 	$request_id    = rr_request_id( $request );
+	$is_term       = 'term' === $resolved['type'];
 
 	foreach ( $raw_fields as $param => $value ) {
 		$meta_key = RR_SEO_META_KEYS[ $param ];
-		$before   = rr_get_seo_meta( $post_id, $param );
 		if ( in_array( $param, $url_fields, true ) ) {
 			$sanitized = esc_url_raw( $value );
 		} elseif ( 'twitter_card' === $param ) {
@@ -2077,7 +2149,13 @@ function rmb_update_meta( WP_REST_Request $request ) {
 		} else {
 			$sanitized = sanitize_text_field( $value );
 		}
-		update_post_meta( $post_id, $meta_key, $sanitized );
+		if ( $is_term ) {
+			$before = rr_get_term_seo_meta( $id, $param );
+			update_term_meta( $id, $meta_key, $sanitized );
+		} else {
+			$before = rr_get_seo_meta( $id, $param );
+			update_post_meta( $id, $meta_key, $sanitized );
+		}
 		$updated[ $meta_key ]    = $sanitized;
 		$audit_changes[ $param ] = array(
 			'before' => $before ? $before : '',
@@ -2085,59 +2163,93 @@ function rmb_update_meta( WP_REST_Request $request ) {
 		);
 	}
 
-	// Handle llms_section classification meta (outside RR_SEO_META_KEYS — different validation).
-	$section = $request->get_param( 'llms_section' );
-	if ( null !== $section ) {
-		$before_section = get_post_meta( $post_id, META_LLMS_SECTION, true );
-		if ( '' === $section ) {
-			delete_post_meta( $post_id, META_LLMS_SECTION );
-			$audit_changes['llms_section'] = array(
-				'before' => $before_section,
-				'after'  => '',
-			);
-		} else {
-			$section_validation = rr_validate_llms_section( sanitize_text_field( $section ) );
-			if ( is_wp_error( $section_validation ) ) {
-				return $section_validation;
+	if ( $is_term ) {
+		$term = $resolved['object'];
+		wp_cache_delete( $id, 'term_meta' );
+		clean_term_cache( $id, $term->taxonomy );
+	} else {
+		// llms_section classification meta is post-specific; not meaningful for terms.
+		$section = $request->get_param( 'llms_section' );
+		if ( null !== $section ) {
+			$before_section = get_post_meta( $id, META_LLMS_SECTION, true );
+			if ( '' === $section ) {
+				delete_post_meta( $id, META_LLMS_SECTION );
+				$audit_changes['llms_section'] = array(
+					'before' => $before_section,
+					'after'  => '',
+				);
+			} else {
+				$section_validation = rr_validate_llms_section( sanitize_text_field( $section ) );
+				if ( is_wp_error( $section_validation ) ) {
+					return $section_validation;
+				}
+				update_post_meta( $id, META_LLMS_SECTION, sanitize_text_field( $section ) );
+				$audit_changes['llms_section'] = array(
+					'before' => $before_section,
+					'after'  => $section,
+				);
 			}
-			update_post_meta( $post_id, META_LLMS_SECTION, sanitize_text_field( $section ) );
-			$audit_changes['llms_section'] = array(
-				'before' => $before_section,
-				'after'  => $section,
-			);
 		}
+		wp_cache_delete( $id, 'post_meta' );
+		clean_post_cache( $id );
 	}
 
-	wp_cache_delete( $post_id, 'post_meta' );
-	clean_post_cache( $post_id );
-
 	if ( ! empty( $audit_changes ) ) {
-		rr_audit_log( $post_id, '/update', $audit_changes, $request_id, 'written' );
+		rr_audit_log( $id, '/update', $audit_changes, $request_id, 'written' );
 	}
 
 	return rest_ensure_response(
 		array(
-			'success'  => true,
-			'post_id'  => $post_id,
-			'updated'  => $updated,
-			'warnings' => $validation['warnings'],
+			'success'     => true,
+			'object_id'   => $id,
+			'object_type' => $resolved['type'],
+			'post_id'     => $id,
+			'updated'     => $updated,
+			'warnings'    => $validation['warnings'],
 		)
 	);
 }
 
 /**
- * Handles GET /get/{id} — returns SEO meta for a single post.
+ * Handles GET /get/{id} — returns SEO meta for a single post or taxonomy term.
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response|WP_Error
  */
 function rmb_get_meta( WP_REST_Request $request ) {
-	$post_id = intval( $request->get_param( 'id' ) );
-	if ( ! get_post( $post_id ) ) {
-		return new WP_Error( 'invalid_post', 'Post not found', array( 'status' => 404 ) );
+	$id       = intval( $request->get_param( 'id' ) );
+	$resolved = rr_resolve_id( $id );
+
+	if ( 'none' === $resolved['type'] ) {
+		return new WP_Error( 'not_found', "ID {$id} does not resolve to a post or term.", array( 'status' => 404 ) );
 	}
 
-	$meta = array();
+	if ( 'term' === $resolved['type'] ) {
+		$term = $resolved['object'];
+		$meta = array();
+		foreach ( array_keys( RR_SEO_META_KEYS ) as $field ) {
+			$meta[ RR_SEO_META_KEYS[ $field ] ] = rr_get_term_seo_meta( $id, $field );
+		}
+		$meta['rr_seo_canonical']           = $meta['_rr_seo_canonical'] ?? '';
+		$meta['rr_seo_twitter_card']        = $meta['_rr_seo_twitter_card'] ?? '';
+		$meta['rr_seo_twitter_title']       = $meta['_rr_seo_twitter_title'] ?? '';
+		$meta['rr_seo_twitter_description'] = $meta['_rr_seo_twitter_description'] ?? '';
+		$meta['rr_seo_twitter_image']       = $meta['_rr_seo_twitter_image'] ?? '';
+		return rest_ensure_response(
+			array(
+				'object_id'   => $id,
+				'object_type' => 'term',
+				'post_id'     => $id,
+				'term_name'   => $term->name,
+				'term_slug'   => $term->slug,
+				'taxonomy'    => $term->taxonomy,
+				'meta'        => $meta,
+			)
+		);
+	}
+
+	$post_id = $id;
+	$meta    = array();
 	foreach ( RR_SEO_META_KEYS as $field => $native_key ) {
 		$meta[ $native_key ] = rr_get_seo_meta( $post_id, $field );
 	}
@@ -2175,6 +2287,8 @@ function rmb_get_meta( WP_REST_Request $request ) {
 
 	return rest_ensure_response(
 		array(
+			'object_id'              => $post_id,
+			'object_type'            => 'post',
 			'post_id'                => $post_id,
 			'meta'                   => $meta,
 			'llms_section'           => $stored_section,
