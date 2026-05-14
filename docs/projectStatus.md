@@ -1,15 +1,35 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-14
-**Current Version:** 2.12.2
+**Last Updated:** 2026-05-14 (shutdown 1648)
+**Current Version:** 2.13.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** a79b18a — docs(gaps): migrate G-16 through G-19
+**Last Commit:** 01ea967 — chore: bump version to 2.13.0, update manifest
 **Git Status:** clean
 
 ---
 
-## 2026-05-14 Session — Housekeeping + v2.13.0 planning — COMPLETE
+## 2026-05-14 Session 2 — v2.13.0 Implementation — COMPLETE
+
+### Session Summary
+Implemented all three gaps in the v2.13.0 milestone. Five atomic commits,
+all lint-clean. mu-plugin retire markers updated. Ready to shift to
+rrc-mu-toolkit for retirement sequence.
+
+### Accomplishments
+- G-01: `rr_is_any_tax_archive()` + 4 new `display_on` patterns (term/term_id/tax/url)
+- G-08: `rr_validate_display_on()` + 422 validation on snippet create/update
+- G-02: `rr_resolve_id()`, `rr_get_term_seo_meta()`, term routing in /update and /get
+- G-02: Taxonomy archive emission — title, robots, description/OG, canonical
+- Version bump 2.12.2 → 2.13.0, manifest updated
+- `rrc-mu-toolkit` retire markers added for RRC_SEO_TAX_META_DESC and RRC_SEO_TAX_META_OG
+
+### Next
+Create rrc-mu-toolkit GitHub remote; retire superseded mu-plugin modules; v2.14.0 planning.
+
+---
+
+## 2026-05-14 Session 1 — Housekeeping + v2.13.0 planning — COMPLETE
 
 ### Session Summary
 Triaged untracked `plugin-usage-audit.php` into its own repo (`rrc-mu-toolkit`).
