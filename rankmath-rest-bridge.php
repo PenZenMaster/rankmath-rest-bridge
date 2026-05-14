@@ -1020,6 +1020,54 @@ function rr_validate_seo_fields( array $fields, $post_id = null ) {
 }
 
 /**
+ * Returns true when $value is a recognised display_on targeting pattern.
+ *
+ * Validates the full vocabulary understood by rmb_snippet_matches_display().
+ * Called on snippet create/update so an invalid pattern returns 422 immediately
+ * rather than silently saving a value that will never fire.
+ *
+ * @param string $value Raw display_on value from the REST request.
+ * @return bool
+ */
+function rr_validate_display_on( string $value ): bool {
+	if ( '' === $value ) {
+		return false;
+	}
+
+	$simple_values = array(
+		'sitewide',
+		'all',
+		'entire_website',
+		'home',
+		'homepage',
+		'front_page',
+		'singular',
+		'all_pages',
+		'all_posts',
+	);
+	if ( in_array( $value, $simple_values, true ) ) {
+		return true;
+	}
+
+	$patterns = array(
+		'/^page_id:\d+$/',
+		'/^post_type:[a-z0-9_-]+$/',
+		'/^term:[a-z0-9_-]+:[a-z0-9_-]+$/',
+		'/^term_id:\d+$/',
+		'/^tax:[a-z0-9_-]+$/',
+		'/^url:\/.+$/',
+		'/^\d+$/',
+	);
+	foreach ( $patterns as $pattern ) {
+		if ( 1 === preg_match( $pattern, $value ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
  * Validates a JSON-LD schema object.
  *
  * Accepts either a PHP array or a JSON string.
@@ -3080,12 +3128,37 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 		$id = $id . '_' . time();
 	}
 
+	$display_on_val = sanitize_text_field( $request->get_param( 'display_on' ) );
+	if ( '' !== $display_on_val && ! rr_validate_display_on( $display_on_val ) ) {
+		return new WP_Error(
+			'invalid_display_on',
+			"Invalid display_on value: '{$display_on_val}'.",
+			array(
+				'status'            => 422,
+				'hint'              => 'Value does not match any recognised targeting pattern.',
+				'accepted_patterns' => array(
+					'entire_website',
+					'front_page',
+					'singular',
+					'all_pages',
+					'all_posts',
+					'page_id:<int>',
+					'post_type:<slug>',
+					'term:<taxonomy>:<slug>',
+					'term_id:<int>',
+					'tax:<taxonomy>',
+					'url:/<path>',
+				),
+			)
+		);
+	}
+
 	$snippet = array(
 		'id'         => $id,
 		'title'      => $title,
 		'content'    => $body,
 		'location'   => sanitize_text_field( $request->get_param( 'location' ) ),
-		'display_on' => sanitize_text_field( $request->get_param( 'display_on' ) ),
+		'display_on' => $display_on_val,
 		'status'     => sanitize_text_field( $request->get_param( 'status' ) ),
 		'created_at' => current_time( 'mysql' ),
 		'updated_at' => current_time( 'mysql' ),
@@ -3116,11 +3189,40 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 		return new WP_Error( 'not_found', "Snippet '{$id}' not found", array( 'status' => 404 ) );
 	}
 
-	foreach ( array( 'title', 'location', 'display_on', 'status' ) as $field ) {
+	foreach ( array( 'title', 'location', 'status' ) as $field ) {
 		$val = $request->get_param( $field );
 		if ( null !== $val ) {
 			$snippets[ $id ][ $field ] = sanitize_text_field( $val );
 		}
+	}
+
+	$display_on_val = $request->get_param( 'display_on' );
+	if ( null !== $display_on_val ) {
+		$display_on_val = sanitize_text_field( $display_on_val );
+		if ( '' !== $display_on_val && ! rr_validate_display_on( $display_on_val ) ) {
+			return new WP_Error(
+				'invalid_display_on',
+				"Invalid display_on value: '{$display_on_val}'.",
+				array(
+					'status'            => 422,
+					'hint'              => 'Value does not match any recognised targeting pattern.',
+					'accepted_patterns' => array(
+						'entire_website',
+						'front_page',
+						'singular',
+						'all_pages',
+						'all_posts',
+						'page_id:<int>',
+						'post_type:<slug>',
+						'term:<taxonomy>:<slug>',
+						'term_id:<int>',
+						'tax:<taxonomy>',
+						'url:/<path>',
+					),
+				)
+			);
+		}
+		$snippets[ $id ]['display_on'] = $display_on_val;
 	}
 
 	// Accept 'code' as an alias for 'content'.
