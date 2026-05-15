@@ -1,11 +1,32 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-05-14
-**Current Version:** 2.13.0
+**Current Version:** 2.13.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 7368e88 — chore: release v2.13.0 zip
+**Last Commit:** 24d2ae8 — chore: release v2.13.1 zip
 **Git Status:** clean
+
+---
+
+## 2026-05-14 Session 3 — v2.13.1 Hotfix + v2.14.0 Kickoff — COMPLETE
+
+### Session Summary
+Reviewed 3-state v2.13.0 validation report. Identified and fixed two issues:
+422 gate for unimplemented `display_on` patterns and whitespace normalization
+in `rmb_resolve_tokens()`. Shipped v2.13.1. Validated clean. G-01 emitter
+proven working via `term_id:` live probe. v2.14.0 scope locked.
+
+### Accomplishments
+- Reviewed v2.13.0 3-state validation (11 pass, 5 fail, 2 investigate)
+- Shipped v2.13.1: 422 gate on term:/tax:/url: patterns + token whitespace fix
+- Validated v2.13.1: all fixes confirmed, full 8-pattern emission matrix verified
+- G-01 emitter proven working via term_id:21 probe on live term archive
+- v2.14.0 scope defined: post_id: alias, G-01 gate lift, G-02 422, G-03, G-08, G-11, G-12
+
+### Next
+Implement v2.14.0 — restore post_id: alias, lift G-01 gate, G-02 422, G-03,
+G-08, G-11, G-12. Then Salvo staging verify + rrc-mu-toolkit remote.
 
 ---
 
