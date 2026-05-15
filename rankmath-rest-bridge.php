@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.13.1
+ * Version:      2.14.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.13.1' );
+define( 'RMB_VERSION', '2.14.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -418,7 +418,7 @@ function rmb_snippet_matches_display( string $display_on ): bool {
 			return is_single();
 	}
 
-	if ( str_starts_with( $display_on, 'page_id:' ) ) {
+	if ( str_starts_with( $display_on, 'page_id:' ) || str_starts_with( $display_on, 'post_id:' ) ) {
 		$page_id = (int) substr( $display_on, 8 );
 		return $page_id > 0 && is_singular() && get_queried_object_id() === $page_id;
 	}
@@ -1202,12 +1202,11 @@ function rr_validate_seo_fields( array $fields, $post_id = null ) {
 }
 
 /**
- * Returns true when $value is an active, write-permitted display_on pattern.
+ * Returns true when $value is an accepted display_on targeting pattern.
  *
- * Intentionally narrower than the full vocabulary rmb_snippet_matches_display()
- * can resolve. Patterns that the emitter recognises but whose live-site firing
- * has not been confirmed (term:, tax:, url:) are excluded here so POST /snippets
- * returns 422 instead of silently storing a snippet that never fires.
+ * Aligned with rmb_snippet_matches_display(). The url: prefix is intentionally
+ * excluded — recognised by the emitter but not yet validated on live taxonomy
+ * archives.
  *
  * @param string $value Raw display_on value from the REST request.
  * @return bool
@@ -1234,8 +1233,11 @@ function rr_validate_display_on( string $value ): bool {
 
 	$patterns = array(
 		'/^page_id:\d+$/',
+		'/^post_id:\d+$/',
 		'/^post_type:[a-z0-9_-]+$/',
 		'/^term_id:\d+$/',
+		'/^term:[a-z0-9_-]+:[a-z0-9_-]+$/',
+		'/^tax:[a-z0-9_-]+$/',
 		'/^\d+$/',
 	);
 	foreach ( $patterns as $pattern ) {
@@ -1967,6 +1969,17 @@ add_action(
 			)
 		);
 
+		// ── llms.txt regenerate ───────────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/llms-txt/regenerate',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_llms_regenerate',
+				'permission_callback' => $admin_only,
+			)
+		);
+
 		// ── Sitemap config ─────────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -2049,11 +2062,16 @@ add_action(
 			)
 		);
 
-		// ── Snippets: Update / Delete by ID (wildcard — after replace-all) ───────
+		// ── Snippets: Get / Update / Delete by ID (wildcard — after replace-all) ──
 		register_rest_route(
 			'rankrocket-seo/v1',
 			'/snippets/(?P<id>[a-zA-Z0-9_-]+)',
 			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_snippets_get_single',
+					'permission_callback' => $admin_only,
+				),
 				array(
 					'methods'             => 'POST',
 					'callback'            => 'rmb_snippets_update',
@@ -2578,7 +2596,15 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
  * @return WP_REST_Response
  */
 function rmb_preview_update( WP_REST_Request $request ) {
-	$post_id = intval( $request->get_param( 'post_id' ) );
+	$post_id  = intval( $request->get_param( 'post_id' ) );
+	$resolved = rr_resolve_id( $post_id );
+	if ( 'term' === $resolved['type'] ) {
+		return new WP_Error(
+			'term_not_supported',
+			'/preview-update does not support term IDs. Use POST /update to write term meta directly.',
+			array( 'status' => 422 )
+		);
+	}
 
 	$raw_fields = array();
 	foreach ( RR_SEO_META_KEYS as $param => $native_key ) {
@@ -3257,6 +3283,32 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 }
 
 
+/**
+ * Handles POST /llms-txt/regenerate — invalidates cached data and re-renders llms.txt.
+ *
+ * The llms.txt file is served dynamically, so no file rebuild is needed. This endpoint
+ * invalidates the canonical URL set transient, forces a fresh render, and
+ * returns metadata so callers can confirm the content is up to date.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_llms_regenerate( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+	rr_invalidate_canonical_cache();
+	$config  = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
+	$content = rr_render_llms_txt( $config );
+	return rest_ensure_response(
+		array(
+			'success'     => true,
+			'url'         => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
+			'line_count'  => substr_count( $content, "\n" ) + 1,
+			'byte_size'   => strlen( $content ),
+			'regenerated' => current_time( 'mysql' ),
+		)
+	);
+}
+
+
 // ── Sitemap Preview Handler ───────────────────────────────────────────────────
 /**
  * Handles GET /sitemap/preview — Canonical URL Set preview with inclusion/exclusion audit.
@@ -3344,6 +3396,21 @@ function rmb_snippets_list( WP_REST_Request $request ) { // phpcs:ignore Generic
 }
 
 /**
+ * Handles GET /snippets/{id} — returns a single managed snippet by slug.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_snippets_get_single( WP_REST_Request $request ) {
+	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
+	$id       = $request->get_param( 'id' );
+	if ( ! isset( $snippets[ $id ] ) ) {
+		return new WP_Error( 'not_found', "Snippet '{$id}' not found.", array( 'status' => 404 ) );
+	}
+	return rest_ensure_response( $snippets[ $id ] );
+}
+
+/**
  * Handles POST /snippets — creates a new managed snippet.
  *
  * @param WP_REST_Request $request REST request object.
@@ -3375,7 +3442,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 			"Invalid display_on value: '{$display_on_val}'.",
 			array(
 				'status'            => 422,
-				'hint'              => 'term:, tax:, and url: patterns are gated. Use one of the accepted_patterns values.',
+				'hint'              => 'url: patterns are not yet supported. Use one of the accepted_patterns values.',
 				'accepted_patterns' => array(
 					'entire_website',
 					'front_page',
@@ -3383,8 +3450,11 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 					'all_pages',
 					'all_posts',
 					'page_id:<int>',
+					'post_id:<int>',
 					'post_type:<slug>',
 					'term_id:<int>',
+					'term:<taxonomy>:<slug>',
+					'tax:<taxonomy>',
 				),
 			)
 		);
@@ -3689,7 +3759,9 @@ function rmb_status( WP_REST_Request $request ) {
 		'physical_robots_txt_exists' => $physical_robots_file,
 		'robots_txt_auto_sync'       => (bool) get_option( 'rrseo_robots_txt_auto_sync', true ),
 		'consolidate_wp_robots'      => (bool) get_option( 'rrseo_consolidate_wp_robots', true ),
+		'consolidate_canonical'      => (bool) get_option( 'rrseo_consolidate_canonical', true ),
 		'emit_snippets'              => (bool) get_option( 'rrseo_emit_snippets', true ),
+		'emit_routing_version'       => 2,
 		'snippet_count'              => count( $snippets ),
 		'snippet_ids'                => array_keys( $snippets ),
 		'update_url'                 => RMB_UPDATE_URL,

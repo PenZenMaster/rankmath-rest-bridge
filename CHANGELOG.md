@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.14.0
+
+G-01 gate lifted; post_id: alias restored; G-02/03/08/11/12 implemented.
+
+### Behaviour
+
+- **Lift G-01 gate** — `term:<taxonomy>:<slug>` and `tax:<taxonomy>` `display_on`
+  patterns are now accepted at write time. Emitter code was proven working on a
+  live term archive in v2.13.1 validation. `url:/<path>` remains gated.
+- **Restore `post_id:` alias** — `post_id:<int>` now accepted in `display_on`
+  and in the emitter as an alias for `page_id:<int>`. Was dropped in v2.13.1;
+  restored per dev spec T-02.
+- **G-02 — `/preview-update` term guard** — returns HTTP 422 with error code
+  `term_not_supported` when `post_id` resolves to a taxonomy term. Use
+  `POST /update` directly for term meta writes.
+- **G-03 — `consolidate_canonical` in `/status`** — new boolean field reading
+  option `rrseo_consolidate_canonical` (default `true`). Mirrors the existing
+  `consolidate_wp_robots` field.
+- **G-08 — `emit_routing_version` in `/status`** — new integer field, value `2`,
+  signals that the v2.13.0+ routing vocabulary (term/tax/term_id patterns) is
+  active.
+- **G-11 — `GET /snippets/<slug>`** — returns the full snippet record for a
+  single slug, or 404 if not found. Collection `GET /snippets` unchanged.
+- **G-12 — `POST /llms-txt/regenerate`** — invalidates the canonical URL set
+  transient and re-renders llms.txt. Response: `success`, `url`, `line_count`,
+  `byte_size`, `regenerated` (mysql timestamp).
+
+---
+
 ## v2.13.1
 
 Gate unimplemented `display_on` patterns; fix title and description whitespace.
