@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.14.1
+
+Fix G-12 fatal: `POST /llms-txt/regenerate` returned HTTP 500 on every call.
+
+### Bug fix
+
+- **G-12 hotfix** — `rmb_llms_regenerate()` assigned the array returned by
+  `rr_render_llms_txt()` directly to `$content` then passed it to
+  `substr_count()` and `strlen()`, both of which expect a string, causing a PHP
+  fatal. Fixed by unpacking `$result['content']` before those calls.
+
+---
+
 ## v2.14.0
 
 G-01 gate lifted; post_id: alias restored; G-02/03/08/11/12 implemented.

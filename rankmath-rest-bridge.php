@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.14.0
+ * Version:      2.14.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.14.0' );
+define( 'RMB_VERSION', '2.14.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3296,7 +3296,8 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 function rmb_llms_regenerate( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	rr_invalidate_canonical_cache();
 	$config  = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
-	$content = rr_render_llms_txt( $config );
+	$result  = rr_render_llms_txt( $config );
+	$content = $result['content'];
 	return rest_ensure_response(
 		array(
 			'success'     => true,
