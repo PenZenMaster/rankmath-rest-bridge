@@ -319,11 +319,27 @@ function rr_is_url_allowed_for_discovery( WP_Post $post ): array {
 		);
 	}
 
-	// Not a test placeholder.
-	if ( str_starts_with( $post->post_name, 'please-do-not-delete-this-' ) ) {
+	// Not a test placeholder (built-in prefixes + operator-configured slugs).
+	$test_prefixes = array( 'please-do-not-delete-this-', 'do-not-index-' );
+	foreach ( $test_prefixes as $prefix ) {
+		if ( str_starts_with( $post->post_name, $prefix ) ) {
+			return array(
+				'allowed'  => false,
+				'reason'   => 'test_placeholder',
+				'warnings' => array(),
+			);
+		}
+	}
+
+	// Operator-configured excluded post slugs (from POST /sitemap/exclusions).
+	$exclusions          = get_option( 'rrseo_sitemap_exclusions', array() );
+	$excluded_post_slugs = isset( $exclusions['excluded_post_slugs'] ) && is_array( $exclusions['excluded_post_slugs'] )
+		? $exclusions['excluded_post_slugs']
+		: array();
+	if ( in_array( $post->post_name, $excluded_post_slugs, true ) ) {
 		return array(
 			'allowed'  => false,
-			'reason'   => 'test_placeholder',
+			'reason'   => 'excluded_post_slug',
 			'warnings' => array(),
 		);
 	}

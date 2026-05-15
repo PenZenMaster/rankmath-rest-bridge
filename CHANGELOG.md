@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.15.0
+
+G-10/G-09/G-17: bulk snippet create, sitemap exclusion config, expanded placeholder patterns.
+
+### New endpoints
+
+- **G-10 — `POST /snippets/bulk`** — atomically creates multiple snippets in
+  one request. Accepts `{"snippets":[{title, content, location, display_on,
+  status}, ...]}`. Validates every item before writing; if any item fails,
+  returns `422 validation_failed` with per-item `errors` array and saves
+  nothing. On success returns `{success, count, snippets:[...]}`. Capped at
+  `rrseo_batch_max()` (default 100).
+
+- **G-09/G-17 — `GET /sitemap/exclusions`** — returns the current sitemap
+  exclusion config. Default: all arrays empty.
+
+- **G-09/G-17 — `POST /sitemap/exclusions`** — updates the exclusion config.
+  All four arrays are optional (omitted keys are left unchanged). Calls
+  `rr_invalidate_canonical_cache()` on every save.
+  - `excluded_post_slugs` (array of strings) — takes effect immediately in
+    `rr_is_url_allowed_for_discovery()`; matching posts are excluded from
+    sitemaps and llms.txt with reason `excluded_post_slug`.
+  - `excluded_term_ids`, `excluded_term_slugs`, `excluded_taxonomies` — stored
+    now, will be respected when taxonomy archive support is added to the
+    canonical URL set.
+
+### Changes to exclusion logic (class-rrseo-canonical.php)
+
+- **G-17 — expanded placeholder patterns** — `rr_is_url_allowed_for_discovery()`
+  now rejects any post whose slug starts with `do-not-index-` in addition to
+  the existing `please-do-not-delete-this-` prefix. Reason: `test_placeholder`.
+- **G-09/G-17 — `excluded_post_slugs`** — `rr_is_url_allowed_for_discovery()`
+  reads the `rrseo_sitemap_exclusions` option and rejects posts whose
+  `post_name` matches any entry. Reason: `excluded_post_slug`.
+
+---
+
 ## v2.14.4
 
 G-16/G-18/G-13: register_post_meta, canonical-urls/preview alias, snippet hooks.

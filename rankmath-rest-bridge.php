@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.14.4
+ * Version:      2.15.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.14.4' );
+define( 'RMB_VERSION', '2.15.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -122,6 +122,9 @@ define( 'RR_BATCH_MAX', 100 ); // Default batch cap; override via rrseo_batch_ma
 
 // llms.txt config option key (replaces legacy 'rmb_llms_config'; both are read during migration).
 define( 'RR_LLMS_CONFIG_KEY', 'rrseo_llms_config' );
+
+// Sitemap / discovery exclusion rules option key (term IDs, term slugs, taxonomies, post slugs).
+define( 'RR_SITEMAP_EXCLUSIONS_KEY', 'rrseo_sitemap_exclusions' );
 
 /**
  * Returns the effective batch size cap for bulk REST endpoints.
@@ -2104,6 +2107,46 @@ add_action(
 			)
 		);
 
+		// ── Sitemap / discovery exclusions (G-09, G-17) ───────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/sitemap/exclusions',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_sitemap_exclusions_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_sitemap_exclusions_update',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'excluded_term_ids'   => array(
+							'required' => false,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'integer' ),
+						),
+						'excluded_term_slugs' => array(
+							'required' => false,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'string' ),
+						),
+						'excluded_taxonomies' => array(
+							'required' => false,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'string' ),
+						),
+						'excluded_post_slugs' => array(
+							'required' => false,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'string' ),
+						),
+					),
+				),
+			)
+		);
+
 		// ── Snippets ──────────────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -2146,6 +2189,25 @@ add_action(
 							'type'     => 'string',
 							'default'  => 'active',
 						),
+					),
+				),
+			)
+		);
+
+		// ── Bulk snippet create (G-10) ───────────────────────────────────────────
+		// MUST be registered BEFORE the {id} wildcard.
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/snippets/bulk',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_snippets_bulk_create',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'snippets' => array(
+						'required' => true,
+						'type'     => 'array',
+						'items'    => array( 'type' => 'object' ),
 					),
 				),
 			)
@@ -3696,6 +3758,171 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 		array(
 			'success' => true,
 			'snippet' => $snippets[ $id ],
+		)
+	);
+}
+
+/**
+ * Handles POST /snippets/bulk — atomically creates multiple snippets in one request.
+ *
+ * Validates all snippets before writing; returns 422 with per-item errors if any
+ * fail. No snippets are saved unless every item passes validation.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_snippets_bulk_create( WP_REST_Request $request ) {
+	$incoming = $request->get_param( 'snippets' );
+	if ( ! is_array( $incoming ) || empty( $incoming ) ) {
+		return new WP_Error( 'missing_snippets', 'snippets must be a non-empty array.', array( 'status' => 400 ) );
+	}
+
+	$batch_max = rrseo_batch_max();
+	if ( count( $incoming ) > $batch_max ) {
+		return new WP_Error(
+			'batch_too_large',
+			"Maximum {$batch_max} snippets per request.",
+			array(
+				'status' => 422,
+				'limit'  => $batch_max,
+			)
+		);
+	}
+
+	$existing = get_option( RMB_SNIPPETS_KEY, array() );
+	$prepared = array();
+	$errors   = array();
+	$ts       = current_time( 'mysql' );
+
+	foreach ( $incoming as $idx => $item ) {
+		if ( ! is_array( $item ) ) {
+			$errors[] = array(
+				'index' => $idx,
+				'error' => 'each snippet must be an object',
+			);
+			continue;
+		}
+
+		$title = sanitize_text_field( $item['title'] ?? '' );
+		if ( '' === $title ) {
+			$errors[] = array(
+				'index' => $idx,
+				'error' => 'title is required',
+			);
+			continue;
+		}
+
+		$body = isset( $item['content'] ) ? $item['content'] : ( isset( $item['code'] ) ? $item['code'] : null );
+		if ( null === $body || '' === (string) $body ) {
+			$errors[] = array(
+				'index' => $idx,
+				'error' => 'content or code is required',
+			);
+			continue;
+		}
+
+		$display_on_val = sanitize_text_field( $item['display_on'] ?? 'entire_website' );
+		if ( '' !== $display_on_val && ! rr_validate_display_on( $display_on_val ) ) {
+			$errors[] = array(
+				'index' => $idx,
+				'error' => "invalid display_on: '{$display_on_val}'",
+			);
+			continue;
+		}
+
+		$id = sanitize_title( $title );
+		if ( isset( $existing[ $id ] ) || isset( $prepared[ $id ] ) ) {
+			$id = $id . '_' . (string) $idx;
+		}
+
+		$prepared[ $id ] = array(
+			'id'         => $id,
+			'title'      => $title,
+			'content'    => (string) $body,
+			'location'   => sanitize_text_field( $item['location'] ?? 'head' ),
+			'display_on' => $display_on_val,
+			'status'     => sanitize_text_field( $item['status'] ?? 'active' ),
+			'created_at' => $ts,
+			'updated_at' => $ts,
+		);
+	}
+
+	if ( ! empty( $errors ) ) {
+		return new WP_Error(
+			'validation_failed',
+			'One or more snippets failed validation. No snippets were saved.',
+			array(
+				'status' => 422,
+				'errors' => $errors,
+			)
+		);
+	}
+
+	update_option( RMB_SNIPPETS_KEY, array_merge( $existing, $prepared ) );
+
+	return rest_ensure_response(
+		array(
+			'success'  => true,
+			'count'    => count( $prepared ),
+			'snippets' => array_values( $prepared ),
+		)
+	);
+}
+
+/**
+ * Handles GET /sitemap/exclusions — returns the current sitemap exclusion config.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_sitemap_exclusions_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+	$defaults = array(
+		'excluded_term_ids'   => array(),
+		'excluded_term_slugs' => array(),
+		'excluded_taxonomies' => array(),
+		'excluded_post_slugs' => array(),
+	);
+	$config   = get_option( RR_SITEMAP_EXCLUSIONS_KEY, array() );
+	return rest_ensure_response( array_merge( $defaults, $config ) );
+}
+
+/**
+ * Handles POST /sitemap/exclusions — updates the sitemap exclusion config.
+ *
+ * All four arrays are optional; omitted keys are left unchanged.
+ * excluded_post_slugs is applied immediately to rr_is_url_allowed_for_discovery().
+ * excluded_term_ids, excluded_term_slugs, and excluded_taxonomies are stored for
+ * when taxonomy archive support is added to the sitemap/llms.txt generators.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_sitemap_exclusions_update( WP_REST_Request $request ) {
+	$config = get_option( RR_SITEMAP_EXCLUSIONS_KEY, array() );
+
+	$int_lists    = array( 'excluded_term_ids' );
+	$string_lists = array( 'excluded_term_slugs', 'excluded_taxonomies', 'excluded_post_slugs' );
+
+	foreach ( $int_lists as $key ) {
+		$val = $request->get_param( $key );
+		if ( null !== $val && is_array( $val ) ) {
+			$config[ $key ] = array_values( array_map( 'absint', $val ) );
+		}
+	}
+	foreach ( $string_lists as $key ) {
+		$val = $request->get_param( $key );
+		if ( null !== $val && is_array( $val ) ) {
+			$config[ $key ] = array_values( array_map( 'sanitize_text_field', $val ) );
+		}
+	}
+
+	update_option( RR_SITEMAP_EXCLUSIONS_KEY, $config );
+	rr_invalidate_canonical_cache();
+
+	return rest_ensure_response(
+		array(
+			'success' => true,
+			'config'  => $config,
 		)
 	);
 }
