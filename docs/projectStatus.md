@@ -1,10 +1,10 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-14 (shutdown 1648)
+**Last Updated:** 2026-05-14
 **Current Version:** 2.13.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 01ea967 — chore: bump version to 2.13.0, update manifest
+**Last Commit:** 7368e88 — chore: release v2.13.0 zip
 **Git Status:** clean
 
 ---
@@ -307,6 +307,7 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 
 | Version | Date       | Summary                                                              |
 |---------|------------|----------------------------------------------------------------------|
+| 2.13.0  | 2026-05-14 | Taxonomy display_on patterns (G-01), term meta routing (G-02), display_on validation (G-08) |
 | 2.10.0  | 2026-05-01 | AEO/GEO audit data layer (5 endpoints); fix check-updates regression |
 | 2.9.3   | 2026-04-29 | Fix schema JSON-LD in footer; fix PUC vendor path mismatch           |
 | 2.9.2   | 2026-04-29 | rankmath-bridge/v1 alias; register_post_meta; first-para bug fix    |

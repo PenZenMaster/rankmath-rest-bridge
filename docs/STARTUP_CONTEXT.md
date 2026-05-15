@@ -1,9 +1,9 @@
 # RankRocket SEO Control Layer — Startup Context
 
-**Last Updated:** 2026-05-14 (shutdown 1648)
+**Last Updated:** 2026-05-14
 **Branch:** main
 **Version:** 2.13.0
-**Last Commit:** 01ea967 — chore: bump version to 2.13.0, update manifest
+**Last Commit:** 7368e88 — chore: release v2.13.0 zip
 
 ---
 
@@ -57,6 +57,25 @@
 
 **Blockers:**
 - None.
+
+---
+
+## Release Checklist (run for every version bump)
+
+```
+1. Bump version in rankmath-rest-bridge.php plugin header
+2. Update update-manifest.json  — version + download_url (releases/vX.Y.Z/)
+3. Update CHANGELOG.md
+4. git add + git commit  (conventional: "chore: bump version to X.Y.Z")
+5. .\bin\build-zip.ps1   — must pass all 4 structural checks
+6. git add releases/vX.Y.Z/  && git commit  ("chore: release vX.Y.Z zip")
+7. git push
+8. Verify: curl -I <download_url>  returns 200 (not 404)
+```
+
+> Steps 5-6 were missed for v2.13.0, causing "Download failed: Not Found" on
+> the plugins update screen. Always build and push the zip before announcing
+> the release.
 
 ---
 
