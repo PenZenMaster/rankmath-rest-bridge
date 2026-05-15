@@ -1,5 +1,54 @@
 # Changelog
 
+## v2.13.1
+
+Gate unimplemented `display_on` patterns; fix title and description whitespace.
+
+### Bugs fixed
+
+- **Silent snippet failures** — `term:<taxonomy>:<slug>` and `tax:<taxonomy>`
+  `display_on` patterns were accepted (HTTP 200) but never fired on taxonomy
+  archive pages. They now return HTTP 422 with error code `invalid_display_on`,
+  a `hint` field, and an `accepted_patterns[]` list. `url:/<path>` receives the
+  same treatment. `term_id:<int>` remains accepted; its emission path was not
+  flagged in live testing.
+- **Leading space in `<title>`** — when RankMath is deactivated and
+  `rr_override_document_title()` resolves a stored SEO title, a template with a
+  leading space (e.g., ` %title% | %sitename%`) produced `<title> Site Title |
+  …</title>`. Fixed by trimming the output of `rmb_resolve_tokens()`.
+- **Double space in `<meta name="description">`** — empty `%excerpt%` token
+  substitution left adjacent spaces in the stored template, producing
+  `"leading  double-space"`. Fixed by collapsing runs of spaces/tabs to a single
+  space in `rmb_resolve_tokens()` output.
+
+---
+
+## v2.13.0
+
+Taxonomy archive SEO support (G-01 write-path, G-02 term meta, G-08 validation).
+
+### Behaviour
+
+- **Taxonomy routing in `display_on`**: emitter now handles `term:<taxonomy>:<slug>`,
+  `term_id:<int>`, `tax:<taxonomy>`, and `url:/<path>` patterns in
+  `rmb_snippet_matches_display()` via `is_category()`, `is_tag()`, `is_tax()`,
+  and `$_SERVER['REQUEST_URI']` path comparison.
+- **Term meta read/write**: `/update` and `/get/{id}` resolve the supplied ID
+  via `rr_resolve_id()` and route writes to `update_term_meta()` / reads from
+  `rr_get_term_seo_meta()` when the ID maps to a `WP_Term`. Response adds
+  `object_id` and `object_type` fields; `post_id` retained as a
+  backward-compatible alias.
+- **Taxonomy archive tag emission**: `rr_override_document_title()` and
+  `rr_merge_wp_robots()` extended for `rr_is_any_tax_archive()`. Two new
+  `wp_head` priority-1 closures emit `<meta name="description">`, OG tags, and
+  `<link rel="canonical">` on category/tag/custom taxonomy archives from stored
+  term meta, falling back to native term description.
+- **`display_on` validation on write**: POST /snippets and POST /snippets/{id}
+  now validate the `display_on` field against the write-permitted pattern set
+  and return HTTP 422 with `accepted_patterns[]` on mismatch (G-08).
+
+---
+
 ## v2.12.2
 
 P6 — Snippet renderer covers the targeting vocabulary RankRocket actually sends

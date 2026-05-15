@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.13.0
+ * Version:      2.13.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.13.0' );
+define( 'RMB_VERSION', '2.13.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -982,7 +982,9 @@ function rmb_resolve_tokens( $str, $post_id ) {
 		'%sep%'      => '|',
 		'%excerpt%'  => $post ? wp_trim_words( $excerpt, 20 ) : '',
 	);
-	return str_replace( array_keys( $tokens ), array_values( $tokens ), $str );
+	$result  = str_replace( array_keys( $tokens ), array_values( $tokens ), $str );
+	// Collapse runs of spaces/tabs left by empty-token substitution; trim edges.
+	return trim( preg_replace( '/[ \t]+/', ' ', $result ) );
 }
 
 
@@ -1200,11 +1202,12 @@ function rr_validate_seo_fields( array $fields, $post_id = null ) {
 }
 
 /**
- * Returns true when $value is a recognised display_on targeting pattern.
+ * Returns true when $value is an active, write-permitted display_on pattern.
  *
- * Validates the full vocabulary understood by rmb_snippet_matches_display().
- * Called on snippet create/update so an invalid pattern returns 422 immediately
- * rather than silently saving a value that will never fire.
+ * Intentionally narrower than the full vocabulary rmb_snippet_matches_display()
+ * can resolve. Patterns that the emitter recognises but whose live-site firing
+ * has not been confirmed (term:, tax:, url:) are excluded here so POST /snippets
+ * returns 422 instead of silently storing a snippet that never fires.
  *
  * @param string $value Raw display_on value from the REST request.
  * @return bool
@@ -1232,10 +1235,7 @@ function rr_validate_display_on( string $value ): bool {
 	$patterns = array(
 		'/^page_id:\d+$/',
 		'/^post_type:[a-z0-9_-]+$/',
-		'/^term:[a-z0-9_-]+:[a-z0-9_-]+$/',
 		'/^term_id:\d+$/',
-		'/^tax:[a-z0-9_-]+$/',
-		'/^url:\/.+$/',
 		'/^\d+$/',
 	);
 	foreach ( $patterns as $pattern ) {
@@ -3375,7 +3375,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 			"Invalid display_on value: '{$display_on_val}'.",
 			array(
 				'status'            => 422,
-				'hint'              => 'Value does not match any recognised targeting pattern.',
+				'hint'              => 'term:, tax:, and url: patterns are gated. Use one of the accepted_patterns values.',
 				'accepted_patterns' => array(
 					'entire_website',
 					'front_page',
@@ -3384,10 +3384,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 					'all_posts',
 					'page_id:<int>',
 					'post_type:<slug>',
-					'term:<taxonomy>:<slug>',
 					'term_id:<int>',
-					'tax:<taxonomy>',
-					'url:/<path>',
 				),
 			)
 		);
@@ -3445,7 +3442,7 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 				"Invalid display_on value: '{$display_on_val}'.",
 				array(
 					'status'            => 422,
-					'hint'              => 'Value does not match any recognised targeting pattern.',
+					'hint'              => 'term:, tax:, and url: patterns are gated. Use one of the accepted_patterns values.',
 					'accepted_patterns' => array(
 						'entire_website',
 						'front_page',
@@ -3454,10 +3451,7 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 						'all_posts',
 						'page_id:<int>',
 						'post_type:<slug>',
-						'term:<taxonomy>:<slug>',
 						'term_id:<int>',
-						'tax:<taxonomy>',
-						'url:/<path>',
 					),
 				)
 			);
