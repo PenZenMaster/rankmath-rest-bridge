@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.0
+ * Version:      2.17.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.0' );
+define( 'RMB_VERSION', '2.17.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -154,6 +154,7 @@ define(
 		'is_product_category',
 		'is_product_tag',
 		'is_shop',
+		'is_admin',
 	)
 );
 
@@ -4369,6 +4370,9 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
 		return new WP_Error( 'invalid_data', 'snippets must be an array', array( 'status' => 400 ) );
 	}
 
+	// Bust the WP object cache for this option so $before reflects DB state,
+	// not a stale cache entry (persistent caches like Redis can lag behind writes).
+	wp_cache_delete( RMB_SNIPPETS_KEY, 'options' );
 	$before      = get_option( RMB_SNIPPETS_KEY, array() );
 	$clean_store = array();
 
@@ -4447,6 +4451,11 @@ function rmb_snippets_delete( WP_REST_Request $request ) {
 function rmb_cache_purge( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$purged = array();
 	$errors = array();
+
+	// Always flush the WordPress object cache first so subsequent get_option()
+	// calls read from the DB rather than a stale in-memory or persistent cache.
+	wp_cache_flush();
+	$purged[] = 'WordPress object cache';
 
 	if ( class_exists( '\LiteSpeed\Purge' ) ) {
 		do_action( 'litespeed_purge_all' );

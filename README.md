@@ -12,6 +12,23 @@ not required; `rank_math_*` post-meta is read as a migration fallback.
 
 ---
 
+## Caching Compatibility
+
+If your host runs a persistent page or object cache (SiteGround SuperCacher,
+Redis Object Cache, W3 Total Cache, WP Rocket, LiteSpeed Cache), you must
+exclude the REST API path from full-page caching to avoid stale GET responses
+after writes:
+
+**SiteGround SuperCacher:** Exclude `/wp-json/` from Dynamic Cache.
+**WP Rocket:** Add `/wp-json/(.*)` to the "Never Cache URL(s)" list.
+**W3 Total Cache / LiteSpeed / Breeze:** Exclude `/wp-json/` from page cache rules.
+
+`POST /cache/purge` flushes the WordPress object cache and all detected
+plugin-level caches. Call it after any bulk operation if you need read-after-write
+consistency without a page reload.
+
+---
+
 ## REST API — Key Endpoints
 
 All examples use:

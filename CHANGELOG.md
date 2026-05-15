@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.17.1
+
+Hotfix: object cache consistency, is_admin conditional, removed_count, README caching note.
+
+### Bug fixes
+
+- **Object cache flush in `POST /cache/purge`** — `wp_cache_flush()` is now
+  called first in the purge handler, before all plugin-specific cache layers.
+  Fixes read-after-write inconsistency on sites with persistent object caches
+  (Redis, Memcached, SiteGround SuperCacher) where `GET /perf/dequeue-rules`,
+  `GET /perf/defer-handles`, `GET /sitemap/exclusions`, and `GET /status`
+  appeared to ignore prior writes until a full cache purge.
+
+- **`removed_count` in `POST /snippets/replace-all`** — bust the WP options
+  cache for the snippet store before reading `$before`, so the count reflects
+  DB state rather than a stale object-cache entry. Fixes `removed_count: 0`
+  when snippets existed in the DB but not in the cache.
+
+- **`is_admin` added to `RR_PERF_ALLOWED_CONDITIONALS`** — dequeue rules can
+  now use `when_not: ["is_admin"]` to keep assets enqueued in the WP admin
+  while dequeuing them on the front end.
+
+### Documentation
+
+- **README caching compatibility section** — explains how to exclude `/wp-json/`
+  from page cache for SiteGround SuperCacher, WP Rocket, W3TC, and LiteSpeed;
+  notes that `POST /cache/purge` flushes the WP object cache plus all detected
+  plugin caches.
+
+---
+
 ## v2.17.0
 
 G-07/G-14: Elementor cache repair endpoint, per-user snippet emission.
