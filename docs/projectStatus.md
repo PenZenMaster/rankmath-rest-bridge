@@ -1,11 +1,33 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-14
-**Current Version:** 2.14.0
+**Last Updated:** 2026-05-15
+**Current Version:** 2.14.3
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** b71631b — chore: release v2.14.0 zip
+**Last Commit:** 97cb348 — chore: release v2.14.3 zip
 **Git Status:** clean
+
+---
+
+## 2026-05-15 Session — v2.14.1/2/3 Follow-ups — IN PROGRESS
+
+### Session Summary
+Reviewed v2.14.0 + v2.14.1 validation reports. Shipped three hotfix/polish
+releases closing all follow-up items: G-12 fatal fixed (v2.14.1), unset_fields
+added to /update (v2.14.2), line_count fix + REST fatal handler + README +
+term/self-update docs (v2.14.3). Continuing session.
+
+### Accomplishments
+- v2.14.0 validation report committed (6/7 pass, G-12 fatal)
+- v2.14.1: G-12 fatal fixed (array/string type mismatch in rmb_llms_regenerate)
+- v2.14.1 validation report committed (G-12 confirmed clean, line_count off-by-one noted)
+- v2.14.2: FU-2 unset_fields on POST /update (explicit meta deletion, audited)
+- v2.14.3: FU-1b line_count fix; FU-4 REST fatal handler; FU-3/FU-5 README + docs
+
+### Next
+Salvo staging verify (G-01 WooCommerce end-to-end); rrc-mu-toolkit GitHub
+remote + retire sequence; choose next gap (G-10 bulk snippet, G-09 sitemap
+term exclusion, or G-13 emission hooks).
 
 ---
 
