@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.14.2
+ * Version:      2.14.3
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.14.2' );
+define( 'RMB_VERSION', '2.14.3' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -1606,6 +1606,49 @@ function rmb_serve_sitemap(): void {
 
 
 // ── REST API ──────────────────────────────────────────────────────────────────
+add_action(
+	'rest_api_init',
+	function () {
+		register_shutdown_function( 'rrseo_rest_fatal_handler' );
+	}
+);
+
+/**
+ * Catches PHP fatals during REST requests and emits a clean JSON error response.
+ *
+ * Without this, a fatal inside a REST handler leaks an HTML "critical error" page
+ * wrapped in a partial REST envelope. Registered on rest_api_init so it only
+ * activates for REST requests, not front-end page loads.
+ */
+function rrseo_rest_fatal_handler() {
+	if ( ! defined( 'REST_REQUEST' ) || ! REST_REQUEST ) {
+		return;
+	}
+	$error = error_get_last();
+	if ( null === $error ) {
+		return;
+	}
+	$fatal_types = array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR );
+	if ( ! in_array( $error['type'], $fatal_types, true ) ) {
+		return;
+	}
+	while ( ob_get_level() ) {
+		ob_end_clean();
+	}
+	if ( ! headers_sent() ) {
+		status_header( 500 );
+		header( 'Content-Type: application/json; charset=UTF-8' );
+	}
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON error response; no user data exposed.
+	echo wp_json_encode(
+		array(
+			'code'    => 'internal_server_error',
+			'message' => 'A server error occurred. Check the PHP error log for details.',
+			'data'    => array( 'status' => 500 ),
+		)
+	);
+}
+
 add_action(
 	'rest_api_init',
 	function () {
@@ -3345,7 +3388,7 @@ function rmb_llms_regenerate( WP_REST_Request $request ) { // phpcs:ignore Gener
 		array(
 			'success'     => true,
 			'url'         => rtrim( get_bloginfo( 'url' ), '/' ) . '/llms.txt',
-			'line_count'  => substr_count( $content, "\n" ) + 1,
+			'line_count'  => substr_count( $content, "\n" ),
 			'byte_size'   => strlen( $content ),
 			'regenerated' => current_time( 'mysql' ),
 		)

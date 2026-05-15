@@ -1,5 +1,40 @@
 # Changelog
 
+## v2.14.3
+
+FU-1b/FU-4/FU-3/FU-5: line_count fix, REST fatal handler, README + term/self-update docs.
+
+### Bug fixes
+
+- **FU-1b — `line_count` off-by-one** — `POST /llms-txt/regenerate` reported
+  `line_count` one higher than the actual line count when the rendered content
+  ended with a trailing newline (normal case). Changed from
+  `substr_count($content, "\n") + 1` to `substr_count($content, "\n")` to
+  match `wc -l` convention.
+
+### New behaviour
+
+- **FU-4 — REST fatal handler** — `rrseo_rest_fatal_handler()` registered as a
+  PHP shutdown function on `rest_api_init`. If a PHP fatal occurs during a REST
+  request, it discards any buffered HTML error page and emits a clean
+  `{"code":"internal_server_error",...}` JSON response with HTTP 500. Prevents
+  the "critical error" HTML page from leaking through the REST envelope.
+
+### Documentation
+
+- **FU-3 — `/update` native term support** — `POST /update` accepts taxonomy
+  term IDs via `post_id` and writes/reads `rr_seo_*` term meta directly.
+  Response includes `object_type: "term"`. This was implemented in v2.14.0 but
+  not surfaced in CHANGELOG or README.
+- **FU-5 — `/check-updates` + `/self-update`** — headless self-update flow
+  documented in README. `POST /check-updates` reports available version;
+  `POST /self-update` downloads and activates the new zip (~3 seconds, no WP
+  admin login required). Enables CI/CD-style rollouts across client sites.
+- **README.md created** — REST API reference covering key endpoints, `display_on`
+  vocabulary, self-update workflow, and release checklist.
+
+---
+
 ## v2.14.2
 
 FU-2: add `unset_fields` to `POST /update` — explicit meta deletion.
