@@ -2,45 +2,45 @@
 
 **Last Updated:** 2026-05-14
 **Branch:** main
-**Version:** 2.13.1
-**Last Commit:** 24d2ae8 — chore: release v2.13.1 zip
+**Version:** 2.14.0
+**Last Commit:** b71631b — chore: release v2.14.0 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v2.13.1 shipped** — 422 gate on `term:`, `tax:`, `url:` `display_on` patterns
-   (silent failures become loud), whitespace normalization in `rmb_resolve_tokens()`
-   (leading space in `<title>`, double space in description fixed). Auto-update
-   confirmed working on live site.
+1. **v2.13.1 shipped and validated** — 422 gate on `term:`, `tax:`, `url:`
+   `display_on` patterns (silent failures become loud); whitespace normalization
+   in `rmb_resolve_tokens()` fixed leading space in `<title>` and double space
+   in `<meta name="description">`. Both fixes verified on live site. G-01
+   emitter proven working via `term_id:21` live probe.
 
-2. **v2.13.1 validated clean** — full 8-pattern emission matrix verified; G-01
-   emitter proven working via `term_id:21` live probe on `/category/ai-search-marketing/`.
-   G-01 gate lift in v2.14.0 is de-risked.
+2. **v2.14.0 shipped** — 7 items: G-01 gate lifted (`term:`, `tax:` accepted);
+   `post_id:` alias restored; G-02 422 in `/preview-update` for term IDs; G-03
+   `consolidate_canonical` in `/status`; G-08 `emit_routing_version: 2` in
+   `/status`; G-11 `GET /snippets/<slug>`; G-12 `POST /llms-txt/regenerate`.
+   Lint-clean, zip built and pushed.
 
-3. **v2.14.0 scope locked** — 7 items defined: restore `post_id:` alias, lift G-01
-   gate, G-02 422 fix (term IDs in /update + /preview-update), G-03 consolidate_canonical
-   flag, G-08 emit_routing_version, G-11 single-resource GET /snippets/<slug>,
-   G-12 POST /llms-txt/regenerate.
+3. **Validation reports committed** — `docs/RankRocket_v2_13_0_Validation_Report.md`
+   and `docs/RankRocket_v2_13_1_Validation_Report.md` in repo as permanent record.
 
 ---
 
 ## Next 3 Priorities
 
-1. **v2.14.0 implementation** — work items in order:
-   - Restore `post_id:<int>` alias in `rr_validate_display_on()`
-   - Lift G-01 gate: add `term:`, `tax:` back to validator + accepted_patterns
-   - G-02: return 422 in `/preview-update` + `/update` when post_id resolves to term
-   - G-03: `consolidate_canonical` flag in /status and /settings
-   - G-08: `emit_routing_version: 2` field in /status
-   - G-11: GET /snippets/<slug> single-resource endpoint (404 currently)
-   - G-12: POST /llms-txt/regenerate endpoint (404 currently)
+1. **Validate v2.14.0 on live site** — install update, then verify:
+   `term:category:uncategorized` snippet accepted (200, no longer 422);
+   `GET /snippets/<slug>` returns record; `POST /llms-txt/regenerate` returns
+   200 with `line_count`/`byte_size`; `/status` includes `emit_routing_version`
+   and `consolidate_canonical`.
 
-2. **Salvo staging verify for v2.13.1** — install zip, confirm 422 gate fires on
-   `term:product_cat:<slug>` write attempts.
+2. **Salvo staging verify** — install v2.14.0 zip; confirm `term:product_cat:<slug>`
+   snippets fire on taxonomy archive pages (G-01 end-to-end). This is the first
+   live test of the lifted gate on a WooCommerce site.
 
-3. **rrc-mu-toolkit GitHub remote + retire sequence** — create remote, push, then
-   retire `RRC_SEO_TAX_META_DESC` and `RRC_SEO_TAX_META_OG` on Salvo.
+3. **rrc-mu-toolkit GitHub remote + retire sequence** — create GitHub remote,
+   push. Then retire `RRC_SEO_TAX_META_DESC` and `RRC_SEO_TAX_META_OG` on
+   Salvo: disable constant → staging verify → remove code → commit.
 
 ---
 
@@ -48,12 +48,13 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.13.1
-- Last commit: `24d2ae8` — pushed, working tree clean
+- Version: 2.14.0
+- Last commit: `b71631b` — pushed, working tree clean
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php` (~4,000 lines)
-- Gap report: `docs/RankRocket_SEO_Functionality_Gaps.md` — 19 gaps
+- Plugin: `rankmath-rest-bridge.php` (~4,060 lines)
+- Gap report: `docs/RankRocket_SEO_Functionality_Gaps.md` — 19 gaps;
+  G-01/02/03/08/11/12 done in v2.13.x–v2.14.0
 - Validation reports: `docs/RankRocket_v2_13_0_Validation_Report.md`,
   `docs/RankRocket_v2_13_1_Validation_Report.md`
 - Release builder: `bin/build-zip.ps1` — always use for releases
@@ -67,37 +68,31 @@
 ## Release Checklist (run for every version bump)
 
 ```
-1. Bump version in rankmath-rest-bridge.php plugin header
+1. Bump version in rankmath-rest-bridge.php plugin header + RMB_VERSION constant
 2. Update update-manifest.json  — version + download_url (releases/vX.Y.Z/)
 3. Update CHANGELOG.md
 4. git add + git commit  (conventional: "chore: bump version to X.Y.Z")
 5. .\bin\build-zip.ps1   — must pass all 4 structural checks
 6. git add releases/vX.Y.Z/  && git commit  ("chore: release vX.Y.Z zip")
 7. git push
-8. Verify: curl -I <download_url>  returns 200 (not 404)
+8. Wait 2-3 min for GitHub CDN, then Check for Updates on live site
 ```
-
-> GitHub CDN propagation takes 2-5 minutes. If "Check for Updates" says
-> up-to-date immediately after push, wait and click again.
 
 ---
 
 ## Key Context Notes
 
-1. **G-01 emitter proven** — `rmb_snippet_matches_display()` correctly fires
-   `term_id:21` on `/category/ai-search-marketing/` (live validated May 14 2026).
-   Emission code for `term:<tax>:<slug>` and `tax:<tax>` uses same code path.
-   Gate removal in v2.14.0 is a validator allowlist change only — no emission
-   code changes needed.
+1. **G-01 fully open in v2.14.0** — `term:<tax>:<slug>` and `tax:<tax>` accepted
+   at write time and handled by `rmb_snippet_matches_display()` via `is_category()`,
+   `is_tag()`, `is_tax()`. Emitter proven on live site. `url:` remains gated.
 
-2. **G-02 still dangerous** — `/preview-update` and `/update` accept any integer
-   as `post_id`, including term IDs, and return `valid: true` with no write.
-   Fix in v2.14.0: detect term IDs via `rr_resolve_id()` and return 422.
+2. **G-02 status** — `/update` correctly routes term IDs to `update_term_meta()`.
+   `/preview-update` now returns 422 for term IDs. No term dry-run support yet.
 
-3. **v2.13.1 pattern vocabulary** — 8 accepted `display_on` values:
-   `entire_website`, `front_page`, `singular`, `all_pages`, `all_posts`,
-   `page_id:<int>`, `post_type:<slug>`, `term_id:<int>`.
-   `post_id:<int>` alias was dropped — restore in v2.14.0.
+3. **rrc-mu-toolkit retire sequence** — when shifting to that project, first task
+   is creating the GitHub remote, then retiring `RRC_SEO_TAX_META_DESC` and
+   `RRC_SEO_TAX_META_OG`. Retire order: disable constant → staging verify →
+   remove module code → commit.
 
 4. **Tier 2 update flow** — when `RRSEO_WL_HIDE_PLUGIN` is `true`, updates are
    silent. Delivery via WP-CLI or manual zip. See `docs/white-label-configuration.md`.

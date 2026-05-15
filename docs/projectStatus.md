@@ -1,11 +1,31 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-05-14
-**Current Version:** 2.13.1
+**Current Version:** 2.14.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 24d2ae8 — chore: release v2.13.1 zip
+**Last Commit:** b71631b — chore: release v2.14.0 zip
 **Git Status:** clean
+
+---
+
+## 2026-05-14 Session 3 — v2.13.1 Hotfix + v2.14.0 — COMPLETE
+
+### Session Summary
+Reviewed 3-state v2.13.0 validation. Shipped v2.13.1 (422 gate + whitespace
+fix). Validated v2.13.1 — G-01 emitter proven live. Shipped v2.14.0 with all
+7 follow-up items: G-01 gate lift, post_id: alias, G-02/03/08/11/12.
+
+### Accomplishments
+- v2.13.1: 422 gate on term:/tax:/url: patterns, whitespace normalization
+- v2.13.1: validated clean; G-01 emitter proven via term_id:21 live probe
+- v2.14.0: G-01 gate lifted, post_id: alias, G-02 422, G-03/08 /status fields,
+  G-11 GET /snippets/<slug>, G-12 POST /llms-txt/regenerate
+- Validation reports v2.13.0 and v2.13.1 committed to repo
+
+### Next
+Validate v2.14.0 on live site; Salvo staging verify (G-01 end-to-end on WC);
+rrc-mu-toolkit GitHub remote + retire sequence.
 
 ---
 
