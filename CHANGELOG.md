@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.16.1
+
+G-19/G-06: description fallback for page head, migrate-legacy token guard.
+
+### New behaviour
+
+- **G-19 — `<meta name="description">` fallback chain** — the `wp_head`
+  description handler now falls back to WordPress excerpt and then to the
+  first meaningful content paragraph when no explicit `rr_seo_description`
+  is stored. The title-only fallback is intentionally excluded from the head
+  output (a missing tag is preferable to a title duplicate). Fallback max
+  length defaults to 155 chars and is filterable via `rrseo_excerpt_fallback_length`.
+  Reuses the `rr_get_discovery_description()` fallback chain already in use
+  for llms.txt and sitemap preview.
+
+- **G-06 — `/migrate-legacy` template token guard** — fields whose RankMath
+  legacy value contains a template token pattern (`%title%`, `%sitename%`,
+  `%excerpt%`, `%sep%`, etc.) are now skipped instead of migrated verbatim.
+  They appear in the response under `skipped` with
+  `reason: "skipped_due_to_template_token"` and their raw value, so the
+  caller knows exactly which fields need manual backfill. Dry-run mode
+  surfaces the same information without writing.
+
+---
+
 ## v2.16.0
 
 G-04/G-05: Performance module — dequeue rules and script defer via REST.

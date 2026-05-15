@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.16.0
+ * Version:      2.16.1
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.16.0' );
+define( 'RMB_VERSION', '2.16.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -675,7 +675,21 @@ add_action(
 
 		$desc   = rr_get_seo_meta( $post_id, 'description' );
 		$robots = rr_get_seo_meta( $post_id, 'robots' );
-		$desc   = rmb_resolve_tokens( $desc, $post_id );
+		$desc   = $desc ? rmb_resolve_tokens( $desc, $post_id ) : '';
+
+		// Fallback to excerpt then first content paragraph when no explicit description
+		// is stored. Skips the title-only fallback — an absent tag is preferable to
+		// a duplicate of the page title in the description slot.
+		if ( ! $desc ) {
+			$post_obj = get_post( $post_id );
+			if ( $post_obj instanceof WP_Post ) {
+				$fallback_max = (int) apply_filters( 'rrseo_excerpt_fallback_length', 155 );
+				$fallback     = rr_get_discovery_description( $post_obj, $fallback_max );
+				if ( 'title' !== $fallback['source'] ) {
+					$desc = $fallback['description'];
+				}
+			}
+		}
 
 		if ( $desc ) {
 			echo '<meta name="description" content="' . esc_attr( $desc ) . '">' . "\n";
@@ -4560,6 +4574,17 @@ function rmb_migrate_legacy( WP_REST_Request $request ) {
 
 			if ( '' === $legacy_value || false === $legacy_value ) {
 				$skipped_fields[ $field ] = array( 'reason' => 'no legacy value found' );
+				continue;
+			}
+
+			// Reject RankMath template tokens (%title%, %sitename%, %excerpt%, etc.).
+			// Migrating literal token strings produces broken meta; callers must
+			// write real values manually for these fields.
+			if ( preg_match( '/%[a-z_]+%/', (string) $legacy_value ) ) {
+				$skipped_fields[ $field ] = array(
+					'reason' => 'skipped_due_to_template_token',
+					'value'  => $legacy_value,
+				);
 				continue;
 			}
 
