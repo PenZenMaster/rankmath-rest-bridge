@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.17.0
+
+G-07/G-14: Elementor cache repair endpoint, per-user snippet emission.
+
+### New endpoints
+
+- **G-07 — `POST /elementor/repair-cache`** — deletes `_elementor_element_cache`
+  and `_elementor_css` for one or more posts so the next page load rebuilds
+  fresh Elementor output. Accepts `post_id` (int) for a single post, `post_ids`
+  (array of int) for a batch, or both. Returns `{success, repaired:[{post_id,
+  status, deleted_keys}]}`. Reports `not_found` per post if ID doesn't exist.
+  Documented as a compatibility helper — out of SEO scope but bridges the most
+  common Elementor + REST friction point.
+
+### New snippet field: `display_on_user`
+
+- **G-14 — `display_on_user`** — optional field on all snippet write endpoints
+  (`POST /snippets`, `POST /snippets/{id}`, `POST /snippets/bulk`). Values:
+  `all` (default), `anonymous`, `logged_in`. Existing snippets without the
+  field default to `all` at emit time — no migration needed.
+  - `anonymous` — snippet is suppressed for logged-in users.
+  - `logged_in` — snippet is suppressed for anonymous visitors.
+  - Emitter fires `rrseo_snippet_skipped` with reason `user_logged_in` or
+    `user_anonymous` respectively so observability hooks stay accurate.
+
+### Minor fix
+
+- Removed orphaned docblock in image handler section (duplicate `@param` block
+  above `rmb_image_get_alt` left over from a function reorder).
+
+---
+
 ## v2.16.1
 
 G-19/G-06: description fallback for page head, migrate-legacy token guard.

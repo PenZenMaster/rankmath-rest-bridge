@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.16.1
+ * Version:      2.17.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.16.1' );
+define( 'RMB_VERSION', '2.17.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -436,6 +436,16 @@ function rmb_output_snippets( $location ) {
 
 		if ( ! rmb_snippet_matches_display( (string) ( $snippet['display_on'] ?? 'sitewide' ) ) ) {
 			do_action( 'rrseo_snippet_skipped', $snippet_data, 'display_on_mismatch', $location );
+			continue;
+		}
+
+		$user_filter = (string) ( $snippet['display_on_user'] ?? 'all' );
+		if ( 'anonymous' === $user_filter && is_user_logged_in() ) {
+			do_action( 'rrseo_snippet_skipped', $snippet_data, 'user_logged_in', $location );
+			continue;
+		}
+		if ( 'logged_in' === $user_filter && ! is_user_logged_in() ) {
+			do_action( 'rrseo_snippet_skipped', $snippet_data, 'user_anonymous', $location );
 			continue;
 		}
 
@@ -2277,32 +2287,38 @@ add_action(
 					'callback'            => 'rmb_snippets_create',
 					'permission_callback' => $admin_only,
 					'args'                => array(
-						'title'      => array(
+						'title'           => array(
 							'required' => true,
 							'type'     => 'string',
 						),
-						'content'    => array(
+						'content'         => array(
 							'required' => false,
 							'type'     => 'string',
 						),
-						'code'       => array(
+						'code'            => array(
 							'required' => false,
 							'type'     => 'string',
 						),
-						'location'   => array(
+						'location'        => array(
 							'required' => false,
 							'type'     => 'string',
 							'default'  => 'footer',
 						),
-						'display_on' => array(
+						'display_on'      => array(
 							'required' => false,
 							'type'     => 'string',
 							'default'  => 'entire_website',
 						),
-						'status'     => array(
+						'status'          => array(
 							'required' => false,
 							'type'     => 'string',
 							'default'  => 'active',
+						),
+						'display_on_user' => array(
+							'required' => false,
+							'type'     => 'string',
+							'enum'     => array( 'all', 'anonymous', 'logged_in' ),
+							'default'  => 'all',
 						),
 					),
 				),
@@ -2353,6 +2369,28 @@ add_action(
 							'type'     => 'array',
 							'items'    => array( 'type' => 'string' ),
 						),
+					),
+				),
+			)
+		);
+
+		// ── Elementor cache repair (G-07) ───────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/elementor/repair-cache',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_elementor_repair_cache',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'post_id'  => array(
+						'required' => false,
+						'type'     => 'integer',
+					),
+					'post_ids' => array(
+						'required' => false,
+						'type'     => 'array',
+						'items'    => array( 'type' => 'integer' ),
 					),
 				),
 			)
@@ -2415,6 +2453,13 @@ add_action(
 					'methods'             => 'POST',
 					'callback'            => 'rmb_snippets_update',
 					'permission_callback' => $admin_only,
+					'args'                => array(
+						'display_on_user' => array(
+							'required' => false,
+							'type'     => 'string',
+							'enum'     => array( 'all', 'anonymous', 'logged_in' ),
+						),
+					),
 				),
 				array(
 					'methods'             => 'DELETE',
@@ -3195,12 +3240,6 @@ function rmb_image_set_alt( WP_REST_Request $request ) {
 }
 
 /**
- * Handles POST /images/bulk-alt — sets ALT text for multiple attachments.
- *
- * @param WP_REST_Request $request REST request object.
- * @return WP_REST_Response
- */
-/**
  * Handles GET /images/{id}/alt — returns current ALT text for a single attachment.
  *
  * @param WP_REST_Request $request REST request object.
@@ -3686,6 +3725,74 @@ function rmb_llms_regenerate( WP_REST_Request $request ) { // phpcs:ignore Gener
 }
 
 
+// ── Elementor Cache Handler ───────────────────────────────────────────────────
+/**
+ * Handles POST /elementor/repair-cache — clears stale Elementor render cache.
+ *
+ * Deletes _elementor_element_cache and _elementor_css for the specified post(s)
+ * so the next page load rebuilds fresh output. Accepts post_id (int) for a
+ * single post, post_ids (array) for a batch, or both.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_elementor_repair_cache( WP_REST_Request $request ) {
+	$single   = $request->get_param( 'post_id' );
+	$batch    = $request->get_param( 'post_ids' );
+	$post_ids = array();
+
+	if ( null !== $single ) {
+		$post_ids[] = absint( $single );
+	}
+	if ( null !== $batch && is_array( $batch ) ) {
+		foreach ( $batch as $pid ) {
+			$post_ids[] = absint( $pid );
+		}
+	}
+	$post_ids = array_unique( array_filter( $post_ids ) );
+
+	if ( empty( $post_ids ) ) {
+		return new WP_Error(
+			'missing_post_id',
+			'Provide post_id (int) or post_ids (array) — at least one is required.',
+			array( 'status' => 400 )
+		);
+	}
+
+	$repaired = array();
+	foreach ( $post_ids as $post_id ) {
+		if ( ! get_post( $post_id ) ) {
+			$repaired[] = array(
+				'post_id' => $post_id,
+				'status'  => 'not_found',
+			);
+			continue;
+		}
+		$deleted = array();
+		foreach ( array( '_elementor_element_cache', '_elementor_css' ) as $meta_key ) {
+			if ( '' !== get_post_meta( $post_id, $meta_key, true ) ) {
+				delete_post_meta( $post_id, $meta_key );
+				$deleted[] = $meta_key;
+			}
+		}
+		wp_cache_delete( $post_id, 'post_meta' );
+		clean_post_cache( $post_id );
+		$repaired[] = array(
+			'post_id'      => $post_id,
+			'status'       => 'repaired',
+			'deleted_keys' => $deleted,
+		);
+	}
+
+	return rest_ensure_response(
+		array(
+			'success'  => true,
+			'repaired' => $repaired,
+		)
+	);
+}
+
+
 // ── Performance Handlers ──────────────────────────────────────────────────────
 /**
  * Handles GET /perf/dequeue-rules — returns current dequeue rules and allowed conditionals.
@@ -3964,14 +4071,15 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 	}
 
 	$snippet = array(
-		'id'         => $id,
-		'title'      => $title,
-		'content'    => $body,
-		'location'   => sanitize_text_field( $request->get_param( 'location' ) ),
-		'display_on' => $display_on_val,
-		'status'     => sanitize_text_field( $request->get_param( 'status' ) ),
-		'created_at' => current_time( 'mysql' ),
-		'updated_at' => current_time( 'mysql' ),
+		'id'              => $id,
+		'title'           => $title,
+		'content'         => $body,
+		'location'        => sanitize_text_field( $request->get_param( 'location' ) ),
+		'display_on'      => $display_on_val,
+		'display_on_user' => sanitize_text_field( (string) ( $request->get_param( 'display_on_user' ) ?? 'all' ) ),
+		'status'          => sanitize_text_field( $request->get_param( 'status' ) ),
+		'created_at'      => current_time( 'mysql' ),
+		'updated_at'      => current_time( 'mysql' ),
 	);
 
 	$snippets[ $id ] = $snippet;
@@ -4030,6 +4138,19 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 			);
 		}
 		$snippets[ $id ]['display_on'] = $display_on_val;
+	}
+
+	$user_filter = $request->get_param( 'display_on_user' );
+	if ( null !== $user_filter ) {
+		$user_filter = sanitize_text_field( $user_filter );
+		if ( ! in_array( $user_filter, array( 'all', 'anonymous', 'logged_in' ), true ) ) {
+			return new WP_Error(
+				'invalid_display_on_user',
+				"display_on_user must be 'all', 'anonymous', or 'logged_in'.",
+				array( 'status' => 422 )
+			);
+		}
+		$snippets[ $id ]['display_on_user'] = $user_filter;
 	}
 
 	// Accept 'code' as an alias for 'content'.
@@ -4125,15 +4246,21 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 			$id = $id . '_' . (string) $idx;
 		}
 
+		$user_filter_val = sanitize_text_field( (string) ( $item['display_on_user'] ?? 'all' ) );
+		if ( ! in_array( $user_filter_val, array( 'all', 'anonymous', 'logged_in' ), true ) ) {
+			$user_filter_val = 'all';
+		}
+
 		$prepared[ $id ] = array(
-			'id'         => $id,
-			'title'      => $title,
-			'content'    => (string) $body,
-			'location'   => sanitize_text_field( $item['location'] ?? 'head' ),
-			'display_on' => $display_on_val,
-			'status'     => sanitize_text_field( $item['status'] ?? 'active' ),
-			'created_at' => $ts,
-			'updated_at' => $ts,
+			'id'              => $id,
+			'title'           => $title,
+			'content'         => (string) $body,
+			'location'        => sanitize_text_field( $item['location'] ?? 'head' ),
+			'display_on'      => $display_on_val,
+			'display_on_user' => $user_filter_val,
+			'status'          => sanitize_text_field( $item['status'] ?? 'active' ),
+			'created_at'      => $ts,
+			'updated_at'      => $ts,
 		);
 	}
 
