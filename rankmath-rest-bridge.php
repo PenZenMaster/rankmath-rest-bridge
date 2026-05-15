@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.15.0
+ * Version:      2.16.0
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.15.0' );
+define( 'RMB_VERSION', '2.16.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -125,6 +125,37 @@ define( 'RR_LLMS_CONFIG_KEY', 'rrseo_llms_config' );
 
 // Sitemap / discovery exclusion rules option key (term IDs, term slugs, taxonomies, post slugs).
 define( 'RR_SITEMAP_EXCLUSIONS_KEY', 'rrseo_sitemap_exclusions' );
+
+// Performance module option keys (G-04 dequeue rules, G-05 defer handles).
+define( 'RR_PERF_DEQUEUE_KEY', 'rrseo_perf_dequeue_rules' );
+define( 'RR_PERF_DEFER_KEY', 'rrseo_perf_defer_handles' );
+
+// Whitelist of WordPress conditional functions accepted in dequeue rule when_not arrays.
+// Validated at write time (REST handler) and at apply time (wp_enqueue_scripts hook).
+define(
+	'RR_PERF_ALLOWED_CONDITIONALS',
+	array(
+		'is_front_page',
+		'is_home',
+		'is_singular',
+		'is_page',
+		'is_single',
+		'is_archive',
+		'is_category',
+		'is_tag',
+		'is_tax',
+		'is_search',
+		'is_404',
+		'is_woocommerce',
+		'is_cart',
+		'is_checkout',
+		'is_account_page',
+		'is_product',
+		'is_product_category',
+		'is_product_tag',
+		'is_shop',
+	)
+);
 
 /**
  * Returns the effective batch size cap for bulk REST endpoints.
@@ -1661,6 +1692,76 @@ function rmb_serve_sitemap(): void {
 }
 
 
+// ── Performance module ────────────────────────────────────────────────────────
+add_action( 'wp_enqueue_scripts', 'rrseo_apply_dequeue_rules', 999 );
+add_filter( 'script_loader_tag', 'rrseo_apply_defer_tag', 10, 2 );
+
+/**
+ * Applies stored dequeue rules on the front end.
+ *
+ * Runs at wp_enqueue_scripts:999 so it fires after all themes and plugins
+ * have enqueued their assets. For each rule, if ANY of the when_not
+ * conditional functions returns true the rule is skipped (assets stay
+ * enqueued). With an empty when_not array the rule fires on every page.
+ */
+function rrseo_apply_dequeue_rules(): void {
+	$rules = get_option( RR_PERF_DEQUEUE_KEY, array() );
+	if ( empty( $rules ) || ! is_array( $rules ) ) {
+		return;
+	}
+	$allowed = RR_PERF_ALLOWED_CONDITIONALS;
+	foreach ( $rules as $rule ) {
+		if ( empty( $rule['handles'] ) || ! is_array( $rule['handles'] ) ) {
+			continue;
+		}
+		$when_not = ( isset( $rule['when_not'] ) && is_array( $rule['when_not'] ) )
+			? $rule['when_not']
+			: array();
+		foreach ( $when_not as $cond ) {
+			if ( in_array( $cond, $allowed, true ) && function_exists( $cond ) && $cond() ) {
+				continue 2;
+			}
+		}
+		$type = isset( $rule['type'] ) ? (string) $rule['type'] : 'auto';
+		foreach ( $rule['handles'] as $handle ) {
+			$handle = (string) $handle;
+			if ( 'style' === $type || 'auto' === $type ) {
+				wp_dequeue_style( $handle );
+				wp_deregister_style( $handle );
+			}
+			if ( 'script' === $type || 'auto' === $type ) {
+				wp_dequeue_script( $handle );
+				wp_deregister_script( $handle );
+			}
+		}
+	}
+}
+
+/**
+ * Adds a defer attribute to script tags for handles in the defer list.
+ *
+ * Registered with accepted_args=2; $src is not needed.
+ * Skips tags that already contain 'defer' to avoid double-adding.
+ *
+ * @param string $tag    The full <script> tag HTML.
+ * @param string $handle The script handle.
+ * @return string
+ */
+function rrseo_apply_defer_tag( $tag, $handle ): string {
+	static $defer_handles = null;
+	if ( null === $defer_handles ) {
+		$defer_handles = (array) get_option( RR_PERF_DEFER_KEY, array() );
+	}
+	if ( ! in_array( $handle, $defer_handles, true ) ) {
+		return $tag;
+	}
+	if ( false !== strpos( $tag, ' defer' ) ) {
+		return $tag;
+	}
+	return str_replace( ' src=', ' defer src=', $tag );
+}
+
+
 // ── REST API ──────────────────────────────────────────────────────────────────
 add_action(
 	'rest_api_init',
@@ -2188,6 +2289,55 @@ add_action(
 							'required' => false,
 							'type'     => 'string',
 							'default'  => 'active',
+						),
+					),
+				),
+			)
+		);
+
+		// ── Performance module (G-04, G-05) ─────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/perf/dequeue-rules',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_perf_dequeue_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_perf_dequeue_update',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'rules' => array(
+							'required' => true,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'object' ),
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/perf/defer-handles',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_perf_defer_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_perf_defer_update',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'handles' => array(
+							'required' => true,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'string' ),
 						),
 					),
 				),
@@ -3522,6 +3672,132 @@ function rmb_llms_regenerate( WP_REST_Request $request ) { // phpcs:ignore Gener
 }
 
 
+// ── Performance Handlers ──────────────────────────────────────────────────────
+/**
+ * Handles GET /perf/dequeue-rules — returns current dequeue rules and allowed conditionals.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_perf_dequeue_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+	return rest_ensure_response(
+		array(
+			'rules'                => get_option( RR_PERF_DEQUEUE_KEY, array() ),
+			'allowed_conditionals' => RR_PERF_ALLOWED_CONDITIONALS,
+		)
+	);
+}
+
+/**
+ * Handles POST /perf/dequeue-rules — replaces the stored dequeue rule set.
+ *
+ * Each rule: { handles: string[], type: 'auto'|'script'|'style', when_not: string[] }.
+ * when_not values must be in RR_PERF_ALLOWED_CONDITIONALS.
+ * Passing an empty rules array clears all rules.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_perf_dequeue_update( WP_REST_Request $request ) {
+	$raw_rules = $request->get_param( 'rules' );
+	if ( ! is_array( $raw_rules ) ) {
+		return new WP_Error( 'invalid_rules', 'rules must be an array.', array( 'status' => 400 ) );
+	}
+
+	$clean   = array();
+	$allowed = RR_PERF_ALLOWED_CONDITIONALS;
+
+	foreach ( $raw_rules as $idx => $rule ) {
+		if ( ! is_array( $rule ) || empty( $rule['handles'] ) || ! is_array( $rule['handles'] ) ) {
+			return new WP_Error(
+				'invalid_rule',
+				"Rule at index {$idx} must have a non-empty handles array.",
+				array( 'status' => 422 )
+			);
+		}
+
+		$type = sanitize_text_field( $rule['type'] ?? 'auto' );
+		if ( ! in_array( $type, array( 'auto', 'script', 'style' ), true ) ) {
+			return new WP_Error(
+				'invalid_type',
+				"Rule at index {$idx}: type must be auto, script, or style.",
+				array( 'status' => 422 )
+			);
+		}
+
+		$when_not = array();
+		if ( ! empty( $rule['when_not'] ) && is_array( $rule['when_not'] ) ) {
+			foreach ( $rule['when_not'] as $cond ) {
+				$cond = sanitize_key( (string) $cond );
+				if ( ! in_array( $cond, $allowed, true ) ) {
+					return new WP_Error(
+						'invalid_conditional',
+						"Unknown conditional '{$cond}'. See allowed_conditionals in GET /perf/dequeue-rules.",
+						array(
+							'status'               => 422,
+							'allowed_conditionals' => $allowed,
+						)
+					);
+				}
+				$when_not[] = $cond;
+			}
+		}
+
+		$clean[] = array(
+			'handles'  => array_values( array_map( 'sanitize_text_field', $rule['handles'] ) ),
+			'type'     => $type,
+			'when_not' => $when_not,
+		);
+	}
+
+	update_option( RR_PERF_DEQUEUE_KEY, $clean );
+
+	return rest_ensure_response(
+		array(
+			'success' => true,
+			'rules'   => $clean,
+		)
+	);
+}
+
+/**
+ * Handles GET /perf/defer-handles — returns the list of script handles marked for defer.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_perf_defer_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+	return rest_ensure_response(
+		array(
+			'handles' => get_option( RR_PERF_DEFER_KEY, array() ),
+		)
+	);
+}
+
+/**
+ * Handles POST /perf/defer-handles — replaces the stored defer handle list.
+ *
+ * Passing an empty handles array clears all deferred handles.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_perf_defer_update( WP_REST_Request $request ) {
+	$handles = $request->get_param( 'handles' );
+	if ( ! is_array( $handles ) ) {
+		return new WP_Error( 'invalid_handles', 'handles must be an array.', array( 'status' => 400 ) );
+	}
+	$clean = array_values( array_filter( array_map( 'sanitize_text_field', $handles ) ) );
+	update_option( RR_PERF_DEFER_KEY, $clean );
+	return rest_ensure_response(
+		array(
+			'success' => true,
+			'handles' => $clean,
+		)
+	);
+}
+
+
 // ── Sitemap Preview Handler ───────────────────────────────────────────────────
 /**
  * Handles GET /sitemap/preview — Canonical URL Set preview with inclusion/exclusion audit.
@@ -4140,6 +4416,8 @@ function rmb_status( WP_REST_Request $request ) {
 		'consolidate_canonical'      => (bool) get_option( 'rrseo_consolidate_canonical', true ),
 		'emit_snippets'              => (bool) get_option( 'rrseo_emit_snippets', true ),
 		'emit_routing_version'       => 2,
+		'perf_dequeue_rules_count'   => count( (array) get_option( RR_PERF_DEQUEUE_KEY, array() ) ),
+		'perf_defer_handles_count'   => count( (array) get_option( RR_PERF_DEFER_KEY, array() ) ),
 		'snippet_count'              => count( $snippets ),
 		'snippet_ids'                => array_keys( $snippets ),
 		'update_url'                 => RMB_UPDATE_URL,

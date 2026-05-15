@@ -1,5 +1,40 @@
 # Changelog
 
+## v2.16.0
+
+G-04/G-05: Performance module — dequeue rules and script defer via REST.
+
+### New behaviour
+
+- **G-04 — `GET /perf/dequeue-rules`** — returns the current dequeue rule set
+  and the `allowed_conditionals` whitelist.
+
+- **G-04 — `POST /perf/dequeue-rules`** — replaces the stored rule set. Each
+  rule: `{ handles: string[], type: "auto"|"script"|"style", when_not: string[] }`.
+  `when_not` values must be in the allowed conditionals list (WordPress
+  conditional function names: `is_front_page`, `is_home`, `is_woocommerce`,
+  `is_cart`, `is_checkout`, `is_product`, etc. — full list in GET response).
+  At `wp_enqueue_scripts:999`, each rule dequeues and deregisters its handles
+  unless any `when_not` condition is true on the current page. Empty `when_not`
+  fires on every page. Passing `rules: []` clears all rules.
+
+- **G-05 — `GET /perf/defer-handles`** — returns the current defer handle list.
+
+- **G-05 — `POST /perf/defer-handles`** — replaces the stored list. Adds a
+  `defer` attribute to matching `<script>` tags via `script_loader_tag:10`.
+  Skips tags that already contain `defer`. Passing `handles: []` clears all.
+
+- **`/status`** — now includes `perf_dequeue_rules_count` and
+  `perf_defer_handles_count`.
+
+### Admin fix
+
+- Page title in WP admin displayed as `RankRocket SEO \xe2\x80\x94 Overview`
+  (raw UTF-8 bytes) due to a hex escape in a single-quoted PHP string.
+  Replaced with ASCII ` - ` separator.
+
+---
+
 ## v2.15.0
 
 G-10/G-09/G-17: bulk snippet create, sitemap exclusion config, expanded placeholder patterns.
