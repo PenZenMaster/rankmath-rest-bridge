@@ -2,43 +2,46 @@
 
 **Last Updated:** 2026-05-15
 **Branch:** main
-**Version:** 2.14.3
-**Last Commit:** 97cb348 — chore: release v2.14.3 zip
+**Version:** 2.17.0
+**Last Commit:** 53b3a00 — chore: release v2.17.0 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v2.14.1 shipped** — G-12 fatal fixed: `rmb_llms_regenerate()` was passing
-   the array returned by `rr_render_llms_txt()` to `substr_count()`/`strlen()`;
-   unpacked `$result['content']` first. Validated clean (all 4 payload variants
-   return 200, deterministic md5).
+1. **Full gap sprint complete (v2.14.4 → v2.17.0)** — closed G-04, G-05,
+   G-06, G-07, G-09, G-10, G-13, G-14, G-16, G-17, G-18, G-19 across nine
+   releases. Every gap from the original report is closed except G-15
+   (hreflang, explicitly deferred). Key items: Performance module
+   (dequeue-rules + defer-handles), bulk snippets, sitemap exclusions,
+   snippet emission hooks, Elementor cache helper, display_on_user field.
 
-2. **v2.14.2 shipped** — FU-2: `unset_fields` array parameter added to
-   `POST /update`. Explicit meta deletion for posts and terms. Returns 422 on
-   unknown fields or write/unset conflicts. Audited via `rr_audit_log()`.
+2. **README.md created** — REST API reference with endpoint examples,
+   display_on vocabulary table, headless self-update workflow (`/check-updates`
+   + `/self-update`), and release checklist.
 
-3. **v2.14.3 shipped** — FU-1b `line_count` off-by-one fixed; FU-4
-   `rrseo_rest_fatal_handler()` shutdown function added (catches PHP fatals
-   during REST requests, emits clean JSON 500); FU-3/FU-5 README.md created
-   with REST API reference, `/update` term-meta support, and headless
-   `/check-updates` + `/self-update` workflow documented.
+3. **All v2.14.x FUs closed** — G-12 fatal fixed (v2.14.1), unset_fields on
+   /update (v2.14.2), line_count fix + REST fatal handler + docs (v2.14.3).
 
 ---
 
 ## Next 3 Priorities
 
-1. **Salvo staging verify** — install v2.14.3 zip; confirm
-   `term:product_cat:<slug>` snippets fire on WooCommerce taxonomy archive
-   pages (G-01 end-to-end, first live WC test).
+1. **Validate v2.17.0 on live site** — install update; spot-check:
+   `POST /perf/dequeue-rules` stores and applies rules; `POST /snippets/bulk`
+   creates batch; `display_on_user: anonymous` suppresses for logged-in users;
+   `POST /elementor/repair-cache` returns repaired+deleted_keys.
 
-2. **rrc-mu-toolkit GitHub remote + retire sequence** — create GitHub remote,
-   push. Then retire `RRC_SEO_TAX_META_DESC` and `RRC_SEO_TAX_META_OG` on
-   Salvo: disable constant → staging verify → remove code → commit.
+2. **Salvo staging verify** — install v2.17.0 zip; configure
+   `POST /perf/dequeue-rules` to replace `RRC_SEO_WC_DEQUEUE` mu-plugin;
+   configure `POST /perf/defer-handles` to replace `RRC_SEO_DEFER_NONCRIT`;
+   confirm `term:product_cat:<slug>` snippets fire on WooCommerce taxonomy
+   archives (G-01 end-to-end). Then retire the two mu-plugin modules.
 
-3. **Choose next plugin gap** — highest practical value options:
-   G-10 (bulk snippet POST), G-09 (sitemap term exclusion config),
-   G-13 (snippet emission action hooks — low effort).
+3. **rrc-mu-toolkit GitHub remote + retire sequence** — create GitHub remote,
+   push local repo. Then retire `RRC_SEO_TAX_META_DESC` and
+   `RRC_SEO_TAX_META_OG` on Salvo (disable constant → staging verify →
+   remove code → commit).
 
 ---
 
@@ -46,20 +49,21 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.14.3
-- Last commit: `97cb348` — pushed, working tree clean
+- Version: 2.17.0
+- Last commit: `53b3a00` — pushed, working tree clean
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php` (~4,120 lines)
-- README: `README.md` — created this session (REST API reference)
-- Gap report: `docs/RankRocket_SEO_Functionality_Gaps.md` — 19 gaps;
-  G-01/02/03/08/11/12 done in v2.13.x–v2.14.0
-- Validation reports: v2.13.0, v2.13.1, v2.14.0, v2.14.1 all in `docs/`
+- Plugin: `rankmath-rest-bridge.php` (~4,600+ lines)
+- Canonical class: `includes/class-rrseo-canonical.php`
+- README: `README.md` — REST API reference (created this session)
+- Gap report: `docs/RankRocket_SEO_Functionality_Gaps.md` — all gaps closed
+  except G-15 (hreflang, deferred)
+- Validation reports: v2.13.0–v2.14.1 in `docs/`
 - Release builder: `bin/build-zip.ps1` — always use for releases
 - Side repo: `E:\projects\rrc-mu-toolkit` — local only, no remote yet
 
 **Blockers:**
-- None. All FUs from v2.14.0/v2.14.1 reports closed.
+- None.
 
 ---
 
@@ -80,23 +84,25 @@
 
 ## Key Context Notes
 
-1. **G-01 fully open in v2.14.0** — `term:<tax>:<slug>` and `tax:<tax>` accepted
-   at write time and handled by `rmb_snippet_matches_display()`. `url:` remains
-   gated. G-01 end-to-end on WooCommerce (Salvo) not yet verified.
+1. **Performance module (v2.16.0)** — `POST /perf/dequeue-rules` replaces
+   `RRC_SEO_WC_DEQUEUE` mu-plugin; `POST /perf/defer-handles` replaces
+   `RRC_SEO_DEFER_NONCRIT`. Not yet configured on Salvo — that's next priority.
 
-2. **unset_fields on /update (v2.14.2)** — sending empty string for a field is
-   still a no-op (by design). Use `unset_fields: ["field"]` to explicitly
-   delete. Works for both posts and terms.
+2. **display_on_user (v2.17.0)** — new snippet field `all|anonymous|logged_in`.
+   Existing snippets without the field default to `all` at emit time — no DB
+   migration needed. Fires `rrseo_snippet_skipped` with reason `user_logged_in`
+   or `user_anonymous`.
 
-3. **rrseo_rest_fatal_handler (v2.14.3)** — registered on `rest_api_init`.
-   Catches PHP fatals, discards HTML error output, emits clean JSON 500. Covers
-   the full REST surface, not just the G-12 endpoint.
+3. **Sitemap exclusions (v2.15.0)** — `POST /sitemap/exclusions` with
+   `excluded_post_slugs` takes effect immediately. `excluded_term_ids`,
+   `excluded_term_slugs`, `excluded_taxonomies` stored for future taxonomy
+   sitemap support.
 
 4. **rrc-mu-toolkit retire sequence** — when shifting to that project, first
    task is creating the GitHub remote, then retiring `RRC_SEO_TAX_META_DESC`
    and `RRC_SEO_TAX_META_OG`. Order: disable constant → staging verify →
    remove module code → commit.
 
-5. **Tier 2 update flow** — when `RRSEO_WL_HIDE_PLUGIN` is `true`, updates are
-   silent. Delivery via WP-CLI or manual zip or headless `/self-update`.
+5. **Tier 2 update flow** — when `RRSEO_WL_HIDE_PLUGIN` is `true`, updates
+   are silent. Use WP-CLI, manual zip, or headless `POST /self-update`.
    See `docs/white-label-configuration.md`.

@@ -1,33 +1,35 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-05-15
-**Current Version:** 2.14.3
+**Current Version:** 2.17.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 97cb348 — chore: release v2.14.3 zip
+**Last Commit:** 53b3a00 — chore: release v2.17.0 zip
 **Git Status:** clean
 
 ---
 
-## 2026-05-15 Session — v2.14.1/2/3 Follow-ups — IN PROGRESS
+## 2026-05-15 Session — Full Gap Sprint v2.14.4 → v2.17.0 — COMPLETE
 
 ### Session Summary
-Reviewed v2.14.0 + v2.14.1 validation reports. Shipped three hotfix/polish
-releases closing all follow-up items: G-12 fatal fixed (v2.14.1), unset_fields
-added to /update (v2.14.2), line_count fix + REST fatal handler + README +
-term/self-update docs (v2.14.3). Continuing session.
+Full sprint through the complete open gap list. Shipped 9 versions (v2.14.4
+through v2.17.0) closing G-04, G-05, G-06, G-07, G-09, G-10, G-13, G-14,
+G-16, G-17, G-18, G-19. Confirmed Images polish (GET /images/{id}/alt +
+bulk-alt cap) already done from crawl sync spec. Only G-15 (hreflang) remains
+deferred. All FUs from v2.14.x validation reports were closed earlier this
+session.
 
 ### Accomplishments
-- v2.14.0 validation report committed (6/7 pass, G-12 fatal)
-- v2.14.1: G-12 fatal fixed (array/string type mismatch in rmb_llms_regenerate)
-- v2.14.1 validation report committed (G-12 confirmed clean, line_count off-by-one noted)
-- v2.14.2: FU-2 unset_fields on POST /update (explicit meta deletion, audited)
-- v2.14.3: FU-1b line_count fix; FU-4 REST fatal handler; FU-3/FU-5 README + docs
+- v2.14.4: G-16 register_post_meta, G-18 canonical-urls/preview alias, G-13 snippet hooks
+- v2.15.0: G-10 bulk snippets, G-09/G-17 sitemap exclusions + placeholder expansion
+- v2.16.0: G-04/G-05 performance module (dequeue + defer), admin title fix
+- v2.16.1: G-19 description fallback in head, G-06 migrate-legacy token guard
+- v2.17.0: G-07 Elementor cache helper, G-14 display_on_user snippet field
+- README.md created with REST API reference
 
 ### Next
-Salvo staging verify (G-01 WooCommerce end-to-end); rrc-mu-toolkit GitHub
-remote + retire sequence; choose next gap (G-10 bulk snippet, G-09 sitemap
-term exclusion, or G-13 emission hooks).
+Validate v2.17.0 on live site; Salvo staging verify (G-01 WC end-to-end + perf
+module to replace mu-plugin modules); rrc-mu-toolkit GitHub remote + retire sequence.
 
 ---
 
