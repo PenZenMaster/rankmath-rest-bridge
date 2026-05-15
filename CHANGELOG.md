@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.14.2
+
+FU-2: add `unset_fields` to `POST /update` — explicit meta deletion.
+
+### Behaviour
+
+- **`unset_fields` parameter on `POST /update`** — accepts an array of field
+  name strings. Each named field is deleted from post meta or term meta
+  (whichever applies to the resolved ID). Valid names are the same keys
+  accepted by the write fields: `title`, `description`, `focus_keyword`,
+  `robots`, `og_title`, `og_description`, `og_image`, `canonical`,
+  `twitter_card`, `twitter_title`, `twitter_description`, `twitter_image`.
+- Cleared fields appear in the `updated` response map with value `""` so
+  callers can confirm what was removed.
+- Returns HTTP 422 with `invalid_unset_field` if an unrecognised field name
+  is supplied; response includes `valid_fields` array.
+- Returns HTTP 422 with `unset_write_conflict` if the same field appears in
+  both the write fields and `unset_fields`.
+- Write/delete are fully audited via `rr_audit_log()` with `before`/`after`
+  values.
+
+---
+
 ## v2.14.1
 
 Fix G-12 fatal: `POST /llms-txt/regenerate` returned HTTP 500 on every call.

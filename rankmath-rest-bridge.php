@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.14.1
+ * Version:      2.14.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.14.1' );
+define( 'RMB_VERSION', '2.14.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -1675,6 +1675,12 @@ add_action(
 						'required' => false,
 						'type'     => 'string',
 					),
+					'unset_fields'        => array(
+						'required' => false,
+						'type'     => 'array',
+						'items'    => array( 'type' => 'string' ),
+						'default'  => array(),
+					),
 				),
 			)
 		);
@@ -2301,6 +2307,43 @@ function rmb_update_meta( WP_REST_Request $request ) {
 			'before' => $before ? $before : '',
 			'after'  => $sanitized,
 		);
+	}
+
+	$unset_fields = $request->get_param( 'unset_fields' );
+	if ( ! empty( $unset_fields ) ) {
+		$valid_fields = array_keys( RR_SEO_META_KEYS );
+		foreach ( $unset_fields as $param ) {
+			if ( ! in_array( $param, $valid_fields, true ) ) {
+				return new WP_Error(
+					'invalid_unset_field',
+					"'{$param}' is not a recognized SEO field.",
+					array(
+						'status'       => 422,
+						'valid_fields' => $valid_fields,
+					)
+				);
+			}
+			if ( isset( $raw_fields[ $param ] ) ) {
+				return new WP_Error(
+					'unset_write_conflict',
+					"'{$param}' cannot appear in both the write fields and unset_fields.",
+					array( 'status' => 422 )
+				);
+			}
+			$meta_key = RR_SEO_META_KEYS[ $param ];
+			if ( $is_term ) {
+				$before = rr_get_term_seo_meta( $id, $param );
+				delete_term_meta( $id, $meta_key );
+			} else {
+				$before = rr_get_seo_meta( $id, $param );
+				delete_post_meta( $id, $meta_key );
+			}
+			$updated[ $meta_key ]    = '';
+			$audit_changes[ $param ] = array(
+				'before' => $before ? $before : '',
+				'after'  => '',
+			);
+		}
 	}
 
 	if ( $is_term ) {
