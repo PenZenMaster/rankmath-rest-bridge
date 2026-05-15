@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.14.3
+ * Version:      2.14.4
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.14.3' );
+define( 'RMB_VERSION', '2.14.4' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -217,28 +217,74 @@ add_action(
 );
 
 // ── Post meta registration ────────────────────────────────────────────────────
-// Registers _rrseo_llms_section as a first-class WordPress meta key so it is
-// discoverable via show_in_rest, sanitized by the meta layer, and visible in
-// REST /wp/v2/posts responses.
+// Declares all plugin-owned meta keys to WordPress core: type coercion,
+// sanitize callbacks, show_in_rest visibility, and auth_callback. Using ''
+// as $object_type registers for all post types in one pass.
 add_action(
 	'init',
 	function () {
-		$post_types = apply_filters( 'rrseo_metabox_post_types', array( 'post', 'page' ) );
-		foreach ( $post_types as $post_type ) {
+		$url_fields = array( 'og_image', 'canonical', 'twitter_image' );
+		$auth       = function () {
+			return current_user_can( 'manage_options' );
+		};
+
+		foreach ( RR_SEO_META_KEYS as $param => $meta_key ) {
+			if ( in_array( $param, $url_fields, true ) ) {
+				$sanitize = 'esc_url_raw';
+			} elseif ( 'twitter_card' === $param ) {
+				$sanitize = 'sanitize_key';
+			} else {
+				$sanitize = 'sanitize_text_field';
+			}
 			register_post_meta(
-				$post_type,
-				META_LLMS_SECTION,
+				'',
+				$meta_key,
 				array(
 					'type'              => 'string',
 					'single'            => true,
 					'show_in_rest'      => true,
-					'sanitize_callback' => 'sanitize_text_field',
-					'auth_callback'     => function () {
-						return current_user_can( 'manage_options' );
-					},
+					'sanitize_callback' => $sanitize,
+					'auth_callback'     => $auth,
 				)
 			);
 		}
+
+		// Per-post llms.txt section classification.
+		register_post_meta(
+			'',
+			META_LLMS_SECTION,
+			array(
+				'type'              => 'string',
+				'single'            => true,
+				'show_in_rest'      => true,
+				'sanitize_callback' => 'sanitize_text_field',
+				'auth_callback'     => $auth,
+			)
+		);
+
+		// Schema graph and audit log — internal keys, not exposed via REST.
+		register_post_meta(
+			'',
+			RR_SCHEMA_META_KEY,
+			array(
+				'type'              => 'string',
+				'single'            => true,
+				'show_in_rest'      => false,
+				'sanitize_callback' => 'sanitize_textarea_field',
+				'auth_callback'     => $auth,
+			)
+		);
+		register_post_meta(
+			'',
+			RR_CHANGE_LOG_KEY,
+			array(
+				'type'              => 'string',
+				'single'            => true,
+				'show_in_rest'      => false,
+				'sanitize_callback' => 'sanitize_textarea_field',
+				'auth_callback'     => $auth,
+			)
+		);
 	}
 );
 
@@ -337,7 +383,11 @@ function rmb_output_snippets( $location ) {
 		if ( ! is_array( $snippet ) ) {
 			continue;
 		}
+
+		$snippet_data = array_merge( $snippet, array( 'id' => $id ) );
+
 		if ( ( $snippet['status'] ?? 'active' ) !== 'active' ) {
+			do_action( 'rrseo_snippet_skipped', $snippet_data, 'inactive', $location );
 			continue;
 		}
 		if ( ( $snippet['location'] ?? 'footer' ) !== $location ) {
@@ -346,16 +396,19 @@ function rmb_output_snippets( $location ) {
 
 		$content = (string) ( $snippet['content'] ?? '' );
 		if ( '' === $content ) {
+			do_action( 'rrseo_snippet_skipped', $snippet_data, 'empty_content', $location );
 			continue;
 		}
 
 		if ( ! rmb_snippet_matches_display( (string) ( $snippet['display_on'] ?? 'sitewide' ) ) ) {
+			do_action( 'rrseo_snippet_skipped', $snippet_data, 'display_on_mismatch', $location );
 			continue;
 		}
 
 		$marker_id = is_string( $id ) || is_int( $id ) ? (string) $id : '';
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- managed snippets are admin-only, capability-guarded at write; must not strip <script>/<style>/JSON-LD.
 		echo "\n<!-- rrseo:snippet id=\"" . esc_attr( $marker_id ) . "\" -->\n" . $content . "\n<!-- /rrseo:snippet -->\n";
+		do_action( 'rrseo_snippet_emitted', $snippet_data, $location );
 	}
 }
 
@@ -2033,6 +2086,17 @@ add_action(
 		register_rest_route(
 			'rankrocket-seo/v1',
 			'/sitemap/preview',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_sitemap_preview',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		// ── Canonical URL Set preview (G-18 alias) ────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/canonical-urls/preview',
 			array(
 				'methods'             => 'GET',
 				'callback'            => 'rmb_sitemap_preview',

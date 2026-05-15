@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.14.4
+
+G-16/G-18/G-13: register_post_meta, canonical-urls/preview alias, snippet hooks.
+
+### New behaviour
+
+- **G-16 — `register_post_meta` for all plugin-owned keys** — all 12
+  `RR_SEO_META_KEYS` values (`rr_seo_title`, `rr_seo_description`, etc.) are
+  now formally declared to WordPress core via `register_post_meta()` with
+  `show_in_rest: true`, correct `sanitize_callback` per field type
+  (`esc_url_raw` for URL fields, `sanitize_key` for `twitter_card`, and
+  `sanitize_text_field` for the rest), and `auth_callback` requiring
+  `manage_options`. `_rrseo_llms_section` registration expanded from
+  specific post types to all post types (`''`). `_rrseo_schema_graph` and
+  `_rrseo_change_log` registered with `show_in_rest: false` (internal).
+
+- **G-18 — `GET /canonical-urls/preview`** — thin alias over the existing
+  `/sitemap/preview` handler. Returns the same Canonical URL Set payload
+  (canonical_urls, excluded_urls, counts, warnings) under the semantically
+  correct endpoint name. `/sitemap/preview` remains available unchanged.
+
+- **G-13 — Snippet emission action hooks** — `rmb_output_snippets()` now
+  fires `do_action('rrseo_snippet_emitted', $snippet, $location)` after each
+  successful emit, and `do_action('rrseo_snippet_skipped', $snippet, $reason,
+  $location)` when a snippet is skipped. Reason values: `inactive`,
+  `empty_content`, `display_on_mismatch`. The `$snippet` array always
+  includes the snippet's `id` key. Enables mu-plugins and themes to build
+  debug logs or observability tooling without patching core emitter code.
+
+---
+
 ## v2.14.3
 
 FU-1b/FU-4/FU-3/FU-5: line_count fix, REST fatal handler, README + term/self-update docs.
