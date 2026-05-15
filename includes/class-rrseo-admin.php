@@ -46,7 +46,7 @@ class RRSEO_Admin {
 	 */
 	private function page_title( string $sub_page = '' ): string {
 		$name = RRSEO_White_Label::wl_name();
-		return '' === $sub_page ? $name : $name . ' \xe2\x80\x94 ' . $sub_page;
+		return '' === $sub_page ? $name : $name . ' - ' . $sub_page;
 	}
 
 	/**
