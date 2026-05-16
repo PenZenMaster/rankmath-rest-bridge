@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.2
+ * Version:      2.17.3
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.2' );
+define( 'RMB_VERSION', '2.17.3' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -186,6 +186,23 @@ function rrseo_batch_max(): int {
 function rrseo_bust_option_cache( string $option_key ): void {
 	wp_cache_delete( $option_key, 'options' );
 	wp_cache_delete( 'alloptions', 'options' );
+}
+
+/**
+ * Purges page-level cache entries for specific REST endpoints.
+ *
+ * Fires LiteSpeed Cache's URL purge action (and future equivalents for other
+ * supported cache plugins) so that page-cached GET responses for these endpoints
+ * are invalidated immediately after a write, not just after a full cache flush.
+ *
+ * @param string[] $endpoints Endpoint slugs relative to rankrocket-seo/v1/,
+ *                            e.g. array( 'status', 'snippets' ).
+ */
+function rrseo_purge_rest_cache( array $endpoints ): void {
+	foreach ( $endpoints as $endpoint ) {
+		$url = get_rest_url( null, 'rankrocket-seo/v1/' . ltrim( $endpoint, '/' ) );
+		do_action( 'litespeed_purge_url', $url );
+	}
 }
 
 // robots.txt directive config option key.
@@ -3889,6 +3906,7 @@ function rmb_perf_dequeue_update( WP_REST_Request $request ) {
 
 	update_option( RR_PERF_DEQUEUE_KEY, $clean );
 	rrseo_bust_option_cache( RR_PERF_DEQUEUE_KEY );
+	rrseo_purge_rest_cache( array( 'status' ) );
 
 	return rest_ensure_response(
 		array(
@@ -3928,6 +3946,7 @@ function rmb_perf_defer_update( WP_REST_Request $request ) {
 	$clean = array_values( array_filter( array_map( 'sanitize_text_field', $handles ) ) );
 	update_option( RR_PERF_DEFER_KEY, $clean );
 	rrseo_bust_option_cache( RR_PERF_DEFER_KEY );
+	rrseo_purge_rest_cache( array( 'status' ) );
 	return rest_ensure_response(
 		array(
 			'success' => true,
@@ -4059,8 +4078,11 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 		return new WP_Error( 'missing_content', 'A snippet body is required. Send it as "content" or "code".', array( 'status' => 400 ) );
 	}
 
-	if ( isset( $snippets[ $id ] ) ) {
-		$id = $id . '_' . time();
+	$base_id = $id;
+	$attempt = 1;
+	while ( isset( $snippets[ $id ] ) ) {
+		$id = $base_id . '_' . $attempt;
+		++$attempt;
 	}
 
 	$display_on_val = sanitize_text_field( $request->get_param( 'display_on' ) );
@@ -4103,6 +4125,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 	$snippets[ $id ] = $snippet;
 	update_option( RMB_SNIPPETS_KEY, $snippets );
 	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
+	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
 
 	return rest_ensure_response(
 		array(
@@ -4185,6 +4208,7 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 
 	update_option( RMB_SNIPPETS_KEY, $snippets );
 	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
+	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
 	return rest_ensure_response(
 		array(
 			'success' => true,
@@ -4300,6 +4324,7 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 
 	update_option( RMB_SNIPPETS_KEY, array_merge( $existing, $prepared ) );
 	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
+	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
 
 	return rest_ensure_response(
 		array(
@@ -4359,6 +4384,7 @@ function rmb_sitemap_exclusions_update( WP_REST_Request $request ) {
 
 	update_option( RR_SITEMAP_EXCLUSIONS_KEY, $config );
 	rrseo_bust_option_cache( RR_SITEMAP_EXCLUSIONS_KEY );
+	rrseo_purge_rest_cache( array( 'status' ) );
 	rr_invalidate_canonical_cache();
 
 	return rest_ensure_response(
@@ -4422,6 +4448,7 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
 
 	update_option( RMB_SNIPPETS_KEY, $clean_store );
 	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
+	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
 
 	$deprecation_notice = 'This endpoint will be removed in v3.0.0.'
 		. ' Use POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} for routine changes.';
@@ -4456,6 +4483,7 @@ function rmb_snippets_delete( WP_REST_Request $request ) {
 	unset( $snippets[ $id ] );
 	update_option( RMB_SNIPPETS_KEY, $snippets );
 	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
+	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
 
 	return rest_ensure_response(
 		array(

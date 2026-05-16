@@ -1,5 +1,27 @@
 # Changelog
 
+## v2.17.3
+
+Cache-A/B complete: LiteSpeed URL purge after writes; G-10 slug fix for individual POSTs.
+
+### Bug fixes
+
+- **Cache-A/B complete — LiteSpeed page cache purge** — added
+  `rrseo_purge_rest_cache()` helper that fires `litespeed_purge_url` for the
+  affected REST endpoints after every write. Snippet writes purge both
+  `/status` and `/snippets`; perf/exclusion writes purge `/status`. Fixes
+  `/status` counter lag and `/snippets` listing staleness on LiteSpeed Cache
+  sites after individual snippet create/update/delete and perf POST operations.
+  If LiteSpeed Cache is not active the action is a no-op.
+
+- **G-10 slug collision — individual `POST /snippets`** — replaced the Unix
+  timestamp fallback (`$id . '_' . time()`) with the same `while`-loop
+  increment scheme (`_1`, `_2`, `_3`...) already used in `POST /snippets/bulk`.
+  Fixes data loss when two POSTs with identical titles arrive within the same
+  second — each now gets a unique deterministic slug.
+
+---
+
 ## v2.17.2
 
 Cache-A/B targeted invalidation, G-10 slug fix, FU-2 clarification.
