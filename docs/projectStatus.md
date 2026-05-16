@@ -1,11 +1,34 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-05-15
-**Current Version:** 2.17.0
+**Current Version:** 2.17.3
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 53b3a00 — chore: release v2.17.0 zip
+**Last Commit:** eac8587 — chore: release v2.17.3 zip
 **Git Status:** clean
+
+---
+
+## 2026-05-15 Session (continued) — v2.17.1/2/3 Validation Hotfixes — COMPLETE
+
+### Session Summary
+Worked through three v2.17.x validation reports. v2.17.1 (5/5 fixes confirmed).
+v2.17.2 shipped — WP object cache bust at all write sites; G-10 bulk slug fix;
+FU-2 documented. v2.17.3 shipped — LiteSpeed URL purge after writes; G-10
+individual POST slug fix. All FU-2 findings closed. Architecture doc reviewed —
+confirmed external scope, no plugin changes needed.
+
+### Accomplishments
+- v2.17.1 validated clean (all 5 hotfixes confirmed)
+- v2.17.2: rrseo_bust_option_cache() at all writes; bulk slug _1/_2/_3; README note
+- v2.17.3: rrseo_purge_rest_cache() LiteSpeed URL purge; individual POST slug fix
+- All three validation reports committed to repo
+- Mu-plugin retirement sequence confirmed and documented
+
+### Next
+Salvo staging verify (install v2.17.3, configure perf module, verify G-01 WC
+end-to-end, retire WC_DEQUEUE + DEFER_NONCRIT); rrc-mu-toolkit GitHub remote +
+retire TAX_META modules; G-14 manual logged-in verification.
 
 ---
 

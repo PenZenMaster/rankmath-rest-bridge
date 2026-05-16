@@ -2,46 +2,48 @@
 
 **Last Updated:** 2026-05-15
 **Branch:** main
-**Version:** 2.17.0
-**Last Commit:** 53b3a00 — chore: release v2.17.0 zip
+**Version:** 2.17.3
+**Last Commit:** eac8587 — chore: release v2.17.3 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Full gap sprint complete (v2.14.4 → v2.17.0)** — closed G-04, G-05,
-   G-06, G-07, G-09, G-10, G-13, G-14, G-16, G-17, G-18, G-19 across nine
-   releases. Every gap from the original report is closed except G-15
-   (hreflang, explicitly deferred). Key items: Performance module
-   (dequeue-rules + defer-handles), bulk snippets, sitemap exclusions,
-   snippet emission hooks, Elementor cache helper, display_on_user field.
+1. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`
+   fires `litespeed_purge_url` for `/status` and `/snippets` after every write).
+   G-10 individual `POST /snippets` slug collision fixed (while-loop `_1`/`_2`/`_3`
+   increment, same as bulk). Closes Cache-A/B completely.
 
-2. **README.md created** — REST API reference with endpoint examples,
-   display_on vocabulary table, headless self-update workflow (`/check-updates`
-   + `/self-update`), and release checklist.
+2. **v2.17.2 shipped** — `rrseo_bust_option_cache()` added after all 8
+   `update_option()` write sites (WP object cache bust). G-10 bulk slug
+   collision fixed with increment scheme. FU-2 documented: `unset_fields`
+   is the correct clear mechanism; empty string is intentional no-op.
 
-3. **All v2.14.x FUs closed** — G-12 fatal fixed (v2.14.1), unset_fields on
-   /update (v2.14.2), line_count fix + REST fatal handler + docs (v2.14.3).
+3. **FU-2 closed** — confirmed working in v2.17.2 validation: `unset_fields:
+   ["title","description"]` correctly deletes stored meta and is audited.
+   Three prior reports flagged it as open because they tested empty strings.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Validate v2.17.0 on live site** — install update; spot-check:
-   `POST /perf/dequeue-rules` stores and applies rules; `POST /snippets/bulk`
-   creates batch; `display_on_user: anonymous` suppresses for logged-in users;
-   `POST /elementor/repair-cache` returns repaired+deleted_keys.
+1. **Salvo staging verify** — install v2.17.3; configure `POST /perf/dequeue-rules`
+   to replace `RRC_SEO_WC_DEQUEUE`; configure `POST /perf/defer-handles` to
+   replace `RRC_SEO_DEFER_NONCRIT`; verify `term:product_cat:<slug>` snippets
+   fire on WooCommerce taxonomy archives (G-01 end-to-end, not yet verified on
+   WooCommerce). Then retire the two perf mu-plugin modules.
 
-2. **Salvo staging verify** — install v2.17.0 zip; configure
-   `POST /perf/dequeue-rules` to replace `RRC_SEO_WC_DEQUEUE` mu-plugin;
-   configure `POST /perf/defer-handles` to replace `RRC_SEO_DEFER_NONCRIT`;
-   confirm `term:product_cat:<slug>` snippets fire on WooCommerce taxonomy
-   archives (G-01 end-to-end). Then retire the two mu-plugin modules.
+2. **rrc-mu-toolkit GitHub remote + retire sequence** — create GitHub remote,
+   push. Retire mu-plugin modules in order (disable constant → staging verify →
+   remove code → commit):
+   - `RRC_SEO_DEDUP_CANONICAL` (lowest risk — consolidate_canonical is default)
+   - `RRC_SEO_TAX_META_DESC` + `RRC_SEO_TAX_META_OG` (after G-01 WC verified)
+   - `RRC_SEO_WC_DEQUEUE` + `RRC_SEO_DEFER_NONCRIT` (after perf module verified)
 
-3. **rrc-mu-toolkit GitHub remote + retire sequence** — create GitHub remote,
-   push local repo. Then retire `RRC_SEO_TAX_META_DESC` and
-   `RRC_SEO_TAX_META_OG` on Salvo (disable constant → staging verify →
-   remove code → commit).
+3. **G-14 logged-in emission manual check** — log in to WP admin on rankrocket.co,
+   view front-end with a `display_on_user: logged_in` snippet active; confirm
+   it fires for logged-in and suppresses for anonymous visitors. Basic Auth does
+   NOT establish a WP session so this can't be verified via curl.
 
 ---
 
@@ -49,21 +51,20 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.17.0
-- Last commit: `53b3a00` — pushed, working tree clean
+- Version: 2.17.3
+- Last commit: `eac8587` — pushed, working tree clean
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php` (~4,600+ lines)
-- Canonical class: `includes/class-rrseo-canonical.php`
-- README: `README.md` — REST API reference (created this session)
+- Plugin: `rankmath-rest-bridge.php` (~4,700+ lines)
+- Validation reports: v2.13.0–v2.17.2 all in `docs/`
 - Gap report: `docs/RankRocket_SEO_Functionality_Gaps.md` — all gaps closed
-  except G-15 (hreflang, deferred)
-- Validation reports: v2.13.0–v2.14.1 in `docs/`
-- Release builder: `bin/build-zip.ps1` — always use for releases
+  except G-13 (observability), G-14 (per-user, partial), G-15 (hreflang, deferred)
+- Architecture doc: `docs/aeo_geo_google_data_architecture.md` — external audit
+  engine spec; plugin role already fulfilled by existing endpoints
 - Side repo: `E:\projects\rrc-mu-toolkit` — local only, no remote yet
 
 **Blockers:**
-- None.
+- None. v2.17.3 is ship-quality.
 
 ---
 
@@ -77,32 +78,30 @@
 5. .\bin\build-zip.ps1   — must pass all 4 structural checks
 6. git add releases/vX.Y.Z/  && git commit  ("chore: release vX.Y.Z zip")
 7. git push
-8. Wait 2-3 min for GitHub CDN, then POST /check-updates + POST /self-update
+8. Wait 2-3 min for GitHub CDN, then POST /self-update on target site
 ```
 
 ---
 
 ## Key Context Notes
 
-1. **Performance module (v2.16.0)** — `POST /perf/dequeue-rules` replaces
-   `RRC_SEO_WC_DEQUEUE` mu-plugin; `POST /perf/defer-handles` replaces
-   `RRC_SEO_DEFER_NONCRIT`. Not yet configured on Salvo — that's next priority.
+1. **Cache architecture (v2.17.x)** — writes now bust three layers: DB (always),
+   WP object cache (`rrseo_bust_option_cache`), and LiteSpeed page cache
+   (`rrseo_purge_rest_cache`). If another cache plugin is added, wire its URL
+   purge into `rrseo_purge_rest_cache()`. Server config: exclude `/wp-json/`
+   from page cache entirely for best results.
 
-2. **display_on_user (v2.17.0)** — new snippet field `all|anonymous|logged_in`.
-   Existing snippets without the field default to `all` at emit time — no DB
-   migration needed. Fires `rrseo_snippet_skipped` with reason `user_logged_in`
-   or `user_anonymous`.
+2. **Mu-plugin retirement is staged, not complete** — five modules are retirable
+   but none have been removed yet. Salvo staging verify must come first. The
+   mu-plugin stays as a telemetry tool after all modules are retired.
 
-3. **Sitemap exclusions (v2.15.0)** — `POST /sitemap/exclusions` with
-   `excluded_post_slugs` takes effect immediately. `excluded_term_ids`,
-   `excluded_term_slugs`, `excluded_taxonomies` stored for future taxonomy
-   sitemap support.
+3. **display_on_user (v2.17.0)** — `all|anonymous|logged_in`. Existing snippets
+   without the field default to `all`. Logged-in-side emission needs manual
+   verification (G-14 — Basic Auth doesn't establish a WP session).
 
-4. **rrc-mu-toolkit retire sequence** — when shifting to that project, first
-   task is creating the GitHub remote, then retiring `RRC_SEO_TAX_META_DESC`
-   and `RRC_SEO_TAX_META_OG`. Order: disable constant → staging verify →
-   remove module code → commit.
+4. **unset_fields (v2.14.2)** — the correct way to clear stored meta via REST.
+   Empty string on `/update` is intentionally a no-op (prevents accidental wipes
+   from blank template renders). Documented in README.
 
-5. **Tier 2 update flow** — when `RRSEO_WL_HIDE_PLUGIN` is `true`, updates
-   are silent. Use WP-CLI, manual zip, or headless `POST /self-update`.
-   See `docs/white-label-configuration.md`.
+5. **rrc-mu-toolkit retire sequence** — order matters: disable constant first,
+   do staging verify, then remove code, then commit. Never skip staging verify.
