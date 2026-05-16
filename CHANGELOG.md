@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.17.2
+
+Cache-A/B targeted invalidation, G-10 slug fix, FU-2 clarification.
+
+### Bug fixes
+
+- **Cache-A/B — targeted option cache invalidation** — added
+  `rrseo_bust_option_cache()` helper (deletes both the specific option key
+  and the `alloptions` bundle from the WP object cache). Called after every
+  `update_option()` in all write handlers: `POST /perf/dequeue-rules`,
+  `POST /perf/defer-handles`, `POST /sitemap/exclusions`, `POST /snippets`,
+  `POST /snippets/{id}`, `POST /snippets/bulk`, `POST /snippets/replace-all`,
+  `DELETE /snippets/{id}`. Fixes `GET /status` perf counters and
+  `GET /snippets` listing lagging after writes on sites with persistent
+  object caches (LiteSpeed, Redis, Memcached).
+
+- **G-10 bulk — slug collision suffix** — duplicate-slug fallback now uses
+  incrementing `_1`, `_2`, `_3`... suffixes (was `_<loop-index>` which
+  produced `over-0_0`, `over-1_1` etc. on re-submission). A `while` loop
+  finds the first available slot.
+
+### Documentation
+
+- **README — `unset_fields` vs empty string** — the `/update` section now
+  explicitly states that sending `"title": ""` is an intentional no-op and
+  that `unset_fields: ["title"]` is the correct mechanism for clearing a field.
+
+---
+
 ## v2.17.1
 
 Hotfix: object cache consistency, is_admin conditional, removed_count, README caching note.

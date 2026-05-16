@@ -64,8 +64,10 @@ know which path was taken.
 **Clearing fields with `unset_fields`**
 
 To delete a previously-stored meta value, pass its name in the `unset_fields`
-array. This is the only way to clear a field — sending an empty string is a
-no-op (silently skipped).
+array. **Sending an empty string (`"title": ""`) is intentionally a no-op** —
+empty strings are skipped so that pipeline templates that render a blank value
+for a missing field don't accidentally wipe live SEO data. Use `unset_fields`
+for explicit, deliberate deletion.
 
 ```bash
 curl -X POST "$BASE/update" -u "$CRED" \

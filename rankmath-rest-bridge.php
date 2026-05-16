@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.1
+ * Version:      2.17.2
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.1' );
+define( 'RMB_VERSION', '2.17.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -171,6 +171,21 @@ define(
  */
 function rrseo_batch_max(): int {
 	return (int) apply_filters( 'rrseo_batch_max', RR_BATCH_MAX );
+}
+
+/**
+ * Busts the WordPress object cache for a single option after a write.
+ *
+ * Persistent object caches (LiteSpeed, Redis, Memcached) can serve stale
+ * data after update_option() because they cache both the individual option
+ * and the alloptions bundle. Deleting both entries forces a DB read on the
+ * next get_option() call in the same or subsequent requests.
+ *
+ * @param string $option_key The option name passed to update_option().
+ */
+function rrseo_bust_option_cache( string $option_key ): void {
+	wp_cache_delete( $option_key, 'options' );
+	wp_cache_delete( 'alloptions', 'options' );
 }
 
 // robots.txt directive config option key.
@@ -3873,6 +3888,7 @@ function rmb_perf_dequeue_update( WP_REST_Request $request ) {
 	}
 
 	update_option( RR_PERF_DEQUEUE_KEY, $clean );
+	rrseo_bust_option_cache( RR_PERF_DEQUEUE_KEY );
 
 	return rest_ensure_response(
 		array(
@@ -3911,6 +3927,7 @@ function rmb_perf_defer_update( WP_REST_Request $request ) {
 	}
 	$clean = array_values( array_filter( array_map( 'sanitize_text_field', $handles ) ) );
 	update_option( RR_PERF_DEFER_KEY, $clean );
+	rrseo_bust_option_cache( RR_PERF_DEFER_KEY );
 	return rest_ensure_response(
 		array(
 			'success' => true,
@@ -4085,6 +4102,7 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 
 	$snippets[ $id ] = $snippet;
 	update_option( RMB_SNIPPETS_KEY, $snippets );
+	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
 
 	return rest_ensure_response(
 		array(
@@ -4166,6 +4184,7 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 	$snippets[ $id ]['updated_at'] = current_time( 'mysql' );
 
 	update_option( RMB_SNIPPETS_KEY, $snippets );
+	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
 	return rest_ensure_response(
 		array(
 			'success' => true,
@@ -4242,9 +4261,12 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 			continue;
 		}
 
-		$id = sanitize_title( $title );
-		if ( isset( $existing[ $id ] ) || isset( $prepared[ $id ] ) ) {
-			$id = $id . '_' . (string) $idx;
+		$base_id = sanitize_title( $title );
+		$id      = $base_id;
+		$attempt = 1;
+		while ( isset( $existing[ $id ] ) || isset( $prepared[ $id ] ) ) {
+			$id = $base_id . '_' . $attempt;
+			++$attempt;
 		}
 
 		$user_filter_val = sanitize_text_field( (string) ( $item['display_on_user'] ?? 'all' ) );
@@ -4277,6 +4299,7 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 	}
 
 	update_option( RMB_SNIPPETS_KEY, array_merge( $existing, $prepared ) );
+	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
 
 	return rest_ensure_response(
 		array(
@@ -4335,6 +4358,7 @@ function rmb_sitemap_exclusions_update( WP_REST_Request $request ) {
 	}
 
 	update_option( RR_SITEMAP_EXCLUSIONS_KEY, $config );
+	rrseo_bust_option_cache( RR_SITEMAP_EXCLUSIONS_KEY );
 	rr_invalidate_canonical_cache();
 
 	return rest_ensure_response(
@@ -4397,6 +4421,7 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
 	}
 
 	update_option( RMB_SNIPPETS_KEY, $clean_store );
+	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
 
 	$deprecation_notice = 'This endpoint will be removed in v3.0.0.'
 		. ' Use POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} for routine changes.';
@@ -4430,6 +4455,7 @@ function rmb_snippets_delete( WP_REST_Request $request ) {
 	$deleted = $snippets[ $id ];
 	unset( $snippets[ $id ] );
 	update_option( RMB_SNIPPETS_KEY, $snippets );
+	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
 
 	return rest_ensure_response(
 		array(
