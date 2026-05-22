@@ -84,7 +84,7 @@ The plugin is the canonical data source for the client website. Its role in this
 
 The plugin does **not** perform OAuth, call Google APIs, or store audit data. It has no knowledge of the audit engine.
 
-**AI Audit Engine (external service)**
+**AI Audit Engine (internal agent)**
 
 The audit engine owns the full audit lifecycle:
 

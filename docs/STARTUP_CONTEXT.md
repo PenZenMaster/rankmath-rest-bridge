@@ -1,27 +1,29 @@
 # RankRocket SEO Control Layer — Startup Context
 
-**Last Updated:** 2026-05-15
+**Last Updated:** 2026-05-21
 **Branch:** main
 **Version:** 2.17.3
-**Last Commit:** eac8587 — chore: release v2.17.3 zip
+**Last Commit:** 2fe7696 — chore(checkpoint): 2026-05-15_1800
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`
+1. **v3.0 architecture decided** — agentic spec reviewed, Shape B adopted: plugin stays lean
+   (read-only data provider + typed executor endpoints only). Agentic runtime (agents, AI,
+   OAuth, policy engine, portal sync) retargeted to external Audit Engine per
+   `docs/aeo_geo_google_data_architecture.md` boundary. Doc layer delivered; no source code
+   changed.
+
+2. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`
    fires `litespeed_purge_url` for `/status` and `/snippets` after every write).
    G-10 individual `POST /snippets` slug collision fixed (while-loop `_1`/`_2`/`_3`
    increment, same as bulk). Closes Cache-A/B completely.
 
-2. **v2.17.2 shipped** — `rrseo_bust_option_cache()` added after all 8
+3. **v2.17.2 shipped** — `rrseo_bust_option_cache()` added after all 8
    `update_option()` write sites (WP object cache bust). G-10 bulk slug
    collision fixed with increment scheme. FU-2 documented: `unset_fields`
    is the correct clear mechanism; empty string is intentional no-op.
-
-3. **FU-2 closed** — confirmed working in v2.17.2 validation: `unset_fields:
-   ["title","description"]` correctly deletes stored meta and is audited.
-   Three prior reports flagged it as open because they tested empty strings.
 
 ---
 
@@ -52,19 +54,21 @@
 **Git:**
 - Branch: `main`
 - Version: 2.17.3
-- Last commit: `eac8587` — pushed, working tree clean
+- Last committed: `2fe7696` — pushed
+- Uncommitted: 6 docs changed (checkpoint, plugin-v3-executor-spec, agentic-spec-redirect,
+  agentic-spec-archive, projectStatus, STARTUP_CONTEXT) — pending checkpoint commit
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php` (~4,700+ lines)
-- Validation reports: v2.13.0–v2.17.2 all in `docs/`
-- Gap report: `docs/RankRocket_SEO_Functionality_Gaps.md` — all gaps closed
-  except G-13 (observability), G-14 (per-user, partial), G-15 (hreflang, deferred)
-- Architecture doc: `docs/aeo_geo_google_data_architecture.md` — external audit
-  engine spec; plugin role already fulfilled by existing endpoints
+- Plugin: `rankmath-rest-bridge.php` (~4,934 lines), `includes/` (6 helper classes)
+- **v3.0 spec:** `docs/plugin-v3-executor-spec.md` — authoritative Shape B plugin spec
+- Agentic spec archived: `docs/archive/agentic-seo-plugin-spec-original.md`
+- Architecture boundary: `docs/aeo_geo_google_data_architecture.md:75-108`
 - Side repo: `E:\projects\rrc-mu-toolkit` — local only, no remote yet
 
 **Blockers:**
 - None. v2.17.3 is ship-quality.
+- Minor latent bug: duplicate `/canonical-urls/preview` route at lines 2258 and 2575 in
+  `rankmath-rest-bridge.php` — not fixed yet; low priority (silent duplicate, not a crash).
 
 ---
 
@@ -85,23 +89,25 @@
 
 ## Key Context Notes
 
-1. **Cache architecture (v2.17.x)** — writes now bust three layers: DB (always),
+1. **v3.0 boundary (2026-05-21)** — plugin v3.0 scope is observation endpoints + typed
+   executor endpoints only. Agentic runtime (scan orchestration, AI reasoning, policy engine,
+   approval queue, OAuth, portal sync) lives in the external Audit Engine, not this repo.
+   See `docs/plugin-v3-executor-spec.md`. v3.0 starts after white-label milestone lands.
+
+2. **Cache architecture (v2.17.x)** — writes now bust three layers: DB (always),
    WP object cache (`rrseo_bust_option_cache`), and LiteSpeed page cache
    (`rrseo_purge_rest_cache`). If another cache plugin is added, wire its URL
    purge into `rrseo_purge_rest_cache()`. Server config: exclude `/wp-json/`
    from page cache entirely for best results.
 
-2. **Mu-plugin retirement is staged, not complete** — five modules are retirable
+3. **Mu-plugin retirement is staged, not complete** — five modules are retirable
    but none have been removed yet. Salvo staging verify must come first. The
    mu-plugin stays as a telemetry tool after all modules are retired.
 
-3. **display_on_user (v2.17.0)** — `all|anonymous|logged_in`. Existing snippets
+4. **display_on_user (v2.17.0)** — `all|anonymous|logged_in`. Existing snippets
    without the field default to `all`. Logged-in-side emission needs manual
    verification (G-14 — Basic Auth doesn't establish a WP session).
 
-4. **unset_fields (v2.14.2)** — the correct way to clear stored meta via REST.
+5. **unset_fields (v2.14.2)** — the correct way to clear stored meta via REST.
    Empty string on `/update` is intentionally a no-op (prevents accidental wipes
    from blank template renders). Documented in README.
-
-5. **rrc-mu-toolkit retire sequence** — order matters: disable constant first,
-   do staging verify, then remove code, then commit. Never skip staging verify.

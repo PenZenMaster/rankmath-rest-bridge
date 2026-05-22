@@ -1,11 +1,34 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-15
+**Last Updated:** 2026-05-21
 **Current Version:** 2.17.3
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** eac8587 — chore: release v2.17.3 zip
-**Git Status:** clean
+**Last Commit:** 2fe7696 — chore(checkpoint): 2026-05-15_1800
+**Git Status:** 5 docs changed, uncommitted
+
+---
+
+## 2026-05-21 Session — v3.0 Architecture Decision + Doc Layer — COMPLETE
+
+### Session Summary
+Strategic architecture review of `docs/agentic-seo-plugin-spec.md`. Full pros/cons analysis
+confirmed the direction (observation + executor surface) is right but the spec shape (agentic
+runtime inside WP) was wrong. Adopted Shape B: plugin stays lean read-only data provider +
+typed executor; agentic runtime retargeted to external Audit Engine per existing boundary in
+`docs/aeo_geo_google_data_architecture.md`. Doc layer delivered — no source code changed.
+
+### Accomplishments
+- Agentic spec analyzed: pros/cons, sizing (8-10 months as-written vs 7-10 weeks Shape B)
+- Shape B adopted: plugin = observation endpoints + typed executor endpoints only
+- Agentic spec archived; redirect pointer written; original preserved for Audit Engine team
+- `docs/plugin-v3-executor-spec.md` created — authoritative Shape B plugin-side spec
+- v3.0 milestone added to projectStatus.md (4 bites, ~7-10 weeks, sequenced after white-label)
+
+### Next
+Salvo WooCommerce staging verify (v2.17.3, perf module, G-01 WC end-to-end);
+rrc-mu-toolkit GitHub remote + retire sequence; G-14 manual logged-in check.
+Code work: minor fix for duplicate `/canonical-urls/preview` route (lines 2258 + 2575).
 
 ---
 
@@ -375,9 +398,55 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
   - All settings lockable via `wp-config.php` constant to prevent client revert
   - Use case: client handoff — hide third-party branding, reinforce agency identity
 
+### v3.0 — Plugin as Audit-Engine Executor (Shape B)
+
+Prerequisite: cache stabilization (done), mu-plugin retirement (in progress),
+white-label work (next). v3.0 starts after white-label lands.
+
+Reference: `docs/plugin-v3-executor-spec.md`
+
+**Bite 1 — Observation endpoints (1-2 weeks)**
+- [ ] `GET /observe/heading-hierarchy/{post_id}`
+- [ ] `GET /observe/broken-links` (scoped, paginated)
+- [ ] `GET /observe/alt-coverage` (rollup by post type)
+- [ ] `GET /observe/schema-graph/{post_id}`
+- [ ] `GET /observe/llms-diff` (current llms.txt vs canonical URL set)
+
+**Bite 2 — Typed action engine (2-3 weeks)**
+- [ ] `POST /actions/dry-run` -- typed payload validation, simulated result
+- [ ] `POST /actions/execute` -- typed payload, persisted audit row, rollback envelope
+- [ ] Initial action whitelist: `update_setting`, `regenerate_llms_txt`, `update_meta_draft`, `toggle_indexing`
+- [ ] Remove `replace-all` endpoint (retargeted from standalone v3.0 milestone)
+
+**Bite 3 — Rollback + state (1-2 weeks)**
+- [ ] `GET /actions/{action_id}` -- state lookup
+- [ ] `POST /actions/{action_id}/rollback` -- replays stored rollback envelope
+- [ ] Audit log extension: `action_id` + `rollback_payload` stored in `_rrseo_change_log` (no new table)
+
+**Bite 4 — CI/test hardening (2 weeks)**
+- [ ] GitHub Actions: phpcs + phpunit on push/PR
+- [ ] PHPUnit coverage for every new endpoint (dry-run, execute, rollback, auth failure paths)
+- [ ] Integration test: assert both cache-bust calls fire after every executor write
+
+**Acceptance criteria**
+- Every executed action has an audit row and verification result.
+- Every action supports dry-run before execute.
+- No new custom DB tables.
+- No new external HTTP calls from the plugin.
+- Namespace stays `rankrocket-seo/v1`.
+- All v2.17.x cache invariants preserved on every new write path.
+
+**Out of scope (lives in Audit Engine, not here)**
+- Scan orchestration, finding aggregation, policy/approval engine
+- AI reasoning layer, AEO/GEO scoring, AI sentiment evaluation
+- OAuth, GSC/GA4/GBP fetchers, portal sync
+- Custom plugin DB tables for scans/findings/actions
+- Autonomous remediation modes
+
+---
+
 ### Future / Deferred
 - [ ] Native `rr_seo_score` postmeta key + scoring endpoint
-- [ ] Remove `replace-all` endpoint (v3.0.0 milestone)
 - [ ] Custom capability management UI
 - [ ] `GET /schema/bulk`
 - [ ] OpenGraph image dimension validation
