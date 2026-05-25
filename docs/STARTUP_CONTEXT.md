@@ -3,34 +3,30 @@
 **Last Updated:** 2026-05-25
 **Branch:** main
 **Version:** 2.17.4
-**Last Commit:** 32696fc — fix: v2.17.4 -- remove duplicate GET /canonical-urls/preview route registration
+**Last Commit:** 96f3dea — chore: mark tested up to WordPress 7.0
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v2.17.4 shipped** — Removed duplicate `GET /canonical-urls/preview` route
-   registration. Stale AEO/GEO stub (`rmb_canonical_urls_preview`, never
-   implemented) registered the same route twice; WordPress served the first match
-   silently, leaving an undefined callback as a latent fatal. Duplicate removed;
-   G-18 alias over `rmb_sitemap_preview` remains authoritative.
+1. **v2.17.4 shipped** — Duplicate `GET /canonical-urls/preview` route removed
+   (stale AEO/GEO stub pointing to undefined `rmb_canonical_urls_preview`; latent
+   fatal, not a crash). G-18 alias over `rmb_sitemap_preview` remains
+   authoritative. WordPress 7.0 added to `Tested up to` header and manifest.
 
-2. **v3.0 architecture decided** — agentic spec reviewed, Shape B adopted: plugin stays lean
-   (read-only data provider + typed executor endpoints only). Agentic runtime (agents, AI,
-   OAuth, policy engine, portal sync) retargeted to external Audit Engine per
-   `docs/aeo_geo_google_data_architecture.md` boundary. Doc layer delivered; no source code
-   changed.
+2. **v3.0 architecture decided** — Shape B adopted: plugin stays lean (observation
+   + typed executor endpoints only). Agentic runtime retargeted to external Audit
+   Engine. See `docs/plugin-v3-executor-spec.md`.
 
-3. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`
-   fires `litespeed_purge_url` for `/status` and `/snippets` after every write).
-   G-10 individual `POST /snippets` slug collision fixed (while-loop `_1`/`_2`/`_3`
-   increment, same as bulk). Closes Cache-A/B completely.
+3. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`);
+   G-10 individual `POST /snippets` slug collision fixed with while-loop increment.
+   Cache-A/B closed completely.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Salvo staging verify** — install v2.17.3; configure `POST /perf/dequeue-rules`
+1. **Salvo staging verify** — install v2.17.4; configure `POST /perf/dequeue-rules`
    to replace `RRC_SEO_WC_DEQUEUE`; configure `POST /perf/defer-handles` to
    replace `RRC_SEO_DEFER_NONCRIT`; verify `term:product_cat:<slug>` snippets
    fire on WooCommerce taxonomy archives (G-01 end-to-end, not yet verified on
@@ -55,7 +51,7 @@
 **Git:**
 - Branch: `main`
 - Version: 2.17.4
-- Last committed: `32696fc` — pushed
+- Last committed: `96f3dea` — pushed
 - Uncommitted: none
 
 **Files of note:**
