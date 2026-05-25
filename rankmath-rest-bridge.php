@@ -10,6 +10,7 @@
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
  * Requires WP:  5.9
+ * Tested up to: 7.0
  *
  * @package RankRocket_SEO
  */
