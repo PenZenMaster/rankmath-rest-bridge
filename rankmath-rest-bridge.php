@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.3
+ * Version:      2.17.4
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.3' );
+define( 'RMB_VERSION', '2.17.4' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2570,16 +2570,6 @@ add_action(
 		);
 
 		// ── AEO/GEO audit data layer ─────────────────────────────────────────────
-		register_rest_route(
-			'rankrocket-seo/v1',
-			'/canonical-urls/preview',
-			array(
-				'methods'             => 'GET',
-				'callback'            => 'rmb_canonical_urls_preview',
-				'permission_callback' => $admin_only,
-			)
-		);
-
 		register_rest_route(
 			'rankrocket-seo/v1',
 			'/aeo-geo/readiness',

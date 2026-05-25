@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.17.4
+
+Remove duplicate `GET /canonical-urls/preview` route registration.
+
+### Bug fixes
+
+- **Duplicate route removed** — `GET /canonical-urls/preview` was registered twice:
+  once as a G-18 alias (line ~2258, callback `rmb_sitemap_preview`) and once in
+  the AEO/GEO data-layer block (callback `rmb_canonical_urls_preview`, which was
+  never implemented). WordPress silently served the first GET match, so the
+  undefined callback was never reached, making this a latent fatal risk rather
+  than an active crash. Removed the stale AEO/GEO stub; the G-18 alias pointing
+  to `rmb_sitemap_preview` remains as the sole, authoritative registration.
+
+---
+
 ## v2.17.3
 
 Cache-A/B complete: LiteSpeed URL purge after writes; G-10 slug fix for individual POSTs.
