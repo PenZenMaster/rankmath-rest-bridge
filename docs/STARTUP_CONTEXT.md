@@ -1,29 +1,30 @@
 # RankRocket SEO Control Layer — Startup Context
 
-**Last Updated:** 2026-05-21
+**Last Updated:** 2026-05-25
 **Branch:** main
-**Version:** 2.17.3
-**Last Commit:** 2fe7696 — chore(checkpoint): 2026-05-15_1800
+**Version:** 2.17.4
+**Last Commit:** 32696fc — fix: v2.17.4 -- remove duplicate GET /canonical-urls/preview route registration
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v3.0 architecture decided** — agentic spec reviewed, Shape B adopted: plugin stays lean
+1. **v2.17.4 shipped** — Removed duplicate `GET /canonical-urls/preview` route
+   registration. Stale AEO/GEO stub (`rmb_canonical_urls_preview`, never
+   implemented) registered the same route twice; WordPress served the first match
+   silently, leaving an undefined callback as a latent fatal. Duplicate removed;
+   G-18 alias over `rmb_sitemap_preview` remains authoritative.
+
+2. **v3.0 architecture decided** — agentic spec reviewed, Shape B adopted: plugin stays lean
    (read-only data provider + typed executor endpoints only). Agentic runtime (agents, AI,
    OAuth, policy engine, portal sync) retargeted to external Audit Engine per
    `docs/aeo_geo_google_data_architecture.md` boundary. Doc layer delivered; no source code
    changed.
 
-2. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`
+3. **v2.17.3 shipped** — LiteSpeed page cache purge (`rrseo_purge_rest_cache()`
    fires `litespeed_purge_url` for `/status` and `/snippets` after every write).
    G-10 individual `POST /snippets` slug collision fixed (while-loop `_1`/`_2`/`_3`
    increment, same as bulk). Closes Cache-A/B completely.
-
-3. **v2.17.2 shipped** — `rrseo_bust_option_cache()` added after all 8
-   `update_option()` write sites (WP object cache bust). G-10 bulk slug
-   collision fixed with increment scheme. FU-2 documented: `unset_fields`
-   is the correct clear mechanism; empty string is intentional no-op.
 
 ---
 
@@ -53,22 +54,19 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.17.3
-- Last committed: `2fe7696` — pushed
-- Uncommitted: 6 docs changed (checkpoint, plugin-v3-executor-spec, agentic-spec-redirect,
-  agentic-spec-archive, projectStatus, STARTUP_CONTEXT) — pending checkpoint commit
+- Version: 2.17.4
+- Last committed: `32696fc` — pushed
+- Uncommitted: none
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php` (~4,934 lines), `includes/` (6 helper classes)
+- Plugin: `rankmath-rest-bridge.php`, `includes/` (6 helper classes)
 - **v3.0 spec:** `docs/plugin-v3-executor-spec.md` — authoritative Shape B plugin spec
 - Agentic spec archived: `docs/archive/agentic-seo-plugin-spec-original.md`
 - Architecture boundary: `docs/aeo_geo_google_data_architecture.md:75-108`
 - Side repo: `E:\projects\rrc-mu-toolkit` — local only, no remote yet
 
 **Blockers:**
-- None. v2.17.3 is ship-quality.
-- Minor latent bug: duplicate `/canonical-urls/preview` route at lines 2258 and 2575 in
-  `rankmath-rest-bridge.php` — not fixed yet; low priority (silent duplicate, not a crash).
+- None. v2.17.4 is ship-quality.
 
 ---
 
