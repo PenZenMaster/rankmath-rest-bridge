@@ -1,6 +1,6 @@
 {
   "name": "rankrocket/seo-control-layer",
-  "description": "RankRocket SEO Control Layer — WordPress plugin",
+  "description": "RankRocket SEO Control Layer - WordPress plugin",
   "type": "wordpress-plugin",
   "license": "proprietary",
   "require": {
@@ -21,10 +21,12 @@
   },
   "scripts": {
     "post-install-cmd": [
-      "php -r \"@copy('hooks/pre-commit', '.git/hooks/pre-commit'); @chmod('.git/hooks/pre-commit', 0755); echo 'pre-commit hook installed.\\n';\""
+      "php -r \"@copy('hooks/pre-commit', '.git/hooks/pre-commit'); @chmod('.git/hooks/pre-commit', 0755); echo 'pre-commit hook installed.\\n';\"",
+      "php -r \"@copy('hooks/pre-push',   '.git/hooks/pre-push');   @chmod('.git/hooks/pre-push',   0755); echo 'pre-push hook installed.\\n';\""
     ],
     "post-update-cmd": [
-      "php -r \"@copy('hooks/pre-commit', '.git/hooks/pre-commit'); @chmod('.git/hooks/pre-commit', 0755); echo 'pre-commit hook updated.\\n';\""
+      "php -r \"@copy('hooks/pre-commit', '.git/hooks/pre-commit'); @chmod('.git/hooks/pre-commit', 0755); echo 'pre-commit hook updated.\\n';\"",
+      "php -r \"@copy('hooks/pre-push',   '.git/hooks/pre-push');   @chmod('.git/hooks/pre-push',   0755); echo 'pre-push hook updated.\\n';\""
     ],
     "lint":     "phpcs --standard=phpcs.xml.dist rankmath-rest-bridge.php",
     "lint-fix": "phpcbf --standard=phpcs.xml.dist rankmath-rest-bridge.php",

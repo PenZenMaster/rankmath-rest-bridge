@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#
+# pre-push hook -- ensures the release zip for the current version is built and
+# committed before pushing. If the zip is missing, runs bin/build-zip.ps1
+# automatically and commits the artifact so the push always includes it.
+#
+# Install: composer install  (post-install-cmd copies this file automatically)
+# Manual:  cp hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+MANIFEST="update-manifest.json"
+SLUG="rankmath-rest-bridge"
+
+# Read version from the manifest (pure POSIX -- no jq required)
+if [ ! -f "$MANIFEST" ]; then
+    echo "[pre-push] $MANIFEST not found -- skipping zip check."
+    exit 0
+fi
+
+VERSION=$(grep '"version"' "$MANIFEST" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+if [ -z "$VERSION" ]; then
+    echo "[pre-push] Could not parse version from $MANIFEST -- skipping zip check."
+    exit 0
+fi
+
+ZIP="releases/v${VERSION}/${SLUG}.zip"
+
+if [ -f "$ZIP" ]; then
+    echo "[pre-push] Release zip ok: $ZIP"
+    exit 0
+fi
+
+echo "[pre-push] Release zip missing for v${VERSION} -- building..."
+
+# Locate PowerShell (pwsh = PS7+, powershell = PS5 fallback on Windows)
+if command -v pwsh >/dev/null 2>&1; then
+    PS_CMD="pwsh"
+elif command -v powershell >/dev/null 2>&1; then
+    PS_CMD="powershell"
+else
+    echo "[pre-push] ERROR: PowerShell not found."
+    echo "  Build the zip manually, then commit before pushing:"
+    echo "    .\\bin\\build-zip.ps1"
+    echo "    git add releases/v${VERSION}/"
+    echo "    git commit -m 'chore: release v${VERSION} zip'"
+    exit 1
+fi
+
+if ! "$PS_CMD" -NonInteractive -ExecutionPolicy Bypass -File "bin/build-zip.ps1"; then
+    echo "[pre-push] Build FAILED -- fix errors above before pushing."
+    exit 1
+fi
+
+if [ ! -f "$ZIP" ]; then
+    echo "[pre-push] Build script ran but zip not found at $ZIP -- aborting."
+    exit 1
+fi
+
+echo "[pre-push] Committing release zip..."
+git add "$ZIP"
+git commit -m "chore: release v${VERSION} zip"
+echo "[pre-push] Zip committed -- proceeding with push."

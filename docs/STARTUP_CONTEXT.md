@@ -70,14 +70,16 @@
 
 ```
 1. Bump version in rankmath-rest-bridge.php plugin header + RMB_VERSION constant
-2. Update update-manifest.json  — version + download_url (releases/vX.Y.Z/)
+2. Update update-manifest.json  -- version + download_url (releases/vX.Y.Z/)
 3. Update CHANGELOG.md
 4. git add + git commit  (conventional: "feat/fix/chore: ...")
-5. .\bin\build-zip.ps1   — must pass all 4 structural checks
-6. git add releases/vX.Y.Z/  && git commit  ("chore: release vX.Y.Z zip")
-7. git push
-8. Wait 2-3 min for GitHub CDN, then POST /self-update on target site
+5. git push  -- pre-push hook auto-builds releases/vX.Y.Z/*.zip and commits it
+6. Wait 2-3 min for GitHub CDN, then POST /self-update on target site
 ```
+
+Note: The pre-push hook (hooks/pre-push) runs bin/build-zip.ps1 automatically
+if the zip for the current version is missing. All 4 structural checks must pass
+or the push is aborted. Run .\bin\build-zip.ps1 manually to diagnose failures.
 
 ---
 
