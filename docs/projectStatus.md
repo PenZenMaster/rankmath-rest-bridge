@@ -1,15 +1,35 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-21
-**Current Version:** 2.17.3
+**Last Updated:** 2026-05-27
+**Current Version:** 2.17.4
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 2fe7696 — chore(checkpoint): 2026-05-15_1800
-**Git Status:** 5 docs changed, uncommitted
+**Last Commit:** 2dd7221 -- feat: pre-push hook auto-builds + commits release zip on push
+**Git Status:** clean
 
 ---
 
-## 2026-05-21 Session — v3.0 Architecture Decision + Doc Layer — COMPLETE
+## 2026-05-27 Session -- v2.17.4 Self-Update Fix + Pre-Push Hook -- COMPLETE
+
+### Session Summary
+Live update failure reported: users upgrading from v2.9.0 received "Download failed.
+Not Found". Root cause: `releases/v2.17.4/rankmath-rest-bridge.zip` was never built
+when v2.17.4 shipped. Fixed immediately; then hardened the release process with an
+automated `hooks/pre-push` Git hook that builds and commits the zip on every push.
+
+### Accomplishments
+- v2.17.4 self-update unblocked (built + pushed the missing zip, commit `229d6f1`)
+- `hooks/pre-push` added -- auto-builds release zip before every push (commit `2dd7221`)
+- `composer.json` updated to install pre-push hook alongside pre-commit on `composer install`
+- Release checklist in STARTUP_CONTEXT.md and CLAUDE.md trimmed from 8 steps to 6
+
+### Next
+Salvo staging verify (v2.17.4, perf modules, G-01 WC end-to-end);
+rrc-mu-toolkit GitHub remote + retire sequence; G-14 manual logged-in check.
+
+---
+
+## 2026-05-21 Session -- v3.0 Architecture Decision + Doc Layer -- COMPLETE
 
 ### Session Summary
 Strategic architecture review of `docs/agentic-seo-plugin-spec.md`. Full pros/cons analysis

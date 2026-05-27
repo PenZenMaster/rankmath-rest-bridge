@@ -154,6 +154,21 @@ Ref: [Plugin Best Practices](https://developer.wordpress.org/plugins/plugin-basi
 * Breaking API change: +1.0.0
 * Update `update-manifest.json` version + zip_url on every version bump.
 
+**Release flow (every version bump):**
+
+```
+1. Bump version in rankmath-rest-bridge.php header + RMB_VERSION constant
+2. Update update-manifest.json  -- version + download_url (releases/vX.Y.Z/)
+3. Update CHANGELOG.md
+4. git add + git commit  (feat/fix/chore: ...)
+5. git push  -- pre-push hook auto-builds + commits releases/vX.Y.Z/*.zip
+6. Wait 2-3 min for GitHub CDN, then POST /self-update on target site
+```
+
+The `hooks/pre-push` script runs `bin/build-zip.ps1` automatically when the zip
+for the current version is absent. All 4 structural checks must pass or the push
+aborts. Hook is installed via `composer install` (post-install-cmd).
+
 ---
 
 ## 6) Override Directives
