@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.6
+ * Version:      2.17.7
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.6' );
+define( 'RMB_VERSION', '2.17.7' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2956,6 +2956,7 @@ function rmb_meta_bulk_get( WP_REST_Request $request ) {
  */
 function rmb_meta_bulk_update( WP_REST_Request $request ) {
 	$updates    = $request->get_param( 'updates' );
+	$dry_run    = (bool) $request->get_param( 'dry_run' );
 	$url_fields = array( 'og_image', 'canonical', 'twitter_image' );
 	$request_id = rr_request_id( $request );
 
@@ -2985,6 +2986,7 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 			continue;
 		}
 
+		$changes       = array();
 		$updated       = array();
 		$audit_changes = array();
 
@@ -2998,12 +3000,15 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 			} else {
 				$sanitized = sanitize_text_field( $value );
 			}
-			update_post_meta( $post_id, $meta_key, $sanitized );
-			$updated[ $meta_key ]    = $value;
-			$audit_changes[ $param ] = array(
+			$changes[ $param ] = array(
 				'before' => $before ? $before : '',
 				'after'  => $sanitized,
 			);
+			if ( ! $dry_run ) {
+				update_post_meta( $post_id, $meta_key, $sanitized );
+				$updated[ $meta_key ]    = $value;
+				$audit_changes[ $param ] = $changes[ $param ];
+			}
 		}
 
 		// Handle llms_section per-item if provided.
@@ -3011,39 +3016,58 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 		if ( null !== $item_section ) {
 			$before_section = get_post_meta( $post_id, META_LLMS_SECTION, true );
 			if ( '' === $item_section ) {
-				delete_post_meta( $post_id, META_LLMS_SECTION );
-				$audit_changes['llms_section'] = array(
+				$changes['llms_section'] = array(
 					'before' => $before_section,
 					'after'  => '',
 				);
+				if ( ! $dry_run ) {
+					delete_post_meta( $post_id, META_LLMS_SECTION );
+					$audit_changes['llms_section'] = $changes['llms_section'];
+				}
 			} else {
 				$sv = rr_validate_llms_section( sanitize_text_field( $item_section ) );
 				if ( ! is_wp_error( $sv ) ) {
-					update_post_meta( $post_id, META_LLMS_SECTION, sanitize_text_field( $item_section ) );
-					$audit_changes['llms_section'] = array(
+					$changes['llms_section'] = array(
 						'before' => $before_section,
 						'after'  => $item_section,
 					);
+					if ( ! $dry_run ) {
+						update_post_meta( $post_id, META_LLMS_SECTION, sanitize_text_field( $item_section ) );
+						$audit_changes['llms_section'] = $changes['llms_section'];
+					}
 				}
 			}
 		}
 
-		wp_cache_delete( $post_id, 'post_meta' );
-		clean_post_cache( $post_id );
+		if ( ! $dry_run ) {
+			wp_cache_delete( $post_id, 'post_meta' );
+			clean_post_cache( $post_id );
 
-		if ( ! empty( $audit_changes ) ) {
-			rr_audit_log( $post_id, '/meta/bulk-update', $audit_changes, $request_id, 'written' );
+			if ( ! empty( $audit_changes ) ) {
+				rr_audit_log( $post_id, '/meta/bulk-update', $audit_changes, $request_id, 'written' );
+			}
 		}
 
-		$results[] = array(
-			'post_id'  => $post_id,
-			'success'  => true,
-			'updated'  => $updated,
-			'warnings' => $validation['warnings'],
-		);
+		if ( $dry_run ) {
+			$results[] = array(
+				'post_id'  => $post_id,
+				'dry_run'  => true,
+				'changes'  => $changes,
+				'warnings' => $validation['warnings'],
+				'valid'    => true,
+			);
+		} else {
+			$results[] = array(
+				'post_id'  => $post_id,
+				'success'  => true,
+				'updated'  => $updated,
+				'warnings' => $validation['warnings'],
+			);
+		}
 	}
 	return rest_ensure_response(
 		array(
+			'dry_run' => $dry_run,
 			'count'   => count( $results ),
 			'results' => $results,
 		)
