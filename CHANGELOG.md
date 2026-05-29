@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.17.5
+
+Hide "View Details" link from Plugins screen.
+
+### Changes
+
+- **Plugins screen cleanup** — `plugin_row_meta` filter strips the "View Details"
+  link (which links to `plugin-install.php`) from this plugin's row. The link
+  is meaningless for a private plugin not listed on WordPress.org.
+
+---
+
 ## v2.17.4
 
 Remove duplicate `GET /canonical-urls/preview` route registration.
