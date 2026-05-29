@@ -1,6 +1,6 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-05-27
+**Last Updated:** 2026-05-29
 **Branch:** main
 **Version:** 2.17.4
 **Last Commit:** 2dd7221 -- feat: pre-push hook auto-builds + commits release zip on push
@@ -9,41 +9,32 @@
 
 ## Last 3 Accomplishments
 
-1. **v2.17.4 self-update bug fixed** -- Built the missing `releases/v2.17.4/
-   rankmath-rest-bridge.zip` (the zip was never created when v2.17.4 shipped,
-   causing "Download failed. Not Found" for anyone upgrading). Commit `229d6f1`.
+1. **Salvo staging verified (G-01)** -- Installed v2.17.4; confirmed `POST /perf/dequeue-rules`
+   and `POST /perf/defer-handles` replace `RRC_SEO_WC_DEQUEUE` and `RRC_SEO_DEFER_NONCRIT`
+   correctly; `term:product_cat:<slug>` snippets fire on WooCommerce taxonomy archives
+   end-to-end. Ready to retire the two perf mu-plugin modules.
 
-2. **Pre-push hook added** (`hooks/pre-push`) -- Automatically builds and commits
-   the release zip when missing before every `git push`. PowerShell-based (PS7
-   preferred, PS5 fallback). Installed via `composer install` (post-install-cmd
-   in `composer.json`). Eliminates this class of bug permanently.
+2. **v2.17.4 self-update bug fixed** -- Built the missing `releases/v2.17.4/
+   rankmath-rest-bridge.zip`; confirmed self-update works end-to-end.
 
-3. **Release checklist simplified** -- Trimmed from 8 steps to 6 in both
-   `STARTUP_CONTEXT.md` and `.claude/CLAUDE.md`. Steps "build zip" and "commit
-   zip" are now implicit in `git push`. `composer.json` updated to install both
-   `pre-commit` and `pre-push` hooks on `composer install`/`update`.
+3. **Pre-push hook added** (`hooks/pre-push`) -- Auto-builds release zip on every push;
+   installed via `composer install`. Eliminates missing-zip class of bug permanently.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Salvo staging verify** -- Install v2.17.4; configure `POST /perf/dequeue-rules`
-   to replace `RRC_SEO_WC_DEQUEUE`; configure `POST /perf/defer-handles` to
-   replace `RRC_SEO_DEFER_NONCRIT`; verify `term:product_cat:<slug>` snippets
-   fire on WooCommerce taxonomy archives (G-01 end-to-end, not yet verified on
-   WooCommerce). Then retire the two perf mu-plugin modules.
+1. **Retire mu-plugin modules** -- Five modules are now retirable (G-01 verified).
+   Retire in order: `RRC_SEO_DEDUP_CANONICAL` (lowest risk) -> tax-meta pair
+   (`RRC_SEO_TAX_META_DESC` + `RRC_SEO_TAX_META_OG`) -> perf pair
+   (`RRC_SEO_WC_DEQUEUE` + `RRC_SEO_DEFER_NONCRIT`). Each: disable constant ->
+   staging verify -> remove code -> commit.
 
-2. **rrc-mu-toolkit GitHub remote + retire sequence** -- Create GitHub remote,
-   push. Retire mu-plugin modules in order (disable constant -> staging verify ->
-   remove code -> commit):
-   - `RRC_SEO_DEDUP_CANONICAL` (lowest risk -- consolidate_canonical is default)
-   - `RRC_SEO_TAX_META_DESC` + `RRC_SEO_TAX_META_OG` (after G-01 WC verified)
-   - `RRC_SEO_WC_DEQUEUE` + `RRC_SEO_DEFER_NONCRIT` (after perf module verified)
+2. **rrc-mu-toolkit GitHub remote** -- Create GitHub remote and push the repo.
 
-3. **G-14 logged-in emission manual check** -- Log in to WP admin on rankrocket.co,
-   view front-end with a `display_on_user: logged_in` snippet active; confirm
-   it fires for logged-in and suppresses for anonymous visitors. Basic Auth does
-   NOT establish a WP session so this can't be verified via curl.
+3. **G-14 logged-in emission manual check** -- Log in to WP admin on rankrocket.co;
+   confirm `display_on_user: logged_in` fires for authenticated and suppresses for
+   anonymous. Basic Auth does NOT establish a WP session -- must use browser.
 
 ---
 
@@ -64,7 +55,7 @@
 - Side repo: `E:\projects\rrc-mu-toolkit` -- local only, no remote yet
 
 **Blockers:**
-- None. v2.17.4 is ship-quality and self-update is confirmed working.
+- None. v2.17.4 ship-quality; G-01 verified; mu-plugin retire sequence in progress.
 
 ---
 
@@ -100,8 +91,9 @@ or the push is aborted. Run .\bin\build-zip.ps1 manually to diagnose failures.
    from page cache entirely for best results.
 
 3. **Mu-plugin retirement is staged, not complete** -- five modules are retirable
-   but none have been removed yet. Salvo staging verify must come first. The
-   mu-plugin stays as a telemetry tool after all modules are retired.
+   now that G-01 is verified. Retire in order: `RRC_SEO_DEDUP_CANONICAL` first,
+   then tax-meta pair, then perf pair. Mu-plugin stays as a telemetry tool after
+   all modules are retired.
 
 4. **display_on_user (v2.17.0)** -- `all|anonymous|logged_in`. Existing snippets
    without the field default to `all`. Logged-in-side emission needs manual
