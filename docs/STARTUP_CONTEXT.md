@@ -2,39 +2,44 @@
 
 **Last Updated:** 2026-05-29
 **Branch:** main
-**Version:** 2.17.4
-**Last Commit:** 2dd7221 -- feat: pre-push hook auto-builds + commits release zip on push
+**Version:** 2.17.6
+**Last Commit:** a78c908 -- docs: reformat changelog as HTML; white-label plugin header for AMS
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Salvo staging verified (G-01)** -- Installed v2.17.4; confirmed `POST /perf/dequeue-rules`
-   and `POST /perf/defer-handles` replace `RRC_SEO_WC_DEQUEUE` and `RRC_SEO_DEFER_NONCRIT`
-   correctly; `term:product_cat:<slug>` snippets fire on WooCommerce taxonomy archives
-   end-to-end. Ready to retire the two perf mu-plugin modules.
+1. **Mu-plugin SEO patch layer fully retired** -- All 6 SEO stopgap modules
+   removed from rrc-mu-toolkit. RRC_SEO_EXPLICIT_ROBOTS migrated into
+   `rr_merge_wp_robots` (rankmath-rest-bridge v2.17.6). File renamed
+   `plugin-usage-audit.php` -> `rrc-telemetry.php`; class renamed;
+   white-label constants `RRC_TEL_WL_NAME` / `RRC_TEL_WL_HIDE` added (v1.5).
 
-2. **v2.17.4 self-update bug fixed** -- Built the missing `releases/v2.17.4/
-   rankmath-rest-bridge.zip`; confirmed self-update works end-to-end.
+2. **rankmath-rest-bridge v2.17.5-v2.17.6** -- v2.17.5: `plugin_row_meta`
+   filter hides the "View Details" link from the Plugins screen. v2.17.6:
+   `rr_merge_wp_robots` emits explicit `index, follow` default; plugin header
+   white-labelled for AMS; changelog reformatted as HTML in manifest.
 
-3. **Pre-push hook added** (`hooks/pre-push`) -- Auto-builds release zip on every push;
-   installed via `composer install`. Eliminates missing-zip class of bug permanently.
+3. **Salvo staging verified (G-01)** -- `POST /perf/dequeue-rules` and
+   `POST /perf/defer-handles` confirmed working; `term:product_cat:<slug>`
+   snippets fire on WooCommerce taxonomy archives end-to-end.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Retire mu-plugin modules** -- Five modules are now retirable (G-01 verified).
-   Retire in order: `RRC_SEO_DEDUP_CANONICAL` (lowest risk) -> tax-meta pair
-   (`RRC_SEO_TAX_META_DESC` + `RRC_SEO_TAX_META_OG`) -> perf pair
-   (`RRC_SEO_WC_DEQUEUE` + `RRC_SEO_DEFER_NONCRIT`). Each: disable constant ->
-   staging verify -> remove code -> commit.
+1. **Deploy v2.17.6** -- `git push` on rank_rocket_seo_plugin (pre-push hook
+   auto-builds releases/v2.17.6/rankmath-rest-bridge.zip and commits it).
+   Then `POST /self-update` on target site. Also deploy rrc-telemetry.php:
+   upload to mu-plugins, delete the old plugin-usage-audit.php.
 
-2. **rrc-mu-toolkit GitHub remote** -- Create GitHub remote and push the repo.
+2. **rrc-mu-toolkit GitHub remote** -- create remote on GitHub, push master.
+   Repo is local-only at E:\projects\rrc-mu-toolkit.
 
-3. **G-14 logged-in emission manual check** -- Log in to WP admin on rankrocket.co;
-   confirm `display_on_user: logged_in` fires for authenticated and suppresses for
-   anonymous. Basic Auth does NOT establish a WP session -- must use browser.
+3. **G-14 logged-in emission manual check** -- Log in to WP admin on
+   rankrocket.co; confirm `display_on_user: logged_in` snippets fire for
+   authenticated visitors and suppress for anonymous. Basic Auth does NOT
+   establish a WP session -- must use browser login.
 
 ---
 
@@ -42,20 +47,19 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.17.4
-- Last committed: `2dd7221` -- pushed
+- Version: 2.17.6
+- Last committed: `a78c908` -- pushed
 - Uncommitted: none
 
 **Files of note:**
 - Plugin: `rankmath-rest-bridge.php`, `includes/` (6 helper classes)
 - **Release hook:** `hooks/pre-push` -- auto-builds zip on push (installed via composer)
 - **v3.0 spec:** `docs/plugin-v3-executor-spec.md` -- authoritative Shape B plugin spec
-- Agentic spec archived: `docs/archive/agentic-seo-plugin-spec-original.md`
-- Architecture boundary: `docs/aeo_geo_google_data_architecture.md:75-108`
-- Side repo: `E:\projects\rrc-mu-toolkit` -- local only, no remote yet
+- Side repo: `E:\projects\rrc-mu-toolkit` -- local + GitHub remote (pushed)
+  - `rrc-telemetry.php` v1.5 -- telemetry-only mu-plugin (all SEO modules retired)
 
 **Blockers:**
-- None. v2.17.4 ship-quality; G-01 verified; mu-plugin retire sequence in progress.
+- None. v2.17.6 is ship-quality; both repos clean and pushed.
 
 ---
 
@@ -78,27 +82,21 @@ or the push is aborted. Run .\bin\build-zip.ps1 manually to diagnose failures.
 
 ## Key Context Notes
 
-1. **v3.0 boundary (2026-05-21)** -- plugin v3.0 scope is observation endpoints +
-   typed executor endpoints only. Agentic runtime (scan orchestration, AI reasoning,
-   policy engine, approval queue, OAuth, portal sync) lives in the external Audit
-   Engine, not this repo. See `docs/plugin-v3-executor-spec.md`. v3.0 starts after
+1. **v3.0 boundary** -- plugin v3.0 scope is observation endpoints + typed
+   executor endpoints only. Agentic runtime lives in the external Audit Engine,
+   not this repo. See `docs/plugin-v3-executor-spec.md`. v3.0 starts after
    white-label milestone lands.
 
-2. **Cache architecture (v2.17.x)** -- writes now bust three layers: DB (always),
+2. **Cache architecture (v2.17.x)** -- writes bust three layers: DB (always),
    WP object cache (`rrseo_bust_option_cache`), and LiteSpeed page cache
    (`rrseo_purge_rest_cache`). If another cache plugin is added, wire its URL
-   purge into `rrseo_purge_rest_cache()`. Server config: exclude `/wp-json/`
-   from page cache entirely for best results.
+   purge into `rrseo_purge_rest_cache()`.
 
-3. **Mu-plugin retirement is staged, not complete** -- five modules are retirable
-   now that G-01 is verified. Retire in order: `RRC_SEO_DEDUP_CANONICAL` first,
-   then tax-meta pair, then perf pair. Mu-plugin stays as a telemetry tool after
-   all modules are retired.
+3. **rrc-telemetry.php white-label** -- `RRC_TEL_WL_NAME` overrides admin UI
+   label; `RRC_TEL_WL_HIDE=true` suppresses the Tools menu entry entirely.
+   The Must-Use Plugins list Plugin Name is static (file header) -- cannot be
+   changed at runtime. AMS constants for rankmath-rest-bridge: `RRSEO_WL_*`.
 
-4. **display_on_user (v2.17.0)** -- `all|anonymous|logged_in`. Existing snippets
-   without the field default to `all`. Logged-in-side emission needs manual
-   verification (G-14 -- Basic Auth doesn't establish a WP session).
-
-5. **unset_fields (v2.14.2)** -- the correct way to clear stored meta via REST.
-   Empty string on `/update` is intentionally a no-op (prevents accidental wipes
-   from blank template renders). Documented in README.
+4. **display_on_user (v2.17.0)** -- `all|anonymous|logged_in`. Existing
+   snippets without the field default to `all`. Logged-in emission (G-14)
+   needs manual browser verification -- Basic Auth does not establish a WP session.
