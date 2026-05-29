@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.17.6
+
+Migrate explicit index/follow default from mu-plugin into `rr_merge_wp_robots`.
+
+### Changes
+
+- **`rr_merge_wp_robots` default robots** — when no `rr_seo_robots` directive is
+  stored for a page and `noindex` is not already present in the filter array,
+  the function now emits `index, follow` explicitly. This migrates the last
+  remaining SEO behaviour from `plugin-usage-audit.php` (now `rrc-telemetry.php`),
+  fully retiring the mu-plugin's SEO patch layer.
+
+---
+
 ## v2.17.5
 
 Hide "View Details" link from Plugins screen.

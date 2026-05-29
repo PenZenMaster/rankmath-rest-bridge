@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.5
+ * Version:      2.17.6
  * Author:       Rank Rocket Co.
  * Author URI:   https://rankrocket.co
  * Requires PHP: 7.4
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.5' );
+define( 'RMB_VERSION', '2.17.6' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3451,6 +3451,12 @@ function rr_merge_wp_robots( array $directives ): array {
 	}
 
 	if ( ! $robots ) {
+		// No stored directive: emit explicit index, follow as a safe default so
+		// the <meta name="robots"> tag is never omitted on indexable pages.
+		if ( ! isset( $directives['noindex'] ) ) {
+			$directives['index']  = true;
+			$directives['follow'] = true;
+		}
 		return $directives;
 	}
 
