@@ -40,4 +40,9 @@
     <rule ref="WordPress.Security.NonceVerification.Missing">
         <exclude-pattern>rankmath-rest-bridge.php</exclude-pattern>
     </rule>
+
+    <!-- REST callback signatures require $request even when unused by the handler. -->
+    <rule ref="Generic.CodeAnalysis.UnusedFunctionParameter">
+        <exclude-pattern>rankmath-rest-bridge.php</exclude-pattern>
+    </rule>
 </ruleset>

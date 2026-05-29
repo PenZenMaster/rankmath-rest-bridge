@@ -1,13 +1,13 @@
 <?php
 /**
- * Plugin Name:  RankRocket SEO Control Layer
- * Description:  Native SEO control layer for the RankRocket remediation pipeline.
+ * Plugin Name:  SEO Control Layer
+ * Description:  Native SEO control layer for the remediation pipeline.
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
  * Version:      2.17.6
- * Author:       Rank Rocket Co.
- * Author URI:   https://rankrocket.co
+ * Author:       AMS
+ * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
  * Requires WP:  5.9
  * Tested up to: 7.0
@@ -1353,7 +1353,7 @@ function rr_validate_seo_fields( array $fields, $post_id = null ) {
 		$invalid = array_diff( $values, RR_ALLOWED_ROBOTS );
 		if ( $invalid ) {
 			$errors[] = 'robots: invalid value(s): ' . implode( ', ', $invalid )
-						. '. Allowed: ' . implode( ', ', RR_ALLOWED_ROBOTS );
+				. '. Allowed: ' . implode( ', ', RR_ALLOWED_ROBOTS );
 		}
 	}
 
@@ -2475,7 +2475,8 @@ add_action(
 				'methods'             => 'POST',
 				'callback'            => 'rmb_snippets_replace_all',
 				'permission_callback' => function () {
-					return current_user_can( RR_REPLACE_ALL_CAP ); },
+					return current_user_can( RR_REPLACE_ALL_CAP );
+				},
 				'args'                => array(
 					'snippets' => array(
 						'required' => true,
@@ -3366,7 +3367,8 @@ function rmb_images_bulk_alt( WP_REST_Request $request ) {
  * @param int    $is_public Site visibility setting (1 = public, 0 = discourage).
  * @return string
  */
-function rr_robots_txt_output( string $output, int $is_public ): string { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+function rr_robots_txt_output( string $output, int $is_public ): string {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
 	$custom = get_option( 'rrseo_robots_txt', '' );
 	if ( '' !== $custom ) {
 		return $custom;
@@ -3468,7 +3470,7 @@ function rr_merge_wp_robots( array $directives ): array {
 		// key=value directives (e.g. max-image-preview:large) preserve their value;
 		// boolean directives (index/noindex/follow/nofollow/...) flip a flag.
 		if ( false !== strpos( $value, ':' ) ) {
-			list( $k, $v )    = array_map( 'trim', explode( ':', $value, 2 ) );
+			list($k, $v)      = array_map( 'trim', explode( ':', $value, 2 ) );
 			$directives[ $k ] = $v;
 		} else {
 			$directives[ $value ] = true;
@@ -3492,7 +3494,8 @@ function rr_merge_wp_robots( array $directives ): array {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_robots_get( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_robots_get( WP_REST_Request $request ): WP_REST_Response {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$custom        = get_option( 'rrseo_robots_txt', '' );
 	$physical_path = ABSPATH . 'robots.txt';
 	clearstatcache( true, $physical_path );
@@ -3666,7 +3669,8 @@ function rmb_robots_inject_sitemap_directive( string $content, string $preferred
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_llms_get_config( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_llms_get_config( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	// Read the new key first; fall back to the legacy key for migration compat.
 	$config = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
 	return rest_ensure_response(
@@ -3755,7 +3759,8 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_llms_regenerate( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_llms_regenerate( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	rr_invalidate_canonical_cache();
 	$config  = get_option( RR_LLMS_CONFIG_KEY, get_option( 'rmb_llms_config', array() ) );
 	$result  = rr_render_llms_txt( $config );
@@ -3847,7 +3852,8 @@ function rmb_elementor_repair_cache( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_perf_dequeue_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_perf_dequeue_get( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return rest_ensure_response(
 		array(
 			'rules'                => get_option( RR_PERF_DEQUEUE_KEY, array() ),
@@ -3936,7 +3942,8 @@ function rmb_perf_dequeue_update( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_perf_defer_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_perf_defer_get( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	return rest_ensure_response(
 		array(
 			'handles' => get_option( RR_PERF_DEFER_KEY, array() ),
@@ -3984,7 +3991,8 @@ function rmb_perf_defer_update( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_sitemap_preview( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_sitemap_preview( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$front_page = (int) get_option( 'page_on_front' );
 	$site_url   = rtrim( get_bloginfo( 'url' ), '/' );
 
@@ -4046,7 +4054,8 @@ function rmb_sitemap_preview( WP_REST_Request $request ) { // phpcs:ignore Gener
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_snippets_list( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_snippets_list( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
 	return rest_ensure_response(
 		array(
@@ -4355,7 +4364,8 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_sitemap_exclusions_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_sitemap_exclusions_get( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$defaults = array(
 		'excluded_term_ids'   => array(),
 		'excluded_term_slugs' => array(),
@@ -4424,7 +4434,7 @@ function rmb_snippets_replace_all( WP_REST_Request $request ) {
 		return new WP_Error(
 			'confirmation_required',
 			'replace-all overwrites the entire snippet store. Send {"confirm": true} to proceed. '
-			. 'For routine changes, use the per-snippet POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} endpoints.',
+				. 'For routine changes, use the per-snippet POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} endpoints.',
 			array( 'status' => 400 )
 		);
 	}
@@ -4516,7 +4526,8 @@ function rmb_snippets_delete( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_cache_purge( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_cache_purge( WP_REST_Request $request ) {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	$purged = array();
 	$errors = array();
 
@@ -4568,13 +4579,16 @@ function rmb_cache_purge( WP_REST_Request $request ) { // phpcs:ignore Generic.C
 
 	if ( function_exists( 'sg_cachepress_purge_cache' ) ) {
 		sg_cachepress_purge_cache();
-		$purged[] = 'SiteGround'; }
+		$purged[] = 'SiteGround';
+	}
 	if ( function_exists( 'rocket_clean_domain' ) ) {
 		rocket_clean_domain();
-		$purged[] = 'WP Rocket';  }
+		$purged[] = 'WP Rocket';
+	}
 	if ( function_exists( 'w3tc_flush_all' ) ) {
 		w3tc_flush_all();
-		$purged[] = 'W3TC';       }
+		$purged[] = 'W3TC';
+	}
 
 	$msg_parts = array();
 	if ( ! empty( $purged ) ) {
@@ -4684,7 +4698,8 @@ function rmb_status( WP_REST_Request $request ) {
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_check_updates( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+function rmb_check_updates( WP_REST_Request $request ): WP_REST_Response {
+	// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	// Clear PUC's cached state so the next check fetches a fresh manifest.
 	// We do NOT touch update_plugins site transient — that would trigger
 	// WordPress.org communication for all plugins, which is wrong for a private plugin.
