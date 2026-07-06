@@ -1,11 +1,59 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-05-27
-**Current Version:** 2.17.4
+**Last Updated:** 2026-07-06
+**Current Version:** 2.17.7
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 2dd7221 -- feat: pre-push hook auto-builds + commits release zip on push
+**Last Commit:** 8a13bed -- chore: release v2.17.7 zip
 **Git Status:** clean
+
+---
+
+## 2026-07-06 Session -- v2.17.7 Deployed + Telemetry Rollout -- COMPLETE
+
+### Session Summary
+Deployment session. Pushed the v2.17.7 dry_run fix that was committed locally,
+verified the pre-push hook auto-built the release zip, and deployed v2.17.7 to
+rankrocket.co via POST /self-update -- completing the first full end-to-end run
+of the automated release pipeline (bump -> push -> hook-built zip -> CDN ->
+self-update). rrc-telemetry.php v1.5 deployed to mu-plugins on the target site.
+
+### Accomplishments
+- v2.17.7 pushed to GitHub (`931e9b1` dry_run fix + `8a13bed` hook-built zip;
+  all 4 structural zip checks passed)
+- v2.17.7 deployed to rankrocket.co via `POST /self-update` (user-confirmed)
+- **[CRITICAL] Auto-update staging verify CLOSED** -- end-to-end flow proven live
+- rrc-telemetry.php v1.5 deployed to `wp-content/mu-plugins/`; old
+  plugin-usage-audit.php removed (user-confirmed)
+- rrc-mu-toolkit GitHub remote confirmed live and in sync (origin/master)
+- Recovered missing 2026-05-29 session entry below (was in checkpoint only)
+
+### Next
+G-14 manual logged-in emission check (browser login, not Basic Auth);
+P2 gaps (self-canonical check, sitemap lastmod) + I18n pass;
+v3.0 Bite 1 kickoff -- observation endpoints per plugin-v3-executor-spec.md.
+
+---
+
+## 2026-05-29 Session -- Mu-Plugin Retired + v2.17.5/6 White-Label -- COMPLETE
+
+### Session Summary
+(Recovered from CheckPoint-2026-05-29_1800.md -- entry was never appended here.)
+Mu-plugin SEO patch layer fully retired; telemetry file renamed and white-labelled;
+rankmath-rest-bridge v2.17.5-v2.17.6 shipped AMS white-label housekeeping.
+
+### Accomplishments
+- All 6 mu-plugin SEO modules retired; RRC_SEO_EXPLICIT_ROBOTS migrated into
+  `rr_merge_wp_robots` default (`226363a`)
+- plugin-usage-audit.php renamed rrc-telemetry.php v1.5 (git mv, history intact);
+  class renamed; RRC_TEL_WL_NAME / RRC_TEL_WL_HIDE white-label constants added
+- v2.17.5: plugin_row_meta filter hides View Details link
+- v2.17.6: explicit `index, follow` robots default; AMS white-label plugin header;
+  changelog reformatted as HTML for the View Details modal (final: `a78c908`)
+- PHPUnit 10 + VerdictTest suite added to rrc-mu-toolkit
+
+### Next
+Deploy v2.17.6; deploy rrc-telemetry.php; G-14 manual check.
 
 ---
 
@@ -384,10 +432,11 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 
 ## Backlog
 
-### [CRITICAL] Auto-Update Staging Verify
+### [DONE] Auto-Update Staging Verify
 - [x] Manifest fixed and correct zips pushed
 - [x] Force Update Check button added (v2.9.1) — no WP-CLI needed
-- [ ] End-to-end test on live staging site — `docs/staging-verify-autoupdate.md`
+- [x] End-to-end test on live site — v2.17.7 deployed to rankrocket.co via
+      POST /self-update on 2026-07-06 (full pipeline: push -> hook zip -> CDN -> update)
 
 ### [HIGH] P2 Gaps from Gap-Priority-Notes.csv
 - [x] ~~Legacy namespace alias~~ — fixed v2.9.2
