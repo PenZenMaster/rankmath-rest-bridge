@@ -118,7 +118,7 @@ class RRSEO_MetaBox {
 	public function render( WP_Post $post ): void {
 		?>
 		<div id="rrseo-meta-box" data-post-id="<?php echo esc_attr( $post->ID ); ?>">
-			<p class="rrseo-loading"><?php esc_html_e( 'Loading SEO data\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+			<p class="rrseo-loading"><?php esc_html_e( 'Loading SEO data...', 'rankrocket-seo' ); ?></p>
 		</div>
 		<?php
 	}

@@ -12,10 +12,12 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-04-29
- * Last Modified Date: 2026-04-29
+ * Last Modified Date: 2026-07-06
  *
  * Comments:
  * v1.00 - Initial release. Admin panel for viewing plugin data.
+ * v1.01 - I18n: deactivation dialog strings wrapped; repaired literal \x
+ *         escape sequences in Loading placeholders (ASCII ellipsis).
  *
  * @package RankRocket_SEO
  */
@@ -183,7 +185,7 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'Overview', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-overview">
-				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
 		<?php
@@ -197,7 +199,7 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'Posts & Pages', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-posts">
-				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
 		<?php
@@ -211,7 +213,7 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'Image ALT Text', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-images">
-				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
 		<?php
@@ -225,7 +227,7 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'Snippets', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-snippets">
-				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
 		<?php
@@ -239,7 +241,7 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'llms.txt', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-llms">
-				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
 		<?php
@@ -253,7 +255,7 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'Sitemap Preview', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-sitemap">
-				<p><?php esc_html_e( 'Loading\xe2\x80\xa6', 'rankrocket-seo' ); ?></p>
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>
 		<?php
@@ -279,6 +281,28 @@ class RRSEO_Admin {
 		}
 		$plugin_slug    = esc_js( plugin_basename( RMB_PLUGIN_FILE ) );
 		$plugin_name_js = wp_json_encode( RRSEO_White_Label::wl_name() );
+		$stops_js       = wp_json_encode(
+			array(
+				'- ' . __( 'Schema JSON-LD injection into page <head>', 'rankrocket-seo' ),
+				'- ' . __( 'Custom page title overrides', 'rankrocket-seo' ),
+				'- ' . __( 'XML sitemap endpoint (/sitemap_index.xml)', 'rankrocket-seo' ),
+				'- ' . __( 'llms.txt endpoint', 'rankrocket-seo' ),
+			)
+		);
+		$persists_js    = wp_json_encode(
+			array(
+				'- ' . __( 'All SEO metadata (stored in post meta - rr_seo_* keys)', 'rankrocket-seo' ),
+				'- ' . __( 'robots.txt (physical file at webroot - web server serves it directly)', 'rankrocket-seo' ),
+			)
+		);
+		$labels_js      = wp_json_encode(
+			array(
+				'deactivating' => __( 'Deactivating', 'rankrocket-seo' ),
+				'stops'        => __( 'Will STOP working:', 'rankrocket-seo' ),
+				'persists'     => __( 'Will PERSIST after deactivation:', 'rankrocket-seo' ),
+				'proceed'      => __( 'Proceed with deactivation?', 'rankrocket-seo' ),
+			)
+		);
 		?>
 		<script>
 		( function () {
@@ -288,20 +312,13 @@ class RRSEO_Admin {
 			var link = row.querySelector( '.deactivate a' );
 			if ( ! link ) { return; }
 			link.addEventListener( 'click', function ( e ) {
-				var stops = [
-					'• Schema JSON-LD injection into page <head>',
-					'• Custom page title overrides',
-					'• XML sitemap endpoint (/sitemap_index.xml)',
-					'• llms.txt endpoint'
-				];
-				var persists = [
-					'• All SEO metadata (stored in post meta — rr_seo_* keys)',
-					'• robots.txt (physical file at webroot — web server serves it directly)'
-				];
-				var msg = 'Deactivating ' + <?php echo $plugin_name_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?> + '\n\n'
-					+ 'Will STOP working:\n' + stops.join( '\n' ) + '\n\n'
-					+ 'Will PERSIST after deactivation:\n' + persists.join( '\n' ) + '\n\n'
-					+ 'Proceed with deactivation?';
+				var stops    = <?php echo $stops_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
+				var persists = <?php echo $persists_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
+				var labels   = <?php echo $labels_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
+				var msg = labels.deactivating + ' ' + <?php echo $plugin_name_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?> + '\n\n'
+					+ labels.stops + '\n' + stops.join( '\n' ) + '\n\n'
+					+ labels.persists + '\n' + persists.join( '\n' ) + '\n\n'
+					+ labels.proceed;
 				if ( ! window.confirm( msg ) ) {
 					e.preventDefault();
 				}
