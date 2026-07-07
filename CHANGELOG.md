@@ -1,5 +1,67 @@
 # Changelog
 
+## v2.18.0
+
+v3.0 Bite 1: observation endpoints for the external Audit Engine, plus small-ticket
+debt (self-canonical discovery check, admin i18n/display fixes).
+
+### New endpoints (all GET, `manage_options`, read-only)
+
+- **`/observe/heading-hierarchy/{post_id}`** — H1-H6 structure as a nested
+  `{tag, text, depth, children}` tree, with structural warnings (`no_h1`,
+  `multiple_h1`, `skipped_level`, `empty_heading`).
+- **`/observe/broken-links`** — paginated link inventory
+  (`page`, `per_page`, `post_type`, `include_external`). Internal links are
+  resolved against WordPress locally (`ok` links are omitted; `not_found`
+  returns 404; archive-shaped URLs return `unverified`). External links are
+  returned with `status_code: null` and `checked: false` — the plugin makes
+  no external HTTP calls by design; verification is the Audit Engine's job.
+- **`/observe/alt-coverage`** — image ALT rollup: `total`, `missing` (no meta
+  row), `empty` (empty string), `coverage_pct`, broken down by parent post
+  type. Cached in a 5-minute transient.
+- **`/observe/schema-graph/{post_id}`** — full stored `_rrseo_schema_graph`
+  JSON-LD for the post plus a deduplicated `types` list.
+- **`/observe/llms-diff`** — drift between the rendered llms.txt URL list and
+  the canonical URL set: `in_both`, `in_llms_not_canonical`,
+  `in_canonical_not_llms`, `in_sync`.
+
+### Changes
+
+- **Self-canonical discovery check** — `rr_is_url_allowed_for_discovery()` now
+  excludes posts whose canonical override (`_rr_seo_canonical`, legacy
+  `rank_math_canonical_url` fallback) points at a different URL, with new
+  exclusion reason `non_self_canonical`. Sitemaps, llms.txt, and all previews
+  inherit the rule via the shared canonical set. Comparison ignores case and
+  trailing slashes.
+
+### Bug fixes
+
+- **Admin "Loading" placeholders** — `'Loading\xe2\x80\xa6'` was written in
+  single quotes, so PHP rendered the escape sequence literally on all six admin
+  pages and the meta box. Replaced with ASCII `Loading...`.
+
+### I18n
+
+- `Text Domain: rankrocket-seo` header added to the plugin file.
+- Deactivation confirmation dialog strings wrapped in `__()` and emitted via
+  `wp_json_encode()`.
+- REST error strings remain deliberately untranslated (machine consumers).
+
+---
+
+## v2.17.7
+
+Honor the `dry_run` flag in `POST /meta/bulk-update`.
+
+### Bug fixes
+
+- **`POST /meta/bulk-update` dry_run** — the top-level `dry_run: true` flag was
+  ignored; writes are now gated behind `! $dry_run` and a dry-run call returns a
+  per-post `changes` diff (matching `/preview-update` shape) with no DB writes,
+  no cache bust, and no audit log entry.
+
+---
+
 ## v2.17.6
 
 Migrate explicit index/follow default from mu-plugin into `rr_merge_wp_robots`.

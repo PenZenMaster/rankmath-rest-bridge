@@ -130,6 +130,33 @@ and more. Useful for audit scripts and CI health checks.
 
 ---
 
+### Observation (v2.18.0 — v3.0 Bite 1)
+
+Read-only signals for the external Audit Engine. All require `manage_options`;
+none mutate state; the plugin performs no external HTTP calls.
+
+```bash
+# Heading structure as a nested tree, with warnings (no_h1, multiple_h1, ...)
+curl "$BASE/observe/heading-hierarchy/123" -u "$CRED"
+
+# Link inventory: internal not_found/unverified + external unchecked
+curl "$BASE/observe/broken-links?page=1&per_page=20&post_type=post" -u "$CRED"
+
+# Image ALT coverage rollup by parent post type
+curl "$BASE/observe/alt-coverage" -u "$CRED"
+
+# Stored JSON-LD graph for a post
+curl "$BASE/observe/schema-graph/123" -u "$CRED"
+
+# Drift between llms.txt and the canonical URL set
+curl "$BASE/observe/llms-diff" -u "$CRED"
+```
+
+External links are returned with `status_code: null` and `checked: false` —
+external verification belongs to the Audit Engine, not the plugin.
+
+---
+
 ### Self-Update
 
 The plugin ships a headless self-update flow — no WP admin login required.

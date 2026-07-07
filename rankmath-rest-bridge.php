@@ -5,12 +5,13 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.17.7
+ * Version:      2.18.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
  * Requires WP:  5.9
  * Tested up to: 7.0
+ * Text Domain:  rankrocket-seo
  *
  * @package RankRocket_SEO
  */
@@ -19,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.17.7' );
+define( 'RMB_VERSION', '2.18.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -222,6 +223,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-llms.php';
 
 // ── AEO/GEO audit data layer (canonical preview, readiness, entity, schema, sync) ──
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-aeo-geo.php';
+
+// ── v3.0 Bite 1: observation endpoints (heading hierarchy, links, ALT, schema, llms drift) ──
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-observe.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -2625,6 +2629,79 @@ add_action(
 			array(
 				'methods'             => 'GET',
 				'callback'            => 'rmb_aeo_geo_source_sync',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		// ── v3.0 Bite 1: Observation endpoints (read-only, no state mutation) ─────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/observe/heading-hierarchy/(?P<post_id>\d+)',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_observe_heading_hierarchy',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/observe/broken-links',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_observe_broken_links',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'page'             => array(
+						'required' => false,
+						'type'     => 'integer',
+						'default'  => 1,
+					),
+					'per_page'         => array(
+						'required' => false,
+						'type'     => 'integer',
+						'default'  => 20,
+					),
+					'post_type'        => array(
+						'required' => false,
+						'type'     => 'string',
+						'default'  => '',
+					),
+					'include_external' => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/observe/alt-coverage',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_observe_alt_coverage',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/observe/schema-graph/(?P<post_id>\d+)',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_observe_schema_graph',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/observe/llms-diff',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_observe_llms_diff',
 				'permission_callback' => $admin_only,
 			)
 		);
