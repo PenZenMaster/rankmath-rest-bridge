@@ -1,9 +1,9 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-07-06
+**Last Updated:** 2026-07-06 (shutdown 19:04)
 **Branch:** main
-**Version:** 2.18.0 (built; deployment to rankrocket.co pending)
-**Last Commit:** 3ccf033 -- feat: v3.0 Bite 1 observation endpoints (v2.18.0)
+**Version:** 2.18.0 (pushed, zip on CDN; deployment to rankrocket.co pending)
+**Last Commit:** f1f00ea -- chore: release v2.18.0 zip
 
 ---
 
@@ -47,8 +47,8 @@
 ## Current State
 
 **Git:**
-- Branch: `main`
-- Version: 2.18.0 -- committed locally, push pending at last update
+- Branch: `main` -- in sync with origin at `f1f00ea`
+- Version: 2.18.0 -- pushed; CDN manifest confirmed serving 2.18.0
 - Test suite: phpcs clean (8 files), phpunit 153 tests green
 
 **Files of note:**

@@ -4,7 +4,7 @@
 **Current Version:** 2.18.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 3ccf033 -- feat: v3.0 Bite 1 observation endpoints (v2.18.0)
+**Last Commit:** f1f00ea -- chore: release v2.18.0 zip
 **Git Status:** clean
 
 ---
