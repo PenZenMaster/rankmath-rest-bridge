@@ -1,11 +1,45 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-07-06
-**Current Version:** 2.17.7
+**Current Version:** 2.18.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 8a13bed -- chore: release v2.17.7 zip
+**Last Commit:** 3ccf033 -- feat: v3.0 Bite 1 observation endpoints (v2.18.0)
 **Git Status:** clean
+
+---
+
+## 2026-07-06 Session (continued) -- v2.18.0: Bite 1 + Debt Burn-Down -- COMPLETE
+
+### Session Summary
+Same-day continuation. G-14 logged-in emission verified manually by the user
+(browser login) -- the last open validation item from v2.17.0 is closed.
+Shipped v2.18.0: all five v3.0 Bite 1 observation endpoints, the P2
+self-canonical discovery fix, admin i18n/display fixes, and a phpunit
+bootstrap repair that brings the test suite back to green (153 tests).
+
+### Accomplishments
+- **G-14 CLOSED** -- `display_on_user: logged_in` emission verified in a real
+  browser session (fires logged-in, absent anonymous)
+- **v3.0 Bite 1 COMPLETE** -- `GET /observe/heading-hierarchy/{id}`,
+  `/observe/broken-links`, `/observe/alt-coverage`,
+  `/observe/schema-graph/{id}`, `/observe/llms-diff` in new
+  `includes/class-rrseo-observe.php`; 24 unit tests on the pure helpers
+- **P2 self-canonical gap fixed** -- discovery set excludes posts whose
+  canonical override points elsewhere (`non_self_canonical`)
+- **P2 sitemap lastmod box was stale** -- already fixed in v2.11.4
+  (index lastmod derives from the canonical set); checkbox reconciled
+- **I18n pass done for the admin surface** -- Text Domain header added;
+  deactivation dialog localized; REST error strings deliberately left
+  untranslated (machine consumers). Fixed `'Loading\xe2\x80\xa6'` literal
+  escape bug visible on all six admin pages + meta box
+- **phpunit bootstrap repaired** -- suite had drifted (undefined
+  register_activation_hook, is_tax, __, ...); 153 tests / 324 assertions green
+
+### Next
+Deploy v2.18.0 (push builds zip; POST /self-update needs user credentials);
+v3.0 Bite 2 -- typed action engine (dry-run + execute + whitelist + remove
+replace-all); llms.txt raw-content upload verification (old backlog item).
 
 ---
 
@@ -442,10 +476,10 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 - [x] ~~Legacy namespace alias~~ — fixed v2.9.2
 - [x] ~~register_post_meta for _rrseo_llms_section~~ — fixed v2.9.2
 - [x] ~~First-paragraph description fallback bug~~ — fixed v2.9.2
-- [ ] Self-canonical/redirect check — use `get_canonical_url()` per post (~10 lines)
-- [ ] `/sitemap_index.xml` lastmod — derive from canonical set, not raw `get_posts()`
+- [x] ~~Self-canonical/redirect check~~ — fixed v2.18.0 (`non_self_canonical` exclusion in `rr_is_url_allowed_for_discovery()`)
+- [x] ~~`/sitemap_index.xml` lastmod~~ — already fixed v2.11.4 (derives from canonical set); checkbox was stale
 - [x] ~~`/canonical-urls/preview` endpoint alias~~ — delivered in v2.10.0 AEO/GEO layer
-- [ ] Expand test-placeholder pattern list beyond `please-do-not-delete-this-*`
+- [x] ~~Expand test-placeholder pattern list~~ — delivered v2.15.0 (`do-not-index-` prefix + operator-configured excluded_post_slugs via /sitemap/exclusions)
 
 ### [DONE] llms.txt Structured Config
 - [x] `POST /llms` accepts and persists all new fields (v2.9.0)
@@ -453,10 +487,11 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 - [x] Admin panel llms.txt tab displays all config + preview (v2.9.1)
 
 ### Ready to Start
-- [ ] `composer install` on dev machine to activate phpunit + phpcs locally
-- [ ] Run `composer run qa` — phpcs 0 errors expected; phpunit 50+ tests
+- [x] ~~composer install / composer run qa~~ — done 2026-07-06; bootstrap drift
+      repaired; phpcs clean, 153 tests / 324 assertions green
 - [ ] Verify llms.txt raw-content upload support (old backlog item)
-- [ ] I18n pass — wrap user-visible strings with `__()` / `_e()`
+- [x] ~~I18n pass~~ — done 2026-07-06 for the admin surface (Text Domain header,
+      deactivation dialog). REST error strings deliberately untranslated.
 
 ### After AEO/GEO Audit Data Layer
 - [ ] **White Labeling** — agency/developer rebranding capabilities:
@@ -474,12 +509,13 @@ white-label work (next). v3.0 starts after white-label lands.
 
 Reference: `docs/plugin-v3-executor-spec.md`
 
-**Bite 1 — Observation endpoints (1-2 weeks)**
-- [ ] `GET /observe/heading-hierarchy/{post_id}`
-- [ ] `GET /observe/broken-links` (scoped, paginated)
-- [ ] `GET /observe/alt-coverage` (rollup by post type)
-- [ ] `GET /observe/schema-graph/{post_id}`
-- [ ] `GET /observe/llms-diff` (current llms.txt vs canonical URL set)
+**Bite 1 — Observation endpoints (1-2 weeks) — DONE v2.18.0 (2026-07-06)**
+- [x] `GET /observe/heading-hierarchy/{post_id}` — nested tree + structural warnings
+- [x] `GET /observe/broken-links` (scoped, paginated; internal resolved locally,
+      external returned unchecked — no external HTTP per acceptance criteria)
+- [x] `GET /observe/alt-coverage` (rollup by parent post type, 5-min transient)
+- [x] `GET /observe/schema-graph/{post_id}`
+- [x] `GET /observe/llms-diff` (current llms.txt vs canonical URL set)
 
 **Bite 2 — Typed action engine (2-3 weeks)**
 - [ ] `POST /actions/dry-run` -- typed payload validation, simulated result

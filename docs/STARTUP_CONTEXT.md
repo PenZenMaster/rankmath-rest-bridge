@@ -2,45 +2,45 @@
 
 **Last Updated:** 2026-07-06
 **Branch:** main
-**Version:** 2.17.7
-**Last Commit:** 8a13bed -- chore: release v2.17.7 zip
+**Version:** 2.18.0 (built; deployment to rankrocket.co pending)
+**Last Commit:** 3ccf033 -- feat: v3.0 Bite 1 observation endpoints (v2.18.0)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v2.17.7 deployed end-to-end** -- dry_run fix (`931e9b1`) pushed; pre-push
-   hook auto-built the release zip (`8a13bed`); CDN verified; `POST /self-update`
-   run on rankrocket.co. First full proof of the automated release pipeline --
-   the [CRITICAL] auto-update staging verify backlog item is CLOSED.
+1. **v3.0 Bite 1 COMPLETE (v2.18.0)** -- five read-only observation endpoints
+   in `includes/class-rrseo-observe.php`: heading-hierarchy, broken-links,
+   alt-coverage, schema-graph, llms-diff. 24 new unit tests. No external HTTP
+   calls -- external link verification stays in the Audit Engine.
 
-2. **rrc-telemetry.php v1.5 deployed** -- uploaded to `wp-content/mu-plugins/`
-   on the target site; old `plugin-usage-audit.php` deleted. Plugin usage
-   telemetry (Tools > Plugin Usage, DEAD/IDLE/ACTIVE verdicts) now collecting.
+2. **Debt burn-down** -- P2 self-canonical gap fixed (`non_self_canonical`
+   discovery exclusion); admin `Loading\xe2\x80\xa6` literal-escape display
+   bug fixed; I18n pass done for the admin surface (Text Domain header,
+   deactivation dialog); phpunit bootstrap drift repaired -- suite green
+   again (153 tests / 324 assertions).
 
-3. **Docs reconciled** -- projectStatus.md was stale at v2.17.4; recovered the
-   missing 2026-05-29 session entry and refreshed the header. rrc-mu-toolkit
-   GitHub remote confirmed live and in sync.
+3. **G-14 CLOSED + v2.17.7 deployed** -- logged-in snippet emission verified
+   manually in a browser; v2.17.7 self-update ran on rankrocket.co, proving
+   the full automated release pipeline end-to-end.
 
 ---
 
 ## Next 3 Priorities
 
-1. **G-14 logged-in emission manual check** -- Log in to wp-admin on
-   rankrocket.co in a real browser, then view a front-end page carrying a
-   `display_on_user: logged_in` snippet (validation slug: `rr-logged`).
-   Confirm present in page source while logged in, absent in incognito.
-   Basic Auth does NOT establish a WP session -- browser login only.
+1. **Deploy v2.18.0** -- push already builds the zip via pre-push hook.
+   Wait 2-3 min for CDN, then `POST /self-update` on rankrocket.co
+   (user supplies the app password; not stored on this machine). Smoke-test
+   the five `/observe/*` endpoints against live data afterwards.
 
-2. **Small-ticket debt** -- P2 gaps: self-canonical/redirect check via
-   `get_canonical_url()` (~10 lines); `/sitemap_index.xml` lastmod derived
-   from canonical set instead of raw `get_posts()`. I18n pass on
-   user-visible strings.
+2. **v3.0 Bite 2 -- typed action engine (2-3 weeks)** --
+   `POST /actions/dry-run`, `POST /actions/execute`, initial whitelist
+   (update_setting, regenerate_llms_txt, update_meta_draft, toggle_indexing),
+   remove `replace-all`. Every execute: `rr_audit_log()` + both cache busts.
+   See `docs/plugin-v3-executor-spec.md`.
 
-3. **v3.0 Bite 1 kickoff** -- observation endpoints per
-   `docs/plugin-v3-executor-spec.md` (heading-hierarchy, broken-links,
-   alt-coverage, schema-graph, llms-diff). White-label prerequisite landed
-   in v2.17.5/6 -- v3.0 is unblocked.
+3. **llms.txt raw-content upload verification** -- last old backlog item in
+   Ready to Start.
 
 ---
 
@@ -48,20 +48,22 @@
 
 **Git:**
 - Branch: `main`
-- Version: 2.17.7 (deployed to rankrocket.co)
-- Last committed: `8a13bed` -- pushed
-- Uncommitted: docs updates from 2026-07-06 checkpoint (commit pending QA)
+- Version: 2.18.0 -- committed locally, push pending at last update
+- Test suite: phpcs clean (8 files), phpunit 153 tests green
 
 **Files of note:**
-- Plugin: `rankmath-rest-bridge.php`, `includes/` (6 helper classes)
-- **Release hook:** `hooks/pre-push` -- auto-builds zip on push (installed via composer)
-- **v3.0 spec:** `docs/plugin-v3-executor-spec.md` -- authoritative Shape B plugin spec
-- Side repo: `E:\projects\rrc-mu-toolkit` -- GitHub remote live, in sync
-  - `rrc-telemetry.php` v1.5 -- deployed to target mu-plugins 2026-07-06
+- Plugin: `rankmath-rest-bridge.php`, `includes/` (7 helper files -- observe
+  endpoints added 2026-07-06)
+- **Release hook:** `hooks/pre-push` -- auto-builds zip on push. NOTE: the
+  hook's zip commit lands AFTER the push refspec is computed -- run
+  `git push` a second time to push the zip commit.
+- **v3.0 spec:** `docs/plugin-v3-executor-spec.md` -- authoritative Shape B spec
+- Side repo: `E:\projects\rrc-mu-toolkit` -- in sync with GitHub;
+  `rrc-telemetry.php` v1.5 deployed to target mu-plugins 2026-07-06
 
 **Blockers:**
 - None. WP app password for rankrocket.co is not stored on the dev machine
-  (by design) -- REST deploy calls need the user to supply it.
+  (by design) -- self-update POST needs the user.
 
 ---
 
@@ -73,35 +75,29 @@
 3. Update CHANGELOG.md
 4. git add + git commit  (conventional: "feat/fix/chore: ...")
 5. git push  -- pre-push hook auto-builds releases/vX.Y.Z/*.zip and commits it
-   NOTE: the hook's zip commit lands AFTER the push refspec is computed --
-   run `git push` a second time (or check `git status -sb`) to push the zip.
+   NOTE: run `git push` a second time to push the hook's zip commit.
 6. Wait 2-3 min for GitHub CDN, then POST /self-update on target site
 ```
-
-Note: The pre-push hook (hooks/pre-push) runs bin/build-zip.ps1 automatically
-if the zip for the current version is missing. All 4 structural checks must pass
-or the push is aborted. Run .\bin\build-zip.ps1 manually to diagnose failures.
 
 ---
 
 ## Key Context Notes
 
-1. **v3.0 boundary** -- plugin v3.0 scope is observation endpoints + typed
-   executor endpoints only. Agentic runtime lives in the external Audit Engine,
-   not this repo. See `docs/plugin-v3-executor-spec.md`. Prerequisites are
-   done -- v3.0 Bite 1 can start.
+1. **v3.0 progress** -- Bite 1 (observation) shipped in v2.18.0. Bite 2 (typed
+   action engine) is next; Bite 3 rollback; Bite 4 CI. Boundary unchanged:
+   agentic runtime lives in the external Audit Engine, plugin is executor +
+   data source only.
 
-2. **Cache architecture (v2.17.x)** -- writes bust three layers: DB (always),
-   WP object cache (`rrseo_bust_option_cache`), and LiteSpeed page cache
-   (`rrseo_purge_rest_cache`). If another cache plugin is added, wire its URL
-   purge into `rrseo_purge_rest_cache()`.
+2. **Cache architecture (v2.17.x invariant)** -- every write busts three
+   layers: DB, WP object cache (`rrseo_bust_option_cache`), LiteSpeed page
+   cache (`rrseo_purge_rest_cache`). Bite 2 executor writes MUST call both.
 
-3. **rrc-telemetry.php** -- deployed and collecting. Verdicts need >= 1 day
-   of observation before they mean anything; give it 1-2 weeks of normal
-   traffic before trusting DEAD verdicts. Kill switch:
-   `define('RRC_PUA_DISABLE', true)` in wp-config.php. White-label:
-   `RRC_TEL_WL_NAME` / `RRC_TEL_WL_HIDE` (AMS plugin uses `RRSEO_WL_*`).
+3. **Observation endpoint design decisions (v2.18.0)** -- broken-links never
+   makes HTTP calls: internal links resolve via url_to_postid/get_page_by_path
+   (`ok` omitted, `not_found` = 404, archive-shaped = `unverified`), external
+   links return `checked: false` for the Audit Engine. alt-coverage caches in
+   a 5-min transient (`rrseo_observe_alt_coverage`).
 
-4. **display_on_user (v2.17.0)** -- `all|anonymous|logged_in`. Storage,
-   validation, and anonymous-side emission verified (v2.17.0 report).
-   Logged-in side (G-14) still needs the manual browser check above.
+4. **rrc-telemetry.php** -- deployed and collecting on the target site.
+   Verdicts need 1-2 weeks of traffic before DEAD is trustworthy. Kill
+   switch: `define('RRC_PUA_DISABLE', true)` in wp-config.php.
