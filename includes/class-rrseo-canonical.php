@@ -12,11 +12,13 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-04-29
- * Last Modified Date: 2026-04-29
+ * Last Modified Date: 2026-07-06
  *
  * Comments:
  * v1.00 - Initial release. P0 implementation: canonical set, discovery metadata,
  *         noindex/utility/numeric-suffix exclusion logic, description fallback chain.
+ * v1.01 - Self-canonical check: posts whose canonical override points at a
+ *         different URL are excluded with reason non_self_canonical.
  *
  * @package RankRocket_SEO
  */
@@ -352,6 +354,23 @@ function rr_is_url_allowed_for_discovery( WP_Post $post ): array {
 			'reason'   => 'utility_page',
 			'warnings' => array(),
 		);
+	}
+
+	// Self-canonical check: a canonical override pointing at a different URL
+	// declares this post a duplicate — the canonical target is the discovery
+	// entry, not this URL. Reads the native _rr_seo_canonical key with the
+	// legacy rank_math_canonical_url fallback via rr_get_seo_meta().
+	$canonical_override = rr_get_seo_meta( $post->ID, 'canonical' );
+	if ( is_string( $canonical_override ) && '' !== $canonical_override ) {
+		$self_url  = strtolower( rtrim( (string) $permalink, '/' ) );
+		$other_url = strtolower( rtrim( $canonical_override, '/' ) );
+		if ( $self_url !== $other_url ) {
+			return array(
+				'allowed'  => false,
+				'reason'   => 'non_self_canonical',
+				'warnings' => array(),
+			);
+		}
 	}
 
 	// Numeric suffix duplicate check (operates on slug, not full URL).

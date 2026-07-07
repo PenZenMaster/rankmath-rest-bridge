@@ -200,6 +200,37 @@ class CanonicalUrlSetTest extends TestCase {
 		$this->assertSame( 'orphan_numeric_suffix', $result['warnings'][0]['code'] );
 	}
 
+	public function test_non_self_canonical_is_excluded(): void {
+		$post = $this->makePost( 33, 'syndicated-post' );
+		$this->setPermalink( 33, 'https://example.test/syndicated-post/' );
+		$GLOBALS['_test_post_meta'][33]['_rr_seo_canonical'] = 'https://example.test/original-post/';
+
+		$result = rr_is_url_allowed_for_discovery( $post );
+		$this->assertFalse( $result['allowed'] );
+		$this->assertSame( 'non_self_canonical', $result['reason'] );
+	}
+
+	public function test_self_canonical_with_trailing_slash_difference_is_allowed(): void {
+		$post = $this->makePost( 34, 'self-canonical-post' );
+		$this->setPermalink( 34, 'https://example.test/self-canonical-post/' );
+		// Override matches the permalink except for the trailing slash and case.
+		$GLOBALS['_test_post_meta'][34]['_rr_seo_canonical'] = 'https://Example.test/self-canonical-post';
+
+		$result = rr_is_url_allowed_for_discovery( $post );
+		$this->assertTrue( $result['allowed'] );
+	}
+
+	public function test_legacy_rankmath_canonical_is_excluded(): void {
+		$post = $this->makePost( 35, 'legacy-canonical-post' );
+		$this->setPermalink( 35, 'https://example.test/legacy-canonical-post/' );
+		// No native key; legacy RankMath fallback carries the override.
+		$GLOBALS['_test_post_meta'][35]['rank_math_canonical_url'] = 'https://elsewhere.test/target/';
+
+		$result = rr_is_url_allowed_for_discovery( $post );
+		$this->assertFalse( $result['allowed'] );
+		$this->assertSame( 'non_self_canonical', $result['reason'] );
+	}
+
 	// ── rr_get_canonical_url_set() ────────────────────────────────────────────
 
 	public function test_canonical_set_includes_only_published_posts(): void {
