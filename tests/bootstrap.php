@@ -255,6 +255,56 @@ if ( ! function_exists( 'str_starts_with' ) ) {
 }
 
 // ------------------------------------------------------------------
+// Load-time stubs added as the plugin grew (activation hooks, i18n)
+// ------------------------------------------------------------------
+
+if ( ! function_exists( 'register_activation_hook' ) ) {
+    function register_activation_hook( $file, $callback ) {}
+}
+
+if ( ! function_exists( 'register_deactivation_hook' ) ) {
+    function register_deactivation_hook( $file, $callback ) {}
+}
+
+if ( ! function_exists( 'plugin_basename' ) ) {
+    function plugin_basename( $file ) {
+        return basename( $file );
+    }
+}
+
+// __ / esc_html__ — return the string unchanged (no translation in tests).
+if ( ! function_exists( '__' ) ) {
+    function __( $text, $domain = 'default' ) {
+        return $text;
+    }
+}
+
+if ( ! function_exists( 'esc_html__' ) ) {
+    function esc_html__( $text, $domain = 'default' ) {
+        return $text;
+    }
+}
+
+// Taxonomy archive conditionals — configurable via $GLOBALS, default false.
+if ( ! function_exists( 'is_tax' ) ) {
+    function is_tax( $taxonomy = '', $term = '' ) {
+        return $GLOBALS['_test_is_tax'] ?? false;
+    }
+}
+
+if ( ! function_exists( 'is_category' ) ) {
+    function is_category( $category = '' ) {
+        return $GLOBALS['_test_is_category'] ?? false;
+    }
+}
+
+if ( ! function_exists( 'is_tag' ) ) {
+    function is_tag( $tag = '' ) {
+        return $GLOBALS['_test_is_tag'] ?? false;
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';
