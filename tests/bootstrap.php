@@ -20,8 +20,32 @@ if ( ! function_exists( 'plugin_dir_path' ) ) {
     }
 }
 
+// add_action — records every registration into $GLOBALS['_test_actions'] so
+// tests can locate and invoke hook callbacks (init closures, wp_head emitters)
+// and assert on remove_action() effects. Callbacks are never auto-executed.
 if ( ! function_exists( 'add_action' ) ) {
-    function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) {}
+    function add_action( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
+        $GLOBALS['_test_actions'][ $hook ][] = [
+            'callback' => $callback,
+            'priority' => $priority,
+        ];
+    }
+}
+
+if ( ! function_exists( 'remove_action' ) ) {
+    function remove_action( $hook, $callback, $priority = 10 ) {
+        $GLOBALS['_test_removed_actions'][] = [
+            'hook'     => $hook,
+            'callback' => $callback,
+            'priority' => $priority,
+        ];
+        foreach ( $GLOBALS['_test_actions'][ $hook ] ?? [] as $i => $entry ) {
+            if ( $entry['callback'] === $callback && $entry['priority'] === $priority ) {
+                unset( $GLOBALS['_test_actions'][ $hook ][ $i ] );
+            }
+        }
+        return true;
+    }
 }
 
 if ( ! function_exists( 'add_filter' ) ) {
@@ -213,8 +237,12 @@ if ( ! function_exists( 'mysql2date' ) ) {
 }
 
 // get_permalink — returns from $GLOBALS['_test_permalink'][$id] or a default URL.
+// Accepts a WP_Post object like core does.
 if ( ! function_exists( 'get_permalink' ) ) {
     function get_permalink( $id = 0 ) {
+        if ( is_object( $id ) ) {
+            $id = $id->ID ?? 0;
+        }
         $map = $GLOBALS['_test_permalink'] ?? array();
         return $map[ (int) $id ] ?? 'https://example.test/?p=' . (int) $id;
     }
@@ -301,6 +329,77 @@ if ( ! function_exists( 'is_category' ) ) {
 if ( ! function_exists( 'is_tag' ) ) {
     function is_tag( $tag = '' ) {
         return $GLOBALS['_test_is_tag'] ?? false;
+    }
+}
+
+// ------------------------------------------------------------------
+// Meta registration + write path (issue #3 regression coverage)
+// ------------------------------------------------------------------
+// register_post_meta records registrations; update_post_meta applies the
+// registered sanitize_callback exactly like WP core's sanitize_meta() does.
+// This is the layer that flattened array meta to '' in v2.14.4-v2.18.0.
+
+if ( ! function_exists( 'register_post_meta' ) ) {
+    function register_post_meta( $post_type, $meta_key, array $args = [] ) {
+        $GLOBALS['_test_registered_meta'][ $meta_key ] = $args;
+        return true;
+    }
+}
+
+if ( ! function_exists( 'update_post_meta' ) ) {
+    function update_post_meta( $post_id, $meta_key, $meta_value ) {
+        $args = $GLOBALS['_test_registered_meta'][ $meta_key ] ?? null;
+        if ( $args && ! empty( $args['sanitize_callback'] ) && is_callable( $args['sanitize_callback'] ) ) {
+            $meta_value = call_user_func( $args['sanitize_callback'], $meta_value );
+        }
+        $GLOBALS['_test_post_meta'][ $post_id ][ $meta_key ] = $meta_value;
+        return true;
+    }
+}
+
+// sanitize_textarea_field — mirrors WP core: arrays and objects sanitize to ''.
+if ( ! function_exists( 'sanitize_textarea_field' ) ) {
+    function sanitize_textarea_field( $str ) {
+        if ( is_object( $str ) || is_array( $str ) ) {
+            return '';
+        }
+        return trim( (string) $str );
+    }
+}
+
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+    function sanitize_text_field( $str ) {
+        if ( is_object( $str ) || is_array( $str ) ) {
+            return '';
+        }
+        return trim( preg_replace( '/[\r\n\t ]+/', ' ', (string) $str ) );
+    }
+}
+
+// get_role — null so the capability-provisioning init closure bails cleanly.
+if ( ! function_exists( 'get_role' ) ) {
+    function get_role( $role ) {
+        return null;
+    }
+}
+
+// Audit-log runtime dependencies (rr_audit_log).
+if ( ! function_exists( 'get_current_user_id' ) ) {
+    function get_current_user_id() {
+        return $GLOBALS['_test_current_user_id'] ?? 0;
+    }
+}
+
+if ( ! function_exists( 'get_userdata' ) ) {
+    function get_userdata( $user_id ) {
+        return $GLOBALS['_test_users'][ $user_id ] ?? null;
+    }
+}
+
+// esc_url — identity; sufficient for output assertions in emitter tests.
+if ( ! function_exists( 'esc_url' ) ) {
+    function esc_url( $url ) {
+        return $url;
     }
 }
 

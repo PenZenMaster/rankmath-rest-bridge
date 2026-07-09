@@ -1,5 +1,47 @@
 # Changelog
 
+## v2.18.1
+
+Patch release fixing two bugs found during the 2026-07-09 staging verification
+pass (GitHub issues #3 and #4).
+
+### Fixed
+
+- **Schema + audit-log writes silently discarded (issue #3)** —
+  `_rrseo_schema_graph` and `_rrseo_change_log` had been registered via
+  `register_post_meta()` (v2.14.4, G-16) with `type: string` and
+  `sanitize_textarea_field` as the sanitize callback. WordPress applies a
+  registered sanitize callback on every `update_post_meta()`, and the string
+  sanitizers return `''` for arrays — so every `POST /schema/{post_id}` write
+  and every `rr_audit_log()` append since v2.14.4 was flattened to an empty
+  string. Both registrations are removed (the keys are underscore-prefixed
+  protected meta, hidden from REST, and validated upstream); array meta
+  persists again and JSON-LD emission works end to end. No data migration is
+  needed: previously flattened values are empty strings that the read paths
+  already treat as absent.
+- **Double `<link rel="canonical">` (issue #4)** — the plugin emitted its
+  canonical at `wp_head:1` but never unhooked WP core's `rel_canonical`
+  (`wp_head:10`), so singular pages carried two canonical tags. The emitter
+  (now the named function `rr_emit_singular_canonical()`) calls
+  `remove_action( 'wp_head', 'rel_canonical' )` at the point it is committed
+  to emitting. All bail paths — RankMath active, non-singular, disallowed
+  post type, noindex, suppression filters, empty URL — leave core's
+  canonical in place so those pages still emit exactly one tag.
+
+### Tests
+
+- `tests/unit/MetaPersistenceTest.php` — replays the plugin's `init`
+  registrations and asserts the array-valued internal keys are unregistered,
+  the schema array round-trips through `update_post_meta()`, and audit-log
+  entries append correctly.
+- `tests/unit/CanonicalEmissionTest.php` — asserts single-tag emission with
+  core `rel_canonical` unhooked, per-post override precedence, and that all
+  bail paths keep core's emitter hooked.
+- `tests/bootstrap.php` now records `add_action`/`remove_action` calls and
+  applies registered sanitize callbacks in `update_post_meta()` — mirroring
+  core's `sanitize_meta()` layer whose absence from the harness let issue #3
+  ship undetected.
+
 ## v2.18.0
 
 v3.0 Bite 1: observation endpoints for the external Audit Engine, plus small-ticket

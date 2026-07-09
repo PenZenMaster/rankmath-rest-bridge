@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.18.0
+ * Version:      2.18.1
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.18.0' );
+define( 'RMB_VERSION', '2.18.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -351,29 +351,12 @@ add_action(
 			)
 		);
 
-		// Schema graph and audit log — internal keys, not exposed via REST.
-		register_post_meta(
-			'',
-			RR_SCHEMA_META_KEY,
-			array(
-				'type'              => 'string',
-				'single'            => true,
-				'show_in_rest'      => false,
-				'sanitize_callback' => 'sanitize_textarea_field',
-				'auth_callback'     => $auth,
-			)
-		);
-		register_post_meta(
-			'',
-			RR_CHANGE_LOG_KEY,
-			array(
-				'type'              => 'string',
-				'single'            => true,
-				'show_in_rest'      => false,
-				'sanitize_callback' => 'sanitize_textarea_field',
-				'auth_callback'     => $auth,
-			)
-		);
+		// RR_SCHEMA_META_KEY and RR_CHANGE_LOG_KEY are intentionally NOT
+		// registered. Both store arrays; a registered sanitize_callback runs
+		// on every update_post_meta() and the string sanitizers flatten
+		// arrays to '', silently discarding the value (issue #3). The keys
+		// are underscore-prefixed (protected meta) and validated upstream
+		// via rr_validate_schema() / rr_audit_log() before every write.
 	}
 );
 
@@ -800,66 +783,75 @@ add_action(
 // Suppressed when the post robots meta declares noindex, when another emitter
 // has already written a canonical tag during this request, or when the
 // rrseo_emit_canonical filter returns false.
-add_action(
-	'wp_head',
-	function () {
-		if ( class_exists( 'RankMath' ) ) {
-			return; // RankMath handles its own canonical.
-		}
-		if ( ! is_singular() ) {
+// When this emitter DOES write a tag it unhooks WP core's rel_canonical
+// (wp_head:10) so the page carries exactly one canonical (issue #4). On every
+// bail path core's emitter is left in place so those pages keep a canonical.
+/**
+ * Emits the plugin canonical tag for singular pages on wp_head:1.
+ *
+ * @return void
+ */
+function rr_emit_singular_canonical() {
+	if ( class_exists( 'RankMath' ) ) {
+		return; // RankMath handles its own canonical.
+	}
+	if ( ! is_singular() ) {
+		return;
+	}
+	$post_id = get_queried_object_id();
+	if ( ! $post_id ) {
+		return;
+	}
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		return;
+	}
+
+	$allowed_types = apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES );
+	if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
+		return;
+	}
+
+	// Suppress when the post is marked noindex.
+	$robots = rr_get_seo_meta( $post_id, 'robots' );
+	if ( $robots ) {
+		$robots_val = is_array( $robots ) ? implode( ',', $robots ) : (string) $robots;
+		if ( false !== stripos( $robots_val, 'noindex' ) ) {
 			return;
 		}
-		$post_id = get_queried_object_id();
-		if ( ! $post_id ) {
-			return;
-		}
-		$post = get_post( $post_id );
-		if ( ! $post ) {
-			return;
-		}
+	}
 
-		$allowed_types = apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES );
-		if ( ! in_array( $post->post_type, $allowed_types, true ) ) {
-			return;
-		}
+	// Allow external suppression (e.g. another SEO plugin already emitted one).
+	if ( ! apply_filters( 'rrseo_emit_canonical', true, $post_id ) ) {
+		return;
+	}
 
-		// Suppress when the post is marked noindex.
-		$robots = rr_get_seo_meta( $post_id, 'robots' );
-		if ( $robots ) {
-			$robots_val = is_array( $robots ) ? implode( ',', $robots ) : (string) $robots;
-			if ( false !== stripos( $robots_val, 'noindex' ) ) {
-				return;
-			}
-		}
+	// Source priority: per-post override → computed canonical → permalink.
+	$override = (string) get_post_meta( $post_id, '_rr_seo_canonical', true );
+	if ( '' === $override ) {
+		// Legacy RankMath fallback.
+		$override = (string) get_post_meta( $post_id, 'rank_math_canonical_url', true );
+	}
 
-		// Allow external suppression (e.g. another SEO plugin already emitted one).
-		if ( ! apply_filters( 'rrseo_emit_canonical', true, $post_id ) ) {
-			return;
-		}
+	if ( '' !== $override ) {
+		$canonical_url = $override;
+	} else {
+		$canonical_url = (string) get_permalink( $post );
+	}
 
-		// Source priority: per-post override → computed canonical → permalink.
-		$override = (string) get_post_meta( $post_id, '_rr_seo_canonical', true );
-		if ( '' === $override ) {
-			// Legacy RankMath fallback.
-			$override = (string) get_post_meta( $post_id, 'rank_math_canonical_url', true );
-		}
+	$canonical_url = (string) apply_filters( 'rrseo_canonical_url', $canonical_url, $post_id );
 
-		if ( '' !== $override ) {
-			$canonical_url = $override;
-		} else {
-			$canonical_url = (string) get_permalink( $post );
-		}
+	if ( '' === $canonical_url ) {
+		return;
+	}
 
-		$canonical_url = (string) apply_filters( 'rrseo_canonical_url', $canonical_url, $post_id );
+	// We are committed to emitting: drop WP core's rel_canonical
+	// (wp_head:10) so the page does not carry two canonical tags.
+	remove_action( 'wp_head', 'rel_canonical' );
 
-		if ( '' === $canonical_url ) {
-			return;
-		}
-
-		echo '<link rel="canonical" href="' . esc_url( $canonical_url ) . '">' . "\n";
-	},
-	1
-);
+	echo '<link rel="canonical" href="' . esc_url( $canonical_url ) . '">' . "\n";
+}
+add_action( 'wp_head', 'rr_emit_singular_canonical', 1 );
 
 
 // ── Taxonomy archive SEO meta output ──────────────────────────────────────────
