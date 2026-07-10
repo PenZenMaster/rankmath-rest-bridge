@@ -404,6 +404,52 @@ if ( ! function_exists( 'esc_url' ) ) {
 }
 
 // ------------------------------------------------------------------
+// Action engine stubs (v3.0 Bite 2)
+// ------------------------------------------------------------------
+
+if ( ! function_exists( 'absint' ) ) {
+    function absint( $maybeint ) {
+        return abs( (int) $maybeint );
+    }
+}
+
+// update_option — writes through to $GLOBALS['_test_options'].
+if ( ! function_exists( 'update_option' ) ) {
+    function update_option( $key, $value, $autoload = null ) {
+        $GLOBALS['_test_options'][ $key ] = $value;
+        return true;
+    }
+}
+
+// wp_cache_delete — records calls so tests can assert the cache-bust invariant.
+if ( ! function_exists( 'wp_cache_delete' ) ) {
+    function wp_cache_delete( $key, $group = '' ) {
+        $GLOBALS['_test_cache_deletes'][] = [ 'key' => $key, 'group' => $group ];
+        return true;
+    }
+}
+
+// do_action — records fired hooks (e.g. litespeed_purge_url) for assertions.
+if ( ! function_exists( 'do_action' ) ) {
+    function do_action( $hook, ...$args ) {
+        $GLOBALS['_test_fired_actions'][] = [ 'hook' => $hook, 'args' => $args ];
+    }
+}
+
+if ( ! function_exists( 'get_rest_url' ) ) {
+    function get_rest_url( $blog_id = null, $path = '/' ) {
+        return 'https://example.test/wp-json/' . ltrim( $path, '/' );
+    }
+}
+
+if ( ! function_exists( 'delete_transient' ) ) {
+    function delete_transient( $transient ) {
+        unset( $GLOBALS['_test_transients'][ $transient ] );
+        return true;
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';

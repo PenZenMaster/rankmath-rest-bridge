@@ -73,9 +73,35 @@ approves, and queues.
 | Action type | What it does | Risk | Reversible |
 |---|---|---|---|
 | `update_setting` | Toggle a WP option (e.g., `blog_public`) | Low | Yes |
-| `regenerate_llms_txt` | Trigger llms.txt rebuild via existing llms class | Low | Yes -- rollback restores prior content |
+| `regenerate_llms_txt` | Trigger llms.txt rebuild via existing llms class | Low | No -- llms.txt renders live from config; no stored prior content exists (returns `reversible: false` + reason) |
 | `update_meta_draft` | Write a draft title/meta/alt to a draft field, not the live field | Low | Yes -- rollback deletes draft field |
 | `toggle_indexing` | Set post-level `rr_seo_robots` (noindex/index) | Medium | Yes |
+
+##### `update_setting` option whitelist (from issue #5)
+
+Strictly typed; anything outside this table is rejected with 422.
+
+| Option | Type | Validation |
+|---|---|---|
+| `blog_public` | boolean | `0/1/true/false`, stored as `'0'`/`'1'` |
+| `blogname` | string | scalar, `sanitize_text_field` |
+| `blogdescription` | string | scalar, `sanitize_text_field` |
+| `page_on_front` | integer_post_id | post exists, `post_type: page`, published |
+| `page_for_posts` | integer_post_id | post exists, `post_type: page`, published |
+| `show_on_front` | enum | `posts` or `page` |
+| `default_ping_status` | enum | `open` or `closed` |
+| `default_comment_status` | enum | `open` or `closed` |
+| `posts_per_page` | integer_positive | `>= 1` |
+
+##### Envelope storage
+
+Executed-action envelopes are stored in the capped `rrseo_action_log` option
+(200 entries; no custom table). Site-level actions (`update_setting`,
+`regenerate_llms_txt`) have no post to attach `_rrseo_change_log` meta to, so
+the option log is the canonical envelope store for Bite 3's
+`GET /actions/{action_id}`. Post-targeted actions (`update_meta_draft`,
+`toggle_indexing`) additionally write a `_rrseo_change_log` audit row via
+`rr_audit_log()`.
 
 High-risk action types (canonicals, redirects, bulk content edits, plugin deactivation,
 database cleanup) are out of scope for v3.0. The Audit Engine drives those via human workflows

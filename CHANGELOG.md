@@ -1,5 +1,55 @@
 # Changelog
 
+## v2.19.0
+
+v3.0 Bite 2: typed action engine — the executor surface the external Audit
+Engine calls to apply approved, low-risk remediation steps.
+
+### New endpoints (POST, `manage_options`)
+
+- **`/actions/dry-run`** — validate a typed action payload and return the
+  simulated result (`status: simulated`, before/after, rollback envelope)
+  without writing anything.
+- **`/actions/execute`** — apply a whitelisted action. Honors `dry_run: true`
+  in the body. Response includes `action_id`
+  (`rrseo-action-{timestamp}-{hash}`), `applied_at`, `rollback_payload`,
+  `reversible`, and `audit_ref`.
+
+### Action whitelist (anything else is rejected 422)
+
+- **`update_setting`** — nine strictly typed WP core options (issue #5):
+  `blog_public`, `blogname`, `blogdescription`, `page_on_front`,
+  `page_for_posts`, `show_on_front`, `default_ping_status`,
+  `default_comment_status`, `posts_per_page`. Post-ID options must point to a
+  published page; enums and booleans are membership-checked.
+- **`regenerate_llms_txt`** — invalidates the canonical cache and re-renders
+  llms.txt via the existing renderer. Returns `reversible: false` with a
+  reason (content is derived from live configuration — spec table updated).
+- **`update_meta_draft`** — writes SEO fields to `_rr_seo_draft_*` post meta,
+  never the live `rr_seo_*` keys; validated via `rr_validate_seo_fields()`.
+  Rollback envelope lists the draft fields to delete.
+- **`toggle_indexing`** — sets post-level `rr_seo_robots` to `index` or
+  `noindex`; prior value stored in the rollback envelope.
+
+### Plumbing
+
+- Executed-action envelopes stored in the capped `rrseo_action_log` option
+  (200 entries, no custom tables) — the lookup store for Bite 3's
+  `GET /actions/{action_id}`. Post-targeted actions additionally write a
+  `_rrseo_change_log` audit row via `rr_audit_log()`.
+- Every execute fires both cache busts (`rrseo_bust_option_cache()` for each
+  touched option plus the action log, `rrseo_purge_rest_cache()` for affected
+  endpoints) per the v2.17.x invariant.
+- New module `includes/class-rrseo-actions.php`; 16 unit tests in
+  `tests/unit/ActionEngineTest.php`.
+- Spec updated: `docs/plugin-v3-executor-spec.md` now carries the issue #5
+  option whitelist and the envelope-storage design.
+
+### Deferred (needs sign-off)
+
+- `replace-all` snippet endpoint removal (Bite 2 scope in the spec) is a
+  breaking API change — proposed as a separate commit after review.
+
 ## v2.18.1
 
 Patch release fixing two bugs found during the 2026-07-09 staging verification
