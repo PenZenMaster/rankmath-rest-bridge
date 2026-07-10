@@ -121,6 +121,24 @@ required for render-blocking-CSS mitigations to work:
 }
 ```
 
+**`code_b64` field (v3.3.0+)** — optional base64-encoded alternative to
+`code`/`content` on all snippet write endpoints; wins when both are present.
+Use it if your host sits behind Cloudflare or another WAF that inspects
+request bodies for HTML event handlers: managed XSS rules 403 any body
+containing `on*=` patterns, which blocks legitimate preload/onload perf
+snippets. Base64 hides the attribute pattern during transport only — the
+snippet is decoded on receipt, stored as plain HTML, and returned decoded by
+all read endpoints. Invalid base64 (or non-UTF-8 content) is rejected with
+422 `invalid_base64`.
+
+```bash
+# Python: base64.b64encode(html.encode()).decode()  |  JS: btoa(html)
+curl -X POST "$BASE/snippets" -u "$CRED" -H "Content-Type: application/json" \
+  -d '{"title":"Async external CSS (perf)","location":"head","priority":1,
+       "display_on":"entire_website",
+       "code_b64":"PGxpbmsgcmVsPSJwcmVsb2FkIiBhcz0ic3R5bGUiIGhyZWY9Ii4uLiIgb25sb2FkPSJ0aGlzLnJlbD0nc3R5bGVzaGVldCciPg=="}'
+```
+
 Common WordPress `wp_head` priorities for targeting:
 
 | Priority | What runs there | Use case |

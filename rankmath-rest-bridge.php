@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.2.0
+ * Version:      3.3.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.2.0' );
+define( 'RMB_VERSION', '3.3.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -397,6 +397,34 @@ function rmb_snippet_priority( array $snippet, $location ) {
 		return (int) $snippet['priority'];
 	}
 	return isset( RR_SNIPPET_LOCATION_HOOKS[ $location ] ) ? RR_SNIPPET_LOCATION_HOOKS[ $location ][1] : 10;
+}
+
+/**
+ * Decodes a base64 snippet body from a write request (issue #8).
+ *
+ * Transport encoding only: some WAF/CDN rulesets (Cloudflare managed XSS
+ * rules) 403 any request body containing on*= attribute patterns, which
+ * blocks legitimate preload/onload perf snippets. Callers may send the body
+ * base64-encoded as code_b64; it is decoded here and stored/emitted exactly
+ * like a plain-text body. Authorization and storage semantics are unchanged.
+ *
+ * @param mixed $value Raw code_b64 request value.
+ * @return string|null Decoded UTF-8 body, or null when the value is not
+ *                     valid base64 or does not decode to valid UTF-8.
+ */
+function rr_decode_snippet_b64( $value ) {
+	if ( ! is_string( $value ) || '' === $value ) {
+		return null;
+	}
+	// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- transport decoding for admin-authenticated snippet writes (issue #8); strict mode + UTF-8 check below, result stored as plain HTML.
+	$decoded = base64_decode( $value, true );
+	if ( false === $decoded || '' === $decoded ) {
+		return null;
+	}
+	if ( 1 !== preg_match( '//u', $decoded ) ) {
+		return null;
+	}
+	return $decoded;
 }
 
 /**
@@ -4317,12 +4345,29 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 	$id    = sanitize_title( $title );
 
 	// Accept 'code' as an alias for 'content' so both field names work.
-	$body = $request->get_param( 'content' );
-	if ( null === $body ) {
-		$body = $request->get_param( 'code' );
+	// 'code_b64' wins over both when present (WAF-safe transport, issue #8).
+	$body_b64 = $request->get_param( 'code_b64' );
+	if ( null !== $body_b64 ) {
+		$body = rr_decode_snippet_b64( $body_b64 );
+		if ( null === $body ) {
+			return new WP_Error(
+				'invalid_base64',
+				'code_b64 must be valid base64 that decodes to UTF-8 content.',
+				array( 'status' => 422 )
+			);
+		}
+	} else {
+		$body = $request->get_param( 'content' );
+		if ( null === $body ) {
+			$body = $request->get_param( 'code' );
+		}
 	}
 	if ( null === $body || '' === $body ) {
-		return new WP_Error( 'missing_content', 'A snippet body is required. Send it as "content" or "code".', array( 'status' => 400 ) );
+		return new WP_Error(
+			'missing_content',
+			'A snippet body is required. Send it as "content", "code", or base64-encoded "code_b64".',
+			array( 'status' => 400 )
+		);
 	}
 
 	$base_id = $id;
@@ -4469,9 +4514,22 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 	}
 
 	// Accept 'code' as an alias for 'content'.
-	$content = $request->get_param( 'content' );
-	if ( null === $content ) {
-		$content = $request->get_param( 'code' );
+	// 'code_b64' wins over both when present (WAF-safe transport, issue #8).
+	$content_b64 = $request->get_param( 'code_b64' );
+	if ( null !== $content_b64 ) {
+		$content = rr_decode_snippet_b64( $content_b64 );
+		if ( null === $content ) {
+			return new WP_Error(
+				'invalid_base64',
+				'code_b64 must be valid base64 that decodes to UTF-8 content.',
+				array( 'status' => 422 )
+			);
+		}
+	} else {
+		$content = $request->get_param( 'content' );
+		if ( null === $content ) {
+			$content = $request->get_param( 'code' );
+		}
 	}
 	if ( null !== $content ) {
 		$snippets[ $id ]['content'] = $content;
@@ -4540,11 +4598,23 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 			continue;
 		}
 
-		$body = isset( $item['content'] ) ? $item['content'] : ( isset( $item['code'] ) ? $item['code'] : null );
+		// 'code_b64' wins over content/code when present (WAF-safe transport, issue #8).
+		if ( isset( $item['code_b64'] ) ) {
+			$body = rr_decode_snippet_b64( $item['code_b64'] );
+			if ( null === $body ) {
+				$errors[] = array(
+					'index' => $idx,
+					'error' => 'code_b64 must be valid base64 that decodes to UTF-8 content',
+				);
+				continue;
+			}
+		} else {
+			$body = isset( $item['content'] ) ? $item['content'] : ( isset( $item['code'] ) ? $item['code'] : null );
+		}
 		if ( null === $body || '' === (string) $body ) {
 			$errors[] = array(
 				'index' => $idx,
-				'error' => 'content or code is required',
+				'error' => 'content, code, or base64-encoded code_b64 is required',
 			);
 			continue;
 		}

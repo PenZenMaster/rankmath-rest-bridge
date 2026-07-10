@@ -1,5 +1,37 @@
 # Changelog
 
+## v3.3.0
+
+WAF-safe snippet transport (issue #8) — completes the render-blocking-CSS
+remediation story started in v3.2.0 for sites behind Cloudflare/Sucuri.
+
+### Added
+
+- **`code_b64` field on snippet writes** — optional base64-encoded snippet
+  body accepted by `POST /snippets`, `POST /snippets/bulk` (per item), and
+  `POST /snippets/{id}`. Decoded server-side and stored/emitted exactly like
+  a plain `code` body. Transport encoding only: WAF managed XSS rules
+  (e.g. Cloudflare rule 100015) 403 any request body containing `on*=`
+  attribute patterns, which blocks the legitimate
+  `<link rel="preload" onload="this.rel='stylesheet'">` perf pattern; inside
+  a base64 blob the pattern is invisible to body inspection. Authorization,
+  storage semantics, and the read path are unchanged.
+- `code_b64` wins when `code`/`content` are also present (callers can build
+  wrappers that always encode).
+- Strict validation: input must be strict-mode base64 (`base64_decode`
+  with `$strict = true`) decoding to non-empty valid UTF-8; anything else is
+  rejected 422 `invalid_base64` (per-item error in bulk).
+
+### Notes
+
+- The update endpoint (`POST /snippets/{id}`) accepts `code_b64` even though
+  the issue's acceptance criteria listed only create + bulk — the same WAF
+  blocks updates, and omitting it would force delete-and-recreate to edit a
+  WAF-sensitive snippet.
+- 6 new unit tests in `tests/unit/SnippetBase64Test.php`, including the
+  acceptance round trip: an `onload=`-bearing payload decodes, stores, and
+  emits verbatim at priority 1.
+
 ## v3.2.0
 
 Snippet emission priority (issue #7) — unblocks render-blocking-CSS
