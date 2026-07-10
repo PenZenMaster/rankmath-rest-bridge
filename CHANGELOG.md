@@ -1,5 +1,43 @@
 # Changelog
 
+## v3.2.0
+
+Snippet emission priority (issue #7) — unblocks render-blocking-CSS
+remediation on locked themes by letting snippets emit before theme-enqueued
+styles.
+
+### Added
+
+- **`priority` field on snippets** (integer 0–10000, optional) — accepted by
+  `POST /snippets`, `POST /snippets/bulk` (per item), and
+  `POST /snippets/{id}`; persisted and returned in all snippet responses.
+  Maps directly to WordPress hook priority: a `location: "head"` snippet with
+  `priority: 1` emits at `wp_head:1`, ahead of theme stylesheets registered
+  at `wp_head:5-10` — required for preload/onload swaps, critical CSS
+  inlining, and LCP preloads to have any effect.
+- Invalid values (non-integer, negative, > 10000) are rejected with
+  422 `invalid_priority`.
+
+### Emission model
+
+- `rmb_register_snippet_emitters()` registers one emitter per distinct
+  (location, priority) bucket found in the store at plugin load, plus the
+  three location defaults. `rmb_output_snippets()` now emits a single bucket
+  per call.
+- **Backward compatible**: snippets without `priority` keep the pre-v3.2.0
+  defaults (`wp_head:20`, `wp_body_open:10`, `wp_footer:10`) — no behavior
+  change, no migration.
+- Priorities 0–1 interleave with the plugin's own canonical/Twitter/robots
+  emission at `wp_head:1` (same-priority callbacks run in registration
+  order) — documented for snippet authors targeting the earliest slot.
+
+### Tests
+
+- 9 new unit tests in `tests/unit/SnippetPriorityTest.php` (validation,
+  location defaults, bucket registration, emission-order fixture, bucket
+  filtering). Bootstrap gains `is_user_logged_in()` / `esc_attr()` stubs —
+  first unit coverage of the snippet emission path.
+
 ## v3.1.0
 
 v3.0 Bite 3: rollback layer — every executed action can now be inspected and

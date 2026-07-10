@@ -105,6 +105,34 @@ for term IDs — use `POST /update` directly for term meta writes.
 #### `POST /snippets/bulk` — atomic batch create (all-or-nothing validation)
 #### `DELETE /snippets/{slug}` — delete a snippet
 
+**`priority` field (v3.2.0+)** — optional integer `0`–`10000` on all snippet
+write endpoints; maps to WordPress hook priority for the snippet's location
+hook. Omitted = current defaults (`wp_head:20`, `wp_body_open:10`,
+`wp_footer:10`). Use a low priority to emit before theme-enqueued assets —
+required for render-blocking-CSS mitigations to work:
+
+```json
+{
+  "title": "Async external CSS (perf)",
+  "code": "<link rel=\"preload\" as=\"style\" href=\"...\" onload=\"this.onload=null;this.rel='stylesheet'\">",
+  "location": "head",
+  "display_on": "entire_website",
+  "priority": 1
+}
+```
+
+Common WordPress `wp_head` priorities for targeting:
+
+| Priority | What runs there | Use case |
+|---|---|---|
+| `1` | Plugin canonical/robots emission; before nearly everything | Preloads, critical CSS inlining |
+| `5` | `wp_resource_hints` (dns-prefetch) | Additional preconnect hints |
+| `7` | `wp_preload_resources` (WP 6.1+) | LCP image preload |
+| `8` | `wp_enqueue_scripts` fires | Theme/plugin styles register here |
+| `10` | Default action priority | Most theme/plugin output |
+| `20` | Snippet default (unchanged) | General head snippets |
+| `100+` | Late injection | Analytics, tracking pixels |
+
 > `POST /snippets/replace-all` was removed in v3.0.0 (deprecated since v2.3.1).
 > Use the per-snippet endpoints or `POST /snippets/bulk`; the
 > `rrseo_replace_all_snippets` capability is revoked automatically on upgrade.

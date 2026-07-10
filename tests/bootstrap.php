@@ -107,6 +107,18 @@ if ( ! function_exists( 'is_admin' ) ) {
     }
 }
 
+if ( ! function_exists( 'is_user_logged_in' ) ) {
+    function is_user_logged_in() {
+        return (bool) ( $GLOBALS['_test_user_logged_in'] ?? false );
+    }
+}
+
+if ( ! function_exists( 'esc_attr' ) ) {
+    function esc_attr( $text ) {
+        return htmlspecialchars( (string) $text, ENT_QUOTES );
+    }
+}
+
 // is_singular / get_queried_object_id — configured per test via $GLOBALS.
 if ( ! function_exists( 'is_singular' ) ) {
     function is_singular( $post_types = '' ) {

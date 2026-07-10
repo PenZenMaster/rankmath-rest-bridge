@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.1.0
+ * Version:      3.2.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.1.0' );
+define( 'RMB_VERSION', '3.2.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -360,36 +360,103 @@ add_action(
 
 
 // ── Output managed snippets ───────────────────────────────────────────────────
-// Three location hooks. Priorities are chosen so snippets render AFTER the
-// v2.11.3 canonical / Twitter / robots emission (which lives at wp_head:1):
+// Hook + default priority per snippet location. The defaults preserve
+// pre-v3.2.0 behavior for snippets without a stored priority:
 //
 // head      → wp_head:20
 // body_open → wp_body_open:10
 // footer    → wp_footer:10
 //
+// Snippets may override with an explicit priority (0-10000, issue #7) so
+// perf-remediation snippets (preload/onload swaps, critical CSS) can emit
+// before theme-enqueued styles at wp_head:5-10. Priorities 0-1 interleave
+// with the plugin's own canonical / Twitter / robots emission (wp_head:1);
+// same-priority callbacks run in registration order.
+//
 // rmb_output_snippets() short-circuits on admin / REST / AJAX requests and on
 // the rrseo_emit_snippets option, so the hooks are cheap when disabled.
-add_action(
-	'wp_head',
-	function () {
-		rmb_output_snippets( 'head' );
-	},
-	20
+define(
+	'RR_SNIPPET_LOCATION_HOOKS',
+	array(
+		'head'      => array( 'wp_head', 20 ),
+		'body_open' => array( 'wp_body_open', 10 ),
+		'footer'    => array( 'wp_footer', 10 ),
+	)
 );
-add_action(
-	'wp_body_open',
-	function () {
-		rmb_output_snippets( 'body_open' );
-	},
-	10
-);
-add_action(
-	'wp_footer',
-	function () {
-		rmb_output_snippets( 'footer' );
-	},
-	10
-);
+define( 'RR_SNIPPET_PRIORITY_MAX', 10000 );
+
+/**
+ * Returns a snippet's effective emission priority for its location.
+ *
+ * @param array  $snippet  Stored snippet array.
+ * @param string $location Snippet location (head, body_open, footer).
+ * @return int Stored priority when present, else the location default.
+ */
+function rmb_snippet_priority( array $snippet, $location ) {
+	if ( isset( $snippet['priority'] ) && is_numeric( $snippet['priority'] ) ) {
+		return (int) $snippet['priority'];
+	}
+	return isset( RR_SNIPPET_LOCATION_HOOKS[ $location ] ) ? RR_SNIPPET_LOCATION_HOOKS[ $location ][1] : 10;
+}
+
+/**
+ * Validates a snippet priority value from a write request.
+ *
+ * @param mixed $value Raw request value.
+ * @return int|null Normalized integer priority, or null when invalid.
+ */
+function rr_validate_snippet_priority( $value ) {
+	if ( is_bool( $value ) ) {
+		return null;
+	}
+	if ( ! is_int( $value ) && ! ( is_string( $value ) && 1 === preg_match( '/^\d+$/', $value ) ) ) {
+		return null;
+	}
+	$int = (int) $value;
+	return ( $int >= 0 && $int <= RR_SNIPPET_PRIORITY_MAX ) ? $int : null;
+}
+
+/**
+ * Registers one emitter per (location, priority) bucket found in the snippet
+ * store, plus the three location defaults. Runs at plugin load so custom
+ * priorities land before WordPress fires wp_head.
+ *
+ * @return void
+ */
+function rmb_register_snippet_emitters() {
+	$buckets = array();
+	foreach ( RR_SNIPPET_LOCATION_HOOKS as $location => $hook_pair ) {
+		$buckets[ $location ] = array( $hook_pair[1] => true );
+	}
+
+	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
+	if ( is_array( $snippets ) ) {
+		foreach ( $snippets as $snippet ) {
+			if ( ! is_array( $snippet ) ) {
+				continue;
+			}
+			$location = isset( $snippet['location'] ) ? (string) $snippet['location'] : 'footer';
+			if ( ! isset( RR_SNIPPET_LOCATION_HOOKS[ $location ] ) ) {
+				continue;
+			}
+			$buckets[ $location ][ rmb_snippet_priority( $snippet, $location ) ] = true;
+		}
+	}
+
+	foreach ( $buckets as $location => $priorities ) {
+		$hook = RR_SNIPPET_LOCATION_HOOKS[ $location ][0];
+		foreach ( array_keys( $priorities ) as $priority ) {
+			add_action(
+				$hook,
+				function () use ( $location, $priority ) {
+					rmb_output_snippets( $location, $priority );
+				},
+				$priority
+			);
+		}
+	}
+}
+rmb_register_snippet_emitters();
 
 /**
  * Outputs active managed snippets for the given location.
@@ -416,10 +483,16 @@ add_action(
  * Unknown display_on values are silently skipped to keep the renderer
  * forward-compatible with new RankRocket targeting values.
  *
- * @param string $location One of: head, body_open, footer.
+ * Each call emits one (location, priority) bucket: snippets whose effective
+ * priority (stored `priority`, else the location default) matches $priority.
+ * Buckets are registered by rmb_register_snippet_emitters().
+ *
+ * @param string   $location One of: head, body_open, footer.
+ * @param int|null $priority Priority bucket to emit; null means the
+ *                           location's default bucket (pre-v3.2.0 behavior).
  * @return void
  */
-function rmb_output_snippets( $location ) {
+function rmb_output_snippets( $location, $priority = null ) {
 	// Never emit inside admin screens, REST calls, or AJAX endpoints — those
 	// surfaces don't render a public page and would inject script bodies into
 	// API responses, which can corrupt JSON payloads.
@@ -449,6 +522,10 @@ function rmb_output_snippets( $location ) {
 		return;
 	}
 
+	if ( null === $priority ) {
+		$priority = isset( RR_SNIPPET_LOCATION_HOOKS[ $location ] ) ? RR_SNIPPET_LOCATION_HOOKS[ $location ][1] : 10;
+	}
+
 	foreach ( $snippets as $id => $snippet ) {
 		if ( ! is_array( $snippet ) ) {
 			continue;
@@ -461,6 +538,10 @@ function rmb_output_snippets( $location ) {
 			continue;
 		}
 		if ( ( $snippet['location'] ?? 'footer' ) !== $location ) {
+			continue;
+		}
+		// Belongs to a different priority bucket; its own emitter handles it.
+		if ( rmb_snippet_priority( $snippet, $location ) !== (int) $priority ) {
 			continue;
 		}
 
@@ -4288,6 +4369,19 @@ function rmb_snippets_create( WP_REST_Request $request ) {
 		'updated_at'      => current_time( 'mysql' ),
 	);
 
+	$priority_raw = $request->get_param( 'priority' );
+	if ( null !== $priority_raw ) {
+		$priority_val = rr_validate_snippet_priority( $priority_raw );
+		if ( null === $priority_val ) {
+			return new WP_Error(
+				'invalid_priority',
+				'priority must be an integer between 0 and ' . RR_SNIPPET_PRIORITY_MAX,
+				array( 'status' => 422 )
+			);
+		}
+		$snippet['priority'] = $priority_val;
+	}
+
 	$snippets[ $id ] = $snippet;
 	update_option( RMB_SNIPPETS_KEY, $snippets );
 	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
@@ -4359,6 +4453,19 @@ function rmb_snippets_update( WP_REST_Request $request ) {
 			);
 		}
 		$snippets[ $id ]['display_on_user'] = $user_filter;
+	}
+
+	$priority_raw = $request->get_param( 'priority' );
+	if ( null !== $priority_raw ) {
+		$priority_val = rr_validate_snippet_priority( $priority_raw );
+		if ( null === $priority_val ) {
+			return new WP_Error(
+				'invalid_priority',
+				'priority must be an integer between 0 and ' . RR_SNIPPET_PRIORITY_MAX,
+				array( 'status' => 422 )
+			);
+		}
+		$snippets[ $id ]['priority'] = $priority_val;
 	}
 
 	// Accept 'code' as an alias for 'content'.
@@ -4475,6 +4582,19 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 			'created_at'      => $ts,
 			'updated_at'      => $ts,
 		);
+
+		if ( isset( $item['priority'] ) ) {
+			$priority_val = rr_validate_snippet_priority( $item['priority'] );
+			if ( null === $priority_val ) {
+				$errors[] = array(
+					'index' => $idx,
+					'error' => 'priority must be an integer between 0 and ' . RR_SNIPPET_PRIORITY_MAX,
+				);
+				unset( $prepared[ $id ] );
+				continue;
+			}
+			$prepared[ $id ]['priority'] = $priority_val;
+		}
 	}
 
 	if ( ! empty( $errors ) ) {
