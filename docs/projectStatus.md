@@ -1,11 +1,39 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-07-10
-**Current Version:** 3.0.0
+**Current Version:** 3.1.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** ab18857 -- docs: add shell-labeling rule to project playbook
+**Last Commit:** 3b84d03 -- build: GitHub Actions CI (v3.0 Bite 4)
 **Git Status:** clean
+
+---
+
+## 2026-07-10 Session (continued) -- Bites 3+4: v3.0 Roadmap COMPLETE
+
+### Session Summary
+Same-day continuation after the v3.0.0 release. Shipped Bite 3 (rollback
+layer) as v3.1.0 -- deployed and smoke-tested by the user on production --
+then Bite 4 (GitHub Actions CI), whose first run came back green on all
+three jobs. The v3.0 milestone from docs/plugin-v3-executor-spec.md is
+fully delivered.
+
+### Accomplishments
+- **v3.1.0 SHIPPED + DEPLOYED (Bite 3)** -- `GET /actions/{action_id}` +
+  `POST /actions/{action_id}/rollback`: drift detection (force override),
+  double-rollback protection, irreversible refusal, dry-run,
+  delete-on-absent-prior restores; 13 new tests (192/469 green)
+- **Bite 4 CI SHIPPED, first run green** -- phpcs + phpunit on PHP 7.4 +
+  8.3 and a release-integrity job (version agreement + zip committed)
+- **Dependency fix** -- composer platform.php pinned 7.4.33; lock had
+  resolved doctrine/instantiator 2.1.0 (PHP ^8.4) which would have broken
+  both CI jobs
+- **README** -- Typed Actions section added (Bites 2+3 were undocumented)
+
+### Next
+Telemetry verdict review (~2026-07-13); roadmap planning -- v3.0 spec
+delivered, next scope comes from the Audit Engine side; optional live
+execute->rollback confirmation on Higgins.
 
 ---
 

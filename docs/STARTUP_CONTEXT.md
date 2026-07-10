@@ -1,56 +1,57 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-07-10 (checkpoint 11:50)
+**Last Updated:** 2026-07-10 (checkpoint 13:59)
 **Branch:** main
-**Version:** 3.0.0 (shipped, deployed to production, verified)
-**Last Commit:** ab18857 -- docs: add shell-labeling rule to project playbook
+**Version:** 3.1.0 (shipped, deployed to production, smoke-tested)
+**Last Commit:** 3b84d03 -- build: GitHub Actions CI (v3.0 Bite 4)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v3.0.0 SHIPPED + DEPLOYED (breaking)** -- `POST /snippets/replace-all`
-   removed (deprecated since v2.3.1); `rrseo_replace_all_snippets` cap
-   auto-revoked on upgrade. User deployed to Higgins Overhead Door via
-   self-update (2.18.1 -> 3.0.0 in one hop); no issues.
+1. **v3.0 ROADMAP COMPLETE (Bites 1-4)** -- Bite 3 rollback layer shipped
+   as v3.1.0 (`GET /actions/{action_id}` + `POST .../rollback` with drift
+   detection, double-rollback protection, dry-run); Bite 4 GitHub Actions
+   CI live and green (phpcs + phpunit on PHP 7.4 + 8.3, release-integrity
+   job). Suite: 192 tests / 469 assertions.
 
-2. **Issue #5 CLOSED** -- action-engine smoke test passed on the live
-   install: dry-run + execute for `update_setting blog_public` (launch
-   flow) and `toggle_indexing`. Verification comment on the issue.
+2. **v3.0.0 breaking release** -- replace-all endpoint removed, cap
+   auto-revoked on upgrade. v3.0.0 then v3.1.0 both deployed to Higgins
+   Overhead Door via self-update; smoke tests passed; issue #5 closed.
 
-3. **Playbook rule added** -- every command/script given to the user must
-   be labeled with its execution environment (PowerShell/CMD/Git Bash).
-   In global CLAUDE.md section 6 + project playbook section 0 + memory.
+3. **CI dependency fix** -- composer platform.php pinned to 7.4.33
+   (dependency tree had resolved a package requiring PHP ^8.4 that would
+   have failed both CI matrix jobs).
 
 ---
 
 ## Next 3 Priorities
 
-1. **v3.0 Bite 3 -- rollback layer (IN PROGRESS)** --
-   `GET /actions/{action_id}` (reads `rrseo_action_log`), then
-   `POST /actions/{action_id}/rollback` replaying stored envelopes.
-   Edge cases: `reversible: false`, double rollback, current-value drift.
-
-2. **v3.0 Bite 4 -- GitHub Actions CI** -- phpcs + phpunit on every
-   push/PR instead of local hooks only.
-
-3. **Telemetry verdict review** -- rrc-telemetry.php collecting on target
+1. **Telemetry verdict review** -- rrc-telemetry.php collecting on target
    since 2026-07-06; verdicts trustworthy from ~2026-07-13. Kill switch:
    `RRC_PUA_DISABLE` in wp-config.
+
+2. **Roadmap planning** -- v3.0 spec fully delivered; next scope comes
+   from the external Audit Engine side (plugin stays lean executor per
+   the architectural decision). Old backlog candidate: llms.txt
+   raw-content upload verification.
+
+3. **Optional**: confirm a live execute->rollback cycle on Higgins
+   (unit coverage thorough; live rollback not explicitly confirmed).
 
 ---
 
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `ab18857`
-- v3.0.0 zip committed at `releases/v3.0.0/` (128 entries, checks 4/4)
-- Gates: phpcs clean (9 files), phpunit 179 tests / 408 assertions green
+- Branch `main` -- in sync with origin at `3b84d03`
+- v3.1.0 zip at `releases/v3.1.0/`; CI run 29122197253 green (3 jobs)
+- Gates: phpcs clean (9 files), phpunit 192 tests / 469 assertions
 
 **Files of note:**
-- Action engine: `includes/class-rrseo-actions.php` (Bite 2; Bite 3 builds
-  on its `rrseo_action_log` envelope store)
-- Spec: `docs/plugin-v3-executor-spec.md`
+- Action engine + rollback: `includes/class-rrseo-actions.php` (v1.10)
+- CI: `.github/workflows/ci.yml`
+- Spec: `docs/plugin-v3-executor-spec.md` (all 4 bites delivered)
 - Release hook note: run `git push` twice (zip commit lands after refspec)
 
 **Blockers:**
@@ -60,14 +61,15 @@
 
 ## Key Context Notes
 
-1. **replace-all URL now hits the {id} wildcard** -- POST to
-   `/snippets/replace-all` returns `not_found` 404 (slug lookup), NOT
-   `rest_no_route`. Handler never upserts; legacy callers cannot write.
+1. **Deployment state** -- Higgins Overhead Door runs v3.1.0 (2026-07-10).
 
-2. **Git index case quirk** -- playbook is tracked as `.claude/claude.md`
-   (lowercase); `git add .claude/CLAUDE.md` silently stages nothing.
+2. **replace-all URL now hits the {id} wildcard** -- returns `not_found`
+   404 (slug lookup), NOT `rest_no_route`. Handler never upserts.
 
-3. **Issue #3 recurrence guard** -- NEVER register array-valued meta keys
+3. **Git index case quirk** -- playbook tracked as `.claude/claude.md`
+   (lowercase); `git add` with uppercase path silently stages nothing.
+   `composer.lock` is gitignored by convention (platform pin keeps CI
+   resolution deterministic).
+
+4. **Issue #3 recurrence guard** -- NEVER register array-valued meta keys
    with string sanitize callbacks; `MetaPersistenceTest` guards this.
-
-4. **Deployment state** -- Higgins Overhead Door runs v3.0.0 (2026-07-10).
