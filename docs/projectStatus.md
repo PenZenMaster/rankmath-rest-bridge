@@ -1,11 +1,42 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-07-06
-**Current Version:** 2.18.0
+**Last Updated:** 2026-07-09
+**Current Version:** 2.19.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** f1f00ea -- chore: release v2.18.0 zip
+**Last Commit:** 4660836 -- chore: release v2.19.0 zip
 **Git Status:** clean
+
+---
+
+## 2026-07-09 Session -- v2.18.1 Hotfix + v3.0 Bite 2 (v2.19.0) -- COMPLETE
+
+### Session Summary
+Reviewed the three GitHub issues filed from the staging verification pass.
+Root-caused both bugs in code (the issue reports' suspected causes were
+partly wrong), shipped hotfix v2.18.1 -- deployed and QA-passed by the user
+mid-session -- then built and shipped v3.0 Bite 2 as v2.19.0.
+
+### Accomplishments
+- **Issue #3 CLOSED (v2.18.1)** -- schema + audit-log writes had been
+  silently flattened to '' since v2.14.4 by registered string sanitize
+  callbacks on array-valued meta keys; registrations removed
+- **Issue #4 CLOSED (v2.18.1)** -- double canonical: emitter (now
+  `rr_emit_singular_canonical()`) unhooks core `rel_canonical` when emitting
+- **v3.0 Bite 2 SHIPPED (v2.19.0)** -- `POST /actions/dry-run` +
+  `/actions/execute` in new `includes/class-rrseo-actions.php`; whitelist:
+  update_setting (9 typed options, issue #5), regenerate_llms_txt,
+  update_meta_draft, toggle_indexing; envelopes in capped `rrseo_action_log`
+  option; per-post audit rows; both cache busts per invariant
+- **Issue #5** -- folded into Bite 2 as update_setting; shipped; closes
+  after staging verification
+- **Harness hardened** -- bootstrap models core sanitize_meta() (the #3
+  blind spot); 26 new tests; suite 179 tests / 408 assertions green
+
+### Next
+Deploy v2.19.0 + smoke-test /actions/* on staging (close #5); decide
+replace-all removal (breaking, deferred for sign-off); Bite 3 rollback layer
+(GET /actions/{id} + POST /actions/{id}/rollback).
 
 ---
 
