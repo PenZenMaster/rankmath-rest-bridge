@@ -1,5 +1,47 @@
 # Changelog
 
+## v3.1.0
+
+v3.0 Bite 3: rollback layer — every executed action can now be inspected and
+undone from its stored envelope.
+
+### New endpoints (`manage_options`)
+
+- **`GET /actions/{action_id}`** — returns the stored envelope from
+  `rrseo_action_log` (before/after, rollback payload, reversibility,
+  rollback marks). 404 `action_not_found` when absent — the log keeps the
+  most recent 200 executed actions; older entries are pruned.
+- **`POST /actions/{action_id}/rollback`** — replays the stored rollback
+  payload. Honors `dry_run: true` (simulate, nothing written or marked) and
+  `force: true` (roll back despite drift).
+
+### Rollback semantics
+
+- **Drift detection** — if the target changed since the action executed
+  (current value no longer matches the envelope's recorded `after`), the
+  rollback is refused with 409 `action_state_drift` listing the drifted
+  fields; `force: true` overrides and records the drift as warnings on the
+  rollback envelope.
+- **Double-rollback protection** — 409 `action_already_rolled_back` with a
+  reference to the first rollback's action ID.
+- **Irreversible actions** — 422 `action_not_reversible` with the stored
+  reason (e.g. `regenerate_llms_txt`); rollback records themselves are not
+  reversible (re-execute the original action to redo).
+- **Absent-prior restore** — prior values recorded as absent ('' meta /
+  missing option) are deleted on restore, not written back as empty strings.
+- Rolled-back originals are marked in the log (`rolled_back_at`,
+  `rollback_action_id`); each rollback stores its own envelope, writes the
+  per-post audit row for post-targeted actions, and fires both cache busts
+  (v2.17.x invariant).
+
+### Plumbing
+
+- `rr_action_log_find()` / `rr_action_log_write()` helpers; route pattern
+  matches `rr_action_id()` output only, so the new routes cannot shadow
+  `/actions/dry-run` or `/actions/execute`.
+- 13 new unit tests in `tests/unit/ActionRollbackTest.php`; bootstrap gains
+  `delete_post_meta()` / `delete_option()` stubs.
+
 ## v3.0.0
 
 Breaking release completing the v3.0 Bite 2 scope: the deprecated

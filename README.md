@@ -162,6 +162,38 @@ external verification belongs to the Audit Engine, not the plugin.
 
 ---
 
+### Typed Actions (v2.19.0 — v3.0 Bites 2+3)
+
+Whitelisted, auditable, reversible mutations for the external Audit Engine.
+All require `manage_options`. Whitelist: `update_setting` (9 typed WP core
+options), `regenerate_llms_txt`, `update_meta_draft` (writes `_rr_seo_draft_*`,
+never live meta), `toggle_indexing`. Anything else is rejected 422.
+
+```bash
+# Validate + simulate; never writes
+curl -X POST "$BASE/actions/dry-run" -u "$CRED" -H "Content-Type: application/json" \
+  -d '{"action_type":"update_setting","target_id":"blog_public","payload":{"new_value":1}}'
+
+# Apply; returns action_id + rollback envelope, stored in rrseo_action_log
+curl -X POST "$BASE/actions/execute" -u "$CRED" -H "Content-Type: application/json" \
+  -d '{"action_type":"toggle_indexing","target_id":123,"payload":{"new_value":"noindex"}}'
+
+# Look up a stored envelope (log keeps the most recent 200 executed actions)
+curl "$BASE/actions/rrseo-action-20260710120000-1a2b3c4d" -u "$CRED"
+
+# Undo an executed action by replaying its stored envelope
+curl -X POST "$BASE/actions/rrseo-action-20260710120000-1a2b3c4d/rollback" \
+  -u "$CRED" -H "Content-Type: application/json" -d '{}'
+```
+
+Rollback refusals: 404 `action_not_found`, 422 `action_not_reversible`
+(e.g. `regenerate_llms_txt`), 409 `action_already_rolled_back`, and 409
+`action_state_drift` when the target changed since execution — send
+`{"force": true}` to roll back anyway. `{"dry_run": true}` simulates
+without writing or marking.
+
+---
+
 ### Self-Update
 
 The plugin ships a headless self-update flow — no WP admin login required.

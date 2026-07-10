@@ -16,12 +16,16 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-09
- * Last Modified Date: 2026-07-09
+ * Last Modified Date: 2026-07-10
  *
  * Comments:
  * v1.00 - Initial release. POST /actions/dry-run + /actions/execute with the
  *         Bite 2 whitelist: update_setting, regenerate_llms_txt,
  *         update_meta_draft, toggle_indexing.
+ * v1.10 - v3.0 Bite 3 rollback layer: GET /actions/{action_id} envelope
+ *         lookup and POST /actions/{action_id}/rollback replaying stored
+ *         envelopes, with drift detection (force:true override), double-
+ *         rollback protection, and dry-run support.
  *
  * @package RankRocket_SEO
  */
@@ -381,6 +385,20 @@ function rr_action_id() {
 }
 
 /**
+ * Caps and persists the action log, busting its option cache.
+ *
+ * @param array $log Full log array (list of envelopes).
+ * @return void
+ */
+function rr_action_log_write( array $log ) {
+	if ( count( $log ) > RR_ACTION_LOG_MAX ) {
+		$log = array_slice( $log, -RR_ACTION_LOG_MAX );
+	}
+	update_option( RR_ACTION_LOG_KEY, array_values( $log ), false );
+	rrseo_bust_option_cache( RR_ACTION_LOG_KEY );
+}
+
+/**
  * Appends an action envelope to the capped rrseo_action_log option.
  *
  * @param array $envelope Full action envelope.
@@ -390,11 +408,29 @@ function rr_action_log_store( array $envelope ) {
 	$log   = get_option( RR_ACTION_LOG_KEY, array() );
 	$log   = is_array( $log ) ? $log : array();
 	$log[] = $envelope;
-	if ( count( $log ) > RR_ACTION_LOG_MAX ) {
-		$log = array_slice( $log, -RR_ACTION_LOG_MAX );
+	rr_action_log_write( $log );
+}
+
+/**
+ * Finds a stored envelope by action ID.
+ *
+ * @param string $action_id Action ID from an execute response.
+ * @return array{envelope: array, index: int}|null Null when not present
+ *                                                 (never stored, or pruned
+ *                                                 by the log cap).
+ */
+function rr_action_log_find( $action_id ) {
+	$log = get_option( RR_ACTION_LOG_KEY, array() );
+	$log = is_array( $log ) ? $log : array();
+	foreach ( $log as $index => $envelope ) {
+		if ( is_array( $envelope ) && isset( $envelope['action_id'] ) && $envelope['action_id'] === $action_id ) {
+			return array(
+				'envelope' => $envelope,
+				'index'    => $index,
+			);
+		}
 	}
-	update_option( RR_ACTION_LOG_KEY, $log, false );
-	rrseo_bust_option_cache( RR_ACTION_LOG_KEY );
+	return null;
 }
 
 /**
@@ -448,6 +484,242 @@ function rr_action_run( $action_type, $target_id, array $payload, $dry_run, $req
 				'/actions/execute',
 				array(
 					$envelope['action_type'] => array(
+						'before' => $result['before'],
+						'after'  => $result['after'],
+					),
+				),
+				$envelope['request_id'],
+				'written'
+			);
+		}
+
+		// v2.17.x invariant: both cache layers bust on every executor write.
+		foreach ( $result['touched_options'] as $option_key ) {
+			rrseo_bust_option_cache( $option_key );
+		}
+		rrseo_purge_rest_cache( $result['purge_endpoints'] );
+	}
+
+	return $envelope;
+}
+
+
+// ── Rollback layer (v3.0 Bite 3) ──────────────────────────────────────────────
+
+/**
+ * Detects drift between an envelope's recorded 'after' state and the current
+ * live value. A non-empty result means something else changed the target
+ * since the action executed; rollback then requires force:true.
+ *
+ * @param array $envelope Stored action envelope.
+ * @return string[] Human-readable drift descriptions; empty when clean.
+ */
+function rr_action_rollback_drift( array $envelope ) {
+	$drift = array();
+
+	switch ( $envelope['action_type'] ) {
+		case 'update_setting':
+			$option  = (string) $envelope['target_id'];
+			$current = get_option( $option );
+			if ( (string) $current !== (string) $envelope['after'] ) {
+				$drift[] = "{$option}: current value '" . ( is_scalar( $current ) ? $current : gettype( $current ) )
+					. "' no longer matches the action's recorded result '{$envelope['after']}'";
+			}
+			break;
+
+		case 'update_meta_draft':
+			$post_id = absint( $envelope['target_id'] );
+			$after   = is_array( $envelope['after'] ) ? $envelope['after'] : array();
+			foreach ( $after as $field => $expected ) {
+				$current = get_post_meta( $post_id, RR_ACTION_DRAFT_PREFIX . $field, true );
+				if ( (string) $current !== (string) $expected ) {
+					$drift[] = "{$field}: current draft value no longer matches the action's recorded result";
+				}
+			}
+			break;
+
+		case 'toggle_indexing':
+			$post_id = absint( $envelope['target_id'] );
+			$current = get_post_meta( $post_id, RR_SEO_META_KEYS['robots'], true );
+			if ( (string) $current !== (string) $envelope['after'] ) {
+				$drift[] = "robots: current value '{$current}' no longer matches the action's recorded result '{$envelope['after']}'";
+			}
+			break;
+	}
+
+	return $drift;
+}
+
+/**
+ * Restores the pre-action state recorded in an envelope's rollback payload.
+ * Empty-string / false prior values mean the key did not exist, so the
+ * restore deletes rather than writing an empty value.
+ *
+ * @param array $envelope Stored action envelope (reversible, with payload).
+ * @param bool  $dry_run  True to compute the restore without writing.
+ * @return array{before: mixed, after: mixed, post_id: int|null,
+ *               touched_options: string[], purge_endpoints: string[]}
+ */
+function rr_action_rollback_apply( array $envelope, $dry_run ) {
+	$payload = $envelope['rollback_payload'];
+
+	switch ( $envelope['action_type'] ) {
+		case 'update_setting':
+			$option = (string) $envelope['target_id'];
+			$old    = $payload['old_value'];
+			$before = get_option( $option );
+			if ( ! $dry_run ) {
+				if ( false === $old ) {
+					delete_option( $option );
+				} else {
+					update_option( $option, $old );
+				}
+			}
+			return array(
+				'before'          => $before,
+				'after'           => $old,
+				'post_id'         => null,
+				'touched_options' => array( $option ),
+				'purge_endpoints' => array( 'status' ),
+			);
+
+		case 'update_meta_draft':
+			$post_id    = absint( $envelope['target_id'] );
+			$fields     = isset( $payload['draft_fields'] ) ? (array) $payload['draft_fields'] : array();
+			$old_values = isset( $payload['old_values'] ) ? (array) $payload['old_values'] : array();
+			$before     = array();
+			$after      = array();
+			foreach ( $fields as $field ) {
+				$draft_key        = RR_ACTION_DRAFT_PREFIX . $field;
+				$old              = isset( $old_values[ $field ] ) ? $old_values[ $field ] : '';
+				$before[ $field ] = get_post_meta( $post_id, $draft_key, true );
+				$after[ $field ]  = $old;
+				if ( ! $dry_run ) {
+					if ( '' === $old ) {
+						delete_post_meta( $post_id, $draft_key );
+					} else {
+						update_post_meta( $post_id, $draft_key, $old );
+					}
+				}
+			}
+			return array(
+				'before'          => $before,
+				'after'           => $after,
+				'post_id'         => $post_id,
+				'touched_options' => array(),
+				'purge_endpoints' => array( 'status' ),
+			);
+
+		case 'toggle_indexing':
+		default:
+			$post_id    = absint( $envelope['target_id'] );
+			$robots_key = RR_SEO_META_KEYS['robots'];
+			$old        = $payload['old_value'];
+			$before     = get_post_meta( $post_id, $robots_key, true );
+			if ( ! $dry_run ) {
+				if ( '' === $old ) {
+					delete_post_meta( $post_id, $robots_key );
+				} else {
+					update_post_meta( $post_id, $robots_key, $old );
+				}
+			}
+			return array(
+				'before'          => $before,
+				'after'           => $old,
+				'post_id'         => $post_id,
+				'touched_options' => array(),
+				'purge_endpoints' => array( 'status' ),
+			);
+	}
+}
+
+/**
+ * Runs the rollback pipeline for a stored action envelope.
+ *
+ * Returned status values: 'not_found', 'not_reversible',
+ * 'already_rolled_back', 'state_drift' (refused; retry with force),
+ * 'simulated' (dry run), 'completed' (restored + logged).
+ *
+ * @param string $action_id  Action ID from an execute response.
+ * @param bool   $dry_run    True to simulate without writing.
+ * @param bool   $force      True to roll back despite state drift.
+ * @param string $request_id Correlation ID for the audit trail.
+ * @return array Pipeline result; see status key.
+ */
+function rr_action_rollback_run( $action_id, $dry_run, $force, $request_id ) {
+	$found = rr_action_log_find( (string) $action_id );
+	if ( null === $found ) {
+		return array(
+			'status'    => 'not_found',
+			'action_id' => (string) $action_id,
+		);
+	}
+
+	$original = $found['envelope'];
+
+	if ( empty( $original['reversible'] ) || empty( $original['rollback_payload'] ) ) {
+		$reason = ! empty( $original['reason'] )
+			? $original['reason']
+			: 'the stored envelope carries no rollback payload';
+		return array(
+			'status'    => 'not_reversible',
+			'action_id' => $original['action_id'],
+			'reason'    => $reason,
+		);
+	}
+
+	if ( ! empty( $original['rolled_back_at'] ) ) {
+		return array(
+			'status'             => 'already_rolled_back',
+			'action_id'          => $original['action_id'],
+			'rolled_back_at'     => $original['rolled_back_at'],
+			'rollback_action_id' => isset( $original['rollback_action_id'] ) ? $original['rollback_action_id'] : null,
+		);
+	}
+
+	$drift = rr_action_rollback_drift( $original );
+	if ( $drift && ! $force ) {
+		return array(
+			'status'    => 'state_drift',
+			'action_id' => $original['action_id'],
+			'drift'     => $drift,
+		);
+	}
+
+	$result = rr_action_rollback_apply( $original, (bool) $dry_run );
+
+	$envelope = array(
+		'action_id'        => $dry_run ? null : rr_action_id(),
+		'action_type'      => 'rollback',
+		'target_id'        => $original['action_id'],
+		'status'           => $dry_run ? 'simulated' : 'completed',
+		'applied_at'       => gmdate( 'Y-m-d\TH:i:s\Z' ),
+		'before'           => $result['before'],
+		'after'            => $result['after'],
+		'rollback_payload' => null,
+		'reversible'       => false,
+		'reason'           => 'a rollback is not itself reversible; re-execute the original action to redo it',
+		'warnings'         => $drift,
+		'request_id'       => (string) $request_id,
+	);
+
+	if ( ! $dry_run ) {
+		// Mark the original and append the rollback record in one log write.
+		$log = get_option( RR_ACTION_LOG_KEY, array() );
+		$log = is_array( $log ) ? $log : array();
+		if ( isset( $log[ $found['index'] ] ) ) {
+			$log[ $found['index'] ]['rolled_back_at']     = $envelope['applied_at'];
+			$log[ $found['index'] ]['rollback_action_id'] = $envelope['action_id'];
+		}
+		$log[] = $envelope;
+		rr_action_log_write( $log );
+
+		if ( ! empty( $result['post_id'] ) ) {
+			rr_audit_log(
+				$result['post_id'],
+				'/actions/rollback',
+				array(
+					$original['action_type'] => array(
 						'before' => $result['before'],
 						'after'  => $result['after'],
 					),
@@ -530,4 +802,80 @@ function rmb_actions_dry_run( WP_REST_Request $request ) {
  */
 function rmb_actions_execute( WP_REST_Request $request ) {
 	return rmb_actions_dispatch( $request, false );
+}
+
+/**
+ * Handles GET /actions/{action_id} — envelope lookup in rrseo_action_log.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_actions_get( WP_REST_Request $request ) {
+	$action_id = (string) $request->get_param( 'action_id' );
+	$found     = rr_action_log_find( $action_id );
+
+	if ( null === $found ) {
+		return new WP_Error(
+			'action_not_found',
+			"No stored envelope for action '{$action_id}'. The log keeps the most recent " . RR_ACTION_LOG_MAX . ' executed actions; older entries are pruned.',
+			array( 'status' => 404 )
+		);
+	}
+
+	return rest_ensure_response( $found['envelope'] );
+}
+
+/**
+ * Handles POST /actions/{action_id}/rollback — replay the stored envelope.
+ * Honors dry_run:true (simulate) and force:true (override drift refusal).
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_actions_rollback( WP_REST_Request $request ) {
+	$result = rr_action_rollback_run(
+		(string) $request->get_param( 'action_id' ),
+		(bool) $request->get_param( 'dry_run' ),
+		(bool) $request->get_param( 'force' ),
+		rr_request_id( $request )
+	);
+
+	switch ( $result['status'] ) {
+		case 'not_found':
+			return new WP_Error(
+				'action_not_found',
+				"No stored envelope for action '{$result['action_id']}'. The log keeps the most recent "
+					. RR_ACTION_LOG_MAX . ' executed actions; older entries are pruned.',
+				array( 'status' => 404 )
+			);
+
+		case 'not_reversible':
+			return new WP_Error(
+				'action_not_reversible',
+				"Action '{$result['action_id']}' cannot be rolled back: {$result['reason']}.",
+				array( 'status' => 422 )
+			);
+
+		case 'already_rolled_back':
+			return new WP_Error(
+				'action_already_rolled_back',
+				"Action '{$result['action_id']}' was already rolled back at {$result['rolled_back_at']}.",
+				array(
+					'status'             => 409,
+					'rollback_action_id' => $result['rollback_action_id'],
+				)
+			);
+
+		case 'state_drift':
+			return new WP_Error(
+				'action_state_drift',
+				"The target of action '{$result['action_id']}' has changed since the action executed. Send {\"force\": true} to roll back anyway.",
+				array(
+					'status' => 409,
+					'drift'  => $result['drift'],
+				)
+			);
+	}
+
+	return rest_ensure_response( $result );
 }

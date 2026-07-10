@@ -357,6 +357,20 @@ if ( ! function_exists( 'update_post_meta' ) ) {
     }
 }
 
+if ( ! function_exists( 'delete_post_meta' ) ) {
+    function delete_post_meta( $post_id, $meta_key, $meta_value = '' ) {
+        unset( $GLOBALS['_test_post_meta'][ $post_id ][ $meta_key ] );
+        return true;
+    }
+}
+
+if ( ! function_exists( 'delete_option' ) ) {
+    function delete_option( $key ) {
+        unset( $GLOBALS['_test_options'][ $key ] );
+        return true;
+    }
+}
+
 // sanitize_textarea_field — mirrors WP core: arrays and objects sanitize to ''.
 if ( ! function_exists( 'sanitize_textarea_field' ) ) {
     function sanitize_textarea_field( $str ) {

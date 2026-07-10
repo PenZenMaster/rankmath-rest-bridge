@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.0.0
+ * Version:      3.1.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.0.0' );
+define( 'RMB_VERSION', '3.1.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2710,6 +2710,41 @@ add_action(
 				'callback'            => 'rmb_actions_execute',
 				'permission_callback' => $admin_only,
 				'args'                => $action_args,
+			)
+		);
+
+		// ── v3.0 Bite 3: rollback layer ──────────────────────────────────────────
+		// action_id pattern matches rr_action_id() output only, so these routes
+		// cannot shadow /actions/dry-run or /actions/execute.
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/actions/(?P<action_id>rrseo-action-\d{14}-[0-9a-f]{8})',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_actions_get',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/actions/(?P<action_id>rrseo-action-\d{14}-[0-9a-f]{8})/rollback',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_actions_rollback',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'dry_run' => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
+					'force'   => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
+				),
 			)
 		);
 
