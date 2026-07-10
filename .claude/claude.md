@@ -21,6 +21,7 @@ When asked for changes in this repo:
 * Never hardcode secrets; use wp-config constants or environment.
 * Surgical diffs only; propose a two-stage plan for large refactors.
 * Never create versioned duplicate files (e.g., `plugin_v2.php`).
+* Always label the execution environment (PowerShell, CMD, Git Bash, SSH) on every command or script given to the user — never make them guess the shell; match quoting/escaping to that shell.
 
 ---
 
