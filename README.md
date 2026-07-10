@@ -102,7 +102,12 @@ for term IDs — use `POST /update` directly for term meta writes.
 #### `GET /snippets/{slug}` — fetch a single snippet by slug
 #### `POST /snippets` — create a snippet
 #### `POST /snippets/{slug}` — update a snippet
-#### `POST /snippets/replace-all` — atomic replace (requires `rrseo_replace_all_snippets` capability)
+#### `POST /snippets/bulk` — atomic batch create (all-or-nothing validation)
+#### `DELETE /snippets/{slug}` — delete a snippet
+
+> `POST /snippets/replace-all` was removed in v3.0.0 (deprecated since v2.3.1).
+> Use the per-snippet endpoints or `POST /snippets/bulk`; the
+> `rrseo_replace_all_snippets` capability is revoked automatically on upgrade.
 
 ---
 

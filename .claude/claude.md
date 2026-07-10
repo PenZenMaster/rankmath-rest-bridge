@@ -110,7 +110,7 @@ When asked for changes in this repo:
 * **Meta keys**: Write to `rr_seo_*` only; read `rank_math_*` as migration fallback via `rr_get_seo_meta()`.
 * **Audit log**: All SEO meta + schema writes must call `rr_audit_log()`.
 * **Validation**: All external writes must pass `rr_validate_seo_fields()` or `rr_validate_schema()`.
-* **Capability**: `replace-all` is guarded by `rrseo_replace_all_snippets` — do not widen to `manage_options`.
+* **No replace-all**: `POST /snippets/replace-all` was removed in v3.0.0 — do not reintroduce bulk wipe-and-replace endpoints; destructive changes go through the typed action engine.
 * **No file rename**: `rankmath-rest-bridge.php` is the WP plugin file — rename only with a coordinated GitHub repo rename.
 
 ---

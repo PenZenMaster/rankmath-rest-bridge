@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.0.0
+
+Breaking release completing the v3.0 Bite 2 scope: the deprecated
+`POST /snippets/replace-all` endpoint is removed (sign-off 2026-07-10).
+
+### Removed (breaking)
+
+- **`POST /snippets/replace-all`** — deprecated since v2.3.1; every response
+  carried a removal notice targeting v3.0.0. Callers now receive WP's standard
+  `rest_no_route` 404. Migration: `POST /snippets/bulk` (atomic batch create),
+  `POST /snippets/{id}` (update), `DELETE /snippets/{id}` (delete).
+- **`RR_REPLACE_ALL_CAP` constant** and the capability provisioning hook. The
+  `rrseo_replace_all_snippets` capability is revoked from the administrator
+  role automatically on first load after upgrade (it was persisted in the DB
+  with the role).
+
+### Rationale
+
+- One call could silently erase the entire snippet store — incompatible with
+  the v3.0 typed-action direction (per-change validation, audit logging, and
+  rollback envelopes).
+- All replacement endpoints (per-snippet CRUD, `/snippets/bulk`) have been
+  live since v2.15.0; the deprecation window ran 2026-04-28 to 2026-07-10.
+
 ## v2.19.0
 
 v3.0 Bite 2: typed action engine — the executor surface the external Audit
@@ -49,6 +73,7 @@ Engine calls to apply approved, low-risk remediation steps.
 
 - `replace-all` snippet endpoint removal (Bite 2 scope in the spec) is a
   breaking API change — proposed as a separate commit after review.
+  *(Signed off 2026-07-10; shipped in v3.0.0.)*
 
 ## v2.18.1
 

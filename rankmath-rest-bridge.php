@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      2.19.0
+ * Version:      3.0.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '2.19.0' );
+define( 'RMB_VERSION', '3.0.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -107,11 +107,6 @@ define(
 		'Service',
 	)
 );
-
-// Custom capability guarding the destructive replace-all endpoint.
-// Granted to the administrator role on first load; can be revoked per-role
-// to restrict bulk-sync access independently of manage_options.
-define( 'RR_REPLACE_ALL_CAP', 'rrseo_replace_all_snippets' );
 
 // Hard limits for AI-generated content.
 define( 'RR_TITLE_MAX', 120 ); // Chars; hard error above this.
@@ -294,16 +289,16 @@ register_activation_hook(
 	}
 );
 
-// ── Capability provisioning ───────────────────────────────────────────────────
-// Grants RR_REPLACE_ALL_CAP to the administrator role on first load.
-// Stored in the DB with the role, so the write only happens once.
-// To revoke: $role->remove_cap( RR_REPLACE_ALL_CAP ) in a one-time script.
+// ── Capability cleanup ────────────────────────────────────────────────────────
+// v3.0.0 removed POST /snippets/replace-all. The capability that guarded it
+// (granted to administrator since v2.3.1) is persisted in the DB with the
+// role, so revoke it once here; the check keeps the write from repeating.
 add_action(
 	'init',
 	function () {
 		$role = get_role( 'administrator' );
-		if ( $role && ! $role->has_cap( RR_REPLACE_ALL_CAP ) ) {
-			$role->add_cap( RR_REPLACE_ALL_CAP );
+		if ( $role && $role->has_cap( 'rrseo_replace_all_snippets' ) ) {
+			$role->remove_cap( 'rrseo_replace_all_snippets' );
 		}
 	}
 );
@@ -2465,32 +2460,7 @@ add_action(
 			)
 		);
 
-		// MUST be registered BEFORE the {id} wildcard.
-		// @deprecated — prefer per-snippet create/update/delete. Target removal: v3.0.0.
-		register_rest_route(
-			'rankrocket-seo/v1',
-			'/snippets/replace-all',
-			array(
-				'methods'             => 'POST',
-				'callback'            => 'rmb_snippets_replace_all',
-				'permission_callback' => function () {
-					return current_user_can( RR_REPLACE_ALL_CAP );
-				},
-				'args'                => array(
-					'snippets' => array(
-						'required' => true,
-						'type'     => 'array',
-					),
-					'confirm'  => array(
-						'required' => false,
-						'type'     => 'boolean',
-						'default'  => false,
-					),
-				),
-			)
-		);
-
-		// ── Snippets: Get / Update / Delete by ID (wildcard — after replace-all) ──
+		// ── Snippets: Get / Update / Delete by ID (wildcard — after /bulk) ────────
 		register_rest_route(
 			'rankrocket-seo/v1',
 			'/snippets/(?P<id>[a-zA-Z0-9_-]+)',
@@ -4553,76 +4523,6 @@ function rmb_sitemap_exclusions_update( WP_REST_Request $request ) {
 		array(
 			'success' => true,
 			'config'  => $config,
-		)
-	);
-}
-
-/**
- * Handles POST /snippets/replace-all — atomically replaces the entire snippet store.
- *
- * @deprecated 2.3.1 Use per-snippet CRUD endpoints. Removal target: v3.0.0.
- * @param WP_REST_Request $request REST request object.
- * @return WP_REST_Response|WP_Error
- */
-function rmb_snippets_replace_all( WP_REST_Request $request ) {
-	// Destructive: replaces the entire snippet store atomically.
-	// Caller must pass {"confirm": true}. Prefer per-snippet create/update/delete
-	// for routine operations; reserve this endpoint for full sync scenarios.
-	if ( true !== $request->get_param( 'confirm' ) ) {
-		return new WP_Error(
-			'confirmation_required',
-			'replace-all overwrites the entire snippet store. Send {"confirm": true} to proceed. '
-				. 'For routine changes, use the per-snippet POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} endpoints.',
-			array( 'status' => 400 )
-		);
-	}
-
-	$incoming = $request->get_param( 'snippets' );
-	if ( ! is_array( $incoming ) ) {
-		return new WP_Error( 'invalid_data', 'snippets must be an array', array( 'status' => 400 ) );
-	}
-
-	// Bust the WP object cache for this option so $before reflects DB state,
-	// not a stale cache entry (persistent caches like Redis can lag behind writes).
-	wp_cache_delete( RMB_SNIPPETS_KEY, 'options' );
-	$before      = get_option( RMB_SNIPPETS_KEY, array() );
-	$clean_store = array();
-
-	foreach ( $incoming as $snippet ) {
-		$id = sanitize_title( $snippet['title'] ?? '' );
-		if ( ! $id ) {
-			continue;
-		}
-		if ( ! empty( $snippet['id'] ) ) {
-			$id = sanitize_text_field( $snippet['id'] );
-		}
-		$clean_store[ $id ] = array(
-			'id'         => $id,
-			'title'      => sanitize_text_field( $snippet['title'] ?? '' ),
-			'content'    => $snippet['content'] ?? $snippet['code'] ?? '',
-			'location'   => sanitize_text_field( $snippet['location'] ?? 'footer' ),
-			'display_on' => sanitize_text_field( $snippet['display_on'] ?? 'entire_website' ),
-			'status'     => sanitize_text_field( $snippet['status'] ?? 'active' ),
-			'created_at' => sanitize_text_field( $snippet['created_at'] ?? current_time( 'mysql' ) ),
-			'updated_at' => current_time( 'mysql' ),
-		);
-	}
-
-	update_option( RMB_SNIPPETS_KEY, $clean_store );
-	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
-	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
-
-	$deprecation_notice = 'This endpoint will be removed in v3.0.0.'
-		. ' Use POST /snippets, POST /snippets/{id}, or DELETE /snippets/{id} for routine changes.';
-
-	return rest_ensure_response(
-		array(
-			'success'       => true,
-			'count'         => count( $clean_store ),
-			'ids'           => array_keys( $clean_store ),
-			'removed_count' => count( array_diff_key( $before, $clean_store ) ),
-			'added_count'   => count( array_diff_key( $clean_store, $before ) ),
-			'deprecated'    => $deprecation_notice,
 		)
 	);
 }
