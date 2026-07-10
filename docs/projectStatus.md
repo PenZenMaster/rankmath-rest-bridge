@@ -1,11 +1,42 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-07-09
-**Current Version:** 2.19.0
+**Last Updated:** 2026-07-10
+**Current Version:** 3.0.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 4660836 -- chore: release v2.19.0 zip
+**Last Commit:** ab18857 -- docs: add shell-labeling rule to project playbook
 **Git Status:** clean
+
+---
+
+## 2026-07-10 Session -- v3.0.0 Breaking Release: replace-all Removed -- COMPLETE
+
+### Session Summary
+User signed off on the deferred replace-all removal after a business-facing
+impact breakdown. Shipped v3.0.0 (breaking), which the user deployed to
+production (Higgins Overhead Door) via self-update the same session --
+2.18.1 -> 3.0.0 in one hop, no issues. Action-engine smoke test passed on
+the live install; issue #5 closed with verification comment. Bite 3 started.
+
+### Accomplishments
+- **v3.0.0 SHIPPED (breaking)** -- `POST /snippets/replace-all` removed
+  (route + handler + `RR_REPLACE_ALL_CAP`); capability hook inverted to
+  revoke `rrseo_replace_all_snippets` from administrator on first load;
+  README/CHANGELOG/manifest updated with migration paths
+- **v3.0.0 DEPLOYED + VERIFIED IN PRODUCTION** -- self-update across a
+  two-version jump; action engine smoke-tested live (update_setting
+  blog_public launch flow, toggle_indexing)
+- **Issue #5 CLOSED** -- verified in production
+- **Playbook**: shell-labeling rule added (every command labeled with its
+  target environment); stale replace-all guardrail rewritten
+- Note: removal spot-check returns `not_found` 404 (the `/snippets/{id}`
+  wildcard catches "replace-all" as a slug), not `rest_no_route`; handler
+  never upserts, so legacy callers cannot write
+
+### Next
+v3.0 Bite 3 rollback layer (GET /actions/{action_id} +
+POST /actions/{action_id}/rollback); Bite 4 GitHub Actions CI; telemetry
+verdict review (~2026-07-13).
 
 ---
 
