@@ -1,0 +1,93 @@
+# Module/Script Name: CI workflow (v3.0 Bite 4)
+# Path: .github/workflows/ci.yml
+#
+# Description:
+# Runs the same quality gates as the local git hooks on every push and PR:
+# phpcs (WordPress Coding Standards, files from phpcs.xml.dist) and the
+# phpunit suite, on the plugin's minimum (7.4) and a current (8.3) PHP.
+# A separate job enforces release integrity: plugin header, RMB_VERSION,
+# and update-manifest.json must agree, and the release zip for the current
+# version must be committed.
+#
+# Author(s):
+# Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
+#
+# Created Date: 2026-07-10
+# Last Modified Date: 2026-07-10
+#
+# Comments:
+# v1.00 - Initial release.
+
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+
+jobs:
+  quality:
+    name: "PHP ${{ matrix.php }}: phpcs + phpunit"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '7.4', '8.3' ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+
+      - name: phpcs (WordPress Coding Standards)
+        run: dev-vendor/bin/phpcs --standard=phpcs.xml.dist
+
+      - name: phpunit
+        run: dev-vendor/bin/phpunit --configuration phpunit.xml.dist
+
+  release-integrity:
+    name: "Release integrity: versions + zip"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Plugin header, RMB_VERSION, and manifest must agree
+        run: |
+          header=$(grep -oP '^\s*\*\s*Version:\s*\K[0-9.]+' rankmath-rest-bridge.php)
+          constant=$(grep -oP "define\( 'RMB_VERSION', '\K[0-9.]+" rankmath-rest-bridge.php)
+          manifest=$(php -r "echo json_decode(file_get_contents('update-manifest.json'))->version;")
+          echo "header=$header constant=$constant manifest=$manifest"
+          test -n "$header"
+          test "$header" = "$constant"
+          test "$header" = "$manifest"
+
+      - name: Manifest download_url must point at the current version
+        run: |
+          version=$(grep -oP "define\( 'RMB_VERSION', '\K[0-9.]+" rankmath-rest-bridge.php)
+          url=$(php -r "echo json_decode(file_get_contents('update-manifest.json'))->download_url;")
+          echo "version=$version url=$url"
+          case "$url" in
+            *"/releases/v${version}/"*) echo "download_url matches" ;;
+            *) echo "download_url does not reference releases/v${version}/"; exit 1 ;;
+          esac
+
+      - name: Release zip for the current version must be committed
+        run: |
+          version=$(grep -oP "define\( 'RMB_VERSION', '\K[0-9.]+" rankmath-rest-bridge.php)
+          test -f "releases/v${version}/rankmath-rest-bridge.zip"
+          echo "releases/v${version}/rankmath-rest-bridge.zip present"
