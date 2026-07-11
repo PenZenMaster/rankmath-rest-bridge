@@ -1,11 +1,42 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-07-10
-**Current Version:** 3.1.0
+**Current Version:** 3.3.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 3b84d03 -- build: GitHub Actions CI (v3.0 Bite 4)
+**Last Commit:** fd01178 -- chore: release v3.3.0 zip
 **Git Status:** clean
+
+---
+
+## 2026-07-10 Session (final) -- Issues #7 + #8: Higgins Perf Unblock -- COMPLETE
+
+### Session Summary
+Same-day continuation after the v3.0 roadmap completed. The user filed two
+feature requests from live Higgins Overhead Door perf work; both were
+reviewed, built, shipped, and closed within hours. Together they unblock
+snippet-based render-blocking-CSS elimination on locked-theme, WAF-fronted
+client sites -- the projected 2,590ms LCP savings on Higgins is now
+collectable.
+
+### Accomplishments
+- **v3.2.0 SHIPPED (issue #7)** -- snippet `priority` field (0-10000 ->
+  WP hook priority); one emitter per (location, priority) bucket; snippets
+  without priority keep per-location defaults (deliberate deviation from
+  the issue's blanket-20 spec to avoid moving body_open/footer snippets);
+  9 new tests -- first unit coverage of the emission path
+- **v3.3.0 SHIPPED (issue #8)** -- `code_b64` WAF-safe transport on all
+  three snippet write endpoints; strict base64 + UTF-8 validation (422
+  invalid_base64); code_b64 wins over code/content; update endpoint
+  included beyond the issue's AC; 6 new tests
+- **Issues #7 + #8 closed** with implementation comments
+- Suite: 207 tests / 511 assertions; CI green on every push
+
+### Next
+Deploy v3.3.0 to Higgins + POST the render-block swap (code_b64 +
+priority:1) + measure PageSpeed; telemetry verdict review (~2026-07-13);
+cleanup items (live rollback confirmation, llms.txt raw-content
+verification, stale bite checkboxes below).
 
 ---
 
