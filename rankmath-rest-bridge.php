@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.4.0
+ * Version:      3.4.1
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.4.0' );
+define( 'RMB_VERSION', '3.4.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3979,7 +3979,8 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 		$config['exclude_patterns'] = array_map( 'sanitize_text_field', $patterns );
 	}
 
-	// business_facts (object) — validated per issue #9 before it is accepted.
+	// business_facts (object) — merged onto the stored value (issue #11) and
+	// validated as a whole (issue #9) before it is accepted.
 	$facts = $request->get_param( 'business_facts' );
 	if ( null !== $facts ) {
 		if ( ! is_array( $facts ) ) {
@@ -3989,11 +3990,13 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 				array( 'status' => 422 )
 			);
 		}
-		$validated = rr_validate_llms_business_facts( $facts );
+		$stored_facts = isset( $config['business_facts'] ) && is_array( $config['business_facts'] ) ? $config['business_facts'] : array();
+		$merged_facts = rr_merge_llms_business_facts( $stored_facts, $facts );
+		$validated    = rr_validate_llms_business_facts( $merged_facts );
 		if ( is_wp_error( $validated ) ) {
 			return $validated;
 		}
-		$config['business_facts'] = $facts;
+		$config['business_facts'] = $merged_facts;
 	}
 
 	// Invalidate the canonical counts transient after config change.

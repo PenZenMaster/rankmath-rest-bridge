@@ -268,17 +268,41 @@ function rr_validate_llms_section( string $section ) {
 	);
 }
 
+// ── business_facts merge ──────────────────────────────────────────────────────
+
+/**
+ * Merges an incoming business_facts payload onto the stored value (v3.4.1, issue #11).
+ *
+ * Shallow merge: keys present in $incoming overwrite the stored value —
+ * array-type fields such as primary_services or common_questions replace
+ * wholesale, they do not append — while keys absent from $incoming are
+ * preserved from $stored. An empty $incoming is a no-op (returns $stored
+ * unchanged) — sending {} no longer clears manual business_facts back to
+ * schema/bloginfo resolution; individual keys can still be cleared by
+ * sending them with an empty value (e.g. "phone": "").
+ *
+ * @param array $stored   Currently stored business_facts (or empty array).
+ * @param array $incoming Incoming business_facts payload from the request.
+ * @return array
+ */
+function rr_merge_llms_business_facts( array $stored, array $incoming ): array {
+	if ( empty( $incoming ) ) {
+		return $stored;
+	}
+	return array_merge( $stored, $incoming );
+}
+
 // ── business_facts validation ─────────────────────────────────────────────────
 
 /**
- * Validates a business_facts payload before it is persisted (v3.4.0, issue #9).
+ * Validates a business_facts payload before it is persisted (v3.4.0, issue #9;
+ * v3.4.1: called against the post-merge value, see rr_merge_llms_business_facts()).
  *
- * An empty array is always valid (clears manual business_facts, falling back
- * to schema/bloginfo resolution). A non-empty payload must include
+ * An empty array is always valid. A non-empty payload must include
  * business_name and description; every other key is optional but is type-
  * and size-checked when present.
  *
- * @param array $facts Proposed business_facts value.
+ * @param array $facts Proposed business_facts value (post-merge).
  * @return true|WP_Error
  */
 function rr_validate_llms_business_facts( array $facts ) {

@@ -178,9 +178,26 @@ request body. All fields are optional; omitted fields are left unchanged.
 
 **`business_facts`** is the write path for the curated business identity
 block (v3.4.0, issues #9/#10) — the fields AI assistants and the
-`/aeo-geo/*` readiness scorer consume. **`business_name` and `description`
-are required whenever `business_facts` is sent non-empty**; every other key
-is optional. Strings are capped at 5000 characters, arrays at 50 items.
+`/aeo-geo/*` readiness scorer consume.
+
+**Writes are merged, not replaced (v3.4.1, issue #11)** — an incoming
+`business_facts` object is merged key-by-key onto the stored value. Keys
+you send overwrite the stored value (array-type fields like
+`primary_services` or `common_questions` replace wholesale when sent, they
+do not append); keys you omit are left untouched. This means true partial
+updates work — e.g. sending only `{"business_facts": {"email": "..."}}`
+adds `email` and leaves `phone`, `primary_services`, `common_questions`,
+etc. exactly as they were. Validation runs against the **merged** result,
+so `business_name`/`description` only need to already exist from a prior
+write — they don't have to be repeated on every partial update. The first
+write for a site must still include both. Sending `business_facts: {}` is
+now a no-op (it no longer clears the stored value back to schema/bloginfo
+resolution); clear an individual field by sending it with an empty value
+(e.g. `"phone": ""`).
+
+`business_name` and `description` are required in the resulting (merged)
+object whenever `business_facts` is non-empty; every other key is
+optional. Strings are capped at 5000 characters, arrays at 50 items.
 Invalid payloads return `422 invalid_business_facts` with a `data.errors`
 array — nothing is silently dropped.
 

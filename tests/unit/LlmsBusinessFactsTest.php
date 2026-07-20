@@ -3,9 +3,9 @@
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests for rr_validate_llms_business_facts() and the business_facts
- * rendering path in rr_render_llms_txt() / rr_render_business_facts_lines()
- * (v3.4.0, issues #9/#10).
+ * Tests for rr_validate_llms_business_facts(), rr_merge_llms_business_facts(),
+ * and the business_facts rendering path in rr_render_llms_txt() /
+ * rr_render_business_facts_lines() (v3.4.0 issues #9/#10; v3.4.1 issue #11).
  */
 class LlmsBusinessFactsTest extends TestCase {
 
@@ -128,6 +128,84 @@ class LlmsBusinessFactsTest extends TestCase {
 			)
 		);
 		$this->assertTrue( is_wp_error( $result ) );
+	}
+
+	// ── rr_merge_llms_business_facts() ───────────────────────────────────────
+
+	public function test_merge_partial_write_preserves_unset_keys(): void {
+		$stored = array(
+			'business_name'    => 'Kilday Baxter & Associates',
+			'description'      => 'Full-service CPA firm.',
+			'phone'            => '815-883-3500',
+			'primary_services' => array( 'Bookkeeping', 'Payroll' ),
+			'service_area'     => array( 'Oglesby, IL' ),
+			'common_questions' => array(
+				array( 'question' => 'Do I need a CPA?', 'answer' => 'Depends.' ),
+			),
+		);
+
+		// Reporter's "additive" write from issue #11: only 3 keys, one new (email).
+		$incoming = array(
+			'business_name' => 'Kilday Baxter & Associates',
+			'description'   => 'Full-service CPA firm.',
+			'email'         => 'julie@jaybaxtercpa.net',
+		);
+
+		$merged = rr_merge_llms_business_facts( $stored, $incoming );
+
+		$this->assertSame( 'julie@jaybaxtercpa.net', $merged['email'] );
+		$this->assertSame( '815-883-3500', $merged['phone'], 'Untouched key must survive the write' );
+		$this->assertSame( array( 'Bookkeeping', 'Payroll' ), $merged['primary_services'] );
+		$this->assertSame( array( 'Oglesby, IL' ), $merged['service_area'] );
+		$this->assertCount( 1, $merged['common_questions'] );
+	}
+
+	public function test_merge_array_field_replaces_wholesale_not_appends(): void {
+		$stored   = array(
+			'business_name'    => 'Acme',
+			'primary_services' => array( 'Bookkeeping', 'Payroll' ),
+		);
+		$incoming = array( 'primary_services' => array( 'Tax Prep' ) );
+
+		$merged = rr_merge_llms_business_facts( $stored, $incoming );
+
+		$this->assertSame( array( 'Tax Prep' ), $merged['primary_services'] );
+	}
+
+	public function test_merge_empty_incoming_is_noop(): void {
+		$stored = array( 'business_name' => 'Acme', 'phone' => '555-0100' );
+
+		$merged = rr_merge_llms_business_facts( $stored, array() );
+
+		$this->assertSame( $stored, $merged );
+	}
+
+	public function test_merge_onto_empty_stored_equals_incoming(): void {
+		$incoming = array( 'business_name' => 'Acme', 'description' => 'Desc' );
+
+		$merged = rr_merge_llms_business_facts( array(), $incoming );
+
+		$this->assertSame( $incoming, $merged );
+	}
+
+	public function test_merged_result_from_issue_11_scenario_stays_readiness_eligible(): void {
+		// Reproduces the issue #11 regression test: after the "additive" write,
+		// has_business_facts must still be derivable as true (business_name +
+		// >=2 of primary_services/service_area/common_questions/key_differentiators).
+		$GLOBALS['_test_options'][ RR_LLMS_CONFIG_KEY ] = array(
+			'business_facts' => rr_merge_llms_business_facts(
+				array(
+					'business_name'    => 'Kilday Baxter & Associates',
+					'description'      => 'Full-service CPA firm.',
+					'primary_services' => array( 'Bookkeeping', 'Payroll' ),
+					'service_area'     => array( 'Oglesby, IL' ),
+				),
+				array( 'email' => 'julie@jaybaxtercpa.net' )
+			),
+		);
+
+		$result = rr_aeo_compute_readiness();
+		$this->assertTrue( $result['signals']['has_business_facts'] );
 	}
 
 	// ── Renderer ──────────────────────────────────────────────────────────────

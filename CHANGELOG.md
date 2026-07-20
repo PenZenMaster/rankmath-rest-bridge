@@ -1,5 +1,39 @@
 # Changelog
 
+## v3.4.1
+
+Fix `POST /llms` `business_facts` writes replacing instead of merging
+(issue #11) — regression surfaced by the v3.4.0 README contract and
+stricter `has_business_facts` scoring, found during the Kilday Baxter &
+Associates Cycle 9 replay on production (2026-07-20).
+
+### Fixed
+
+- **Partial `business_facts` writes no longer wipe unset fields.** Previously
+  `POST /llms` replaced the entire stored `business_facts` object with
+  whatever was sent, contradicting the README's "omitted fields are left
+  unchanged" contract — a write adding a single new field (e.g. `email`)
+  silently dropped every other field (`primary_services`, `service_area`,
+  `common_questions`, `key_differentiators`, `phone`, `address`, etc.),
+  collapsing `has_business_facts` to `false` and `llms_completeness`/
+  `overall` readiness scores with no error or warning. `business_facts` is
+  now merged onto the stored value key-by-key via the new
+  `rr_merge_llms_business_facts()`: sent keys overwrite (array-type fields
+  replace wholesale, not append), omitted keys are preserved.
+- Validation now runs against the **merged** result rather than the raw
+  incoming payload, so a partial write no longer spuriously fails the
+  `business_name`/`description` requirement when those fields already
+  exist from a prior write.
+
+### Changed
+
+- Sending `business_facts: {}` is now a no-op instead of clearing the
+  stored value back to schema/bloginfo resolution. Clear an individual
+  field by sending it with an empty value (e.g. `"phone": ""`).
+- 5 new unit tests (223 -> 228) covering the merge helper directly and
+  reproducing the issue #11 regression scenario end to end through
+  `rr_aeo_compute_readiness()`.
+
 ## v3.4.0
 
 AEO/GEO write surface (issues #9, #10) — fixes `POST /llms` business_facts
