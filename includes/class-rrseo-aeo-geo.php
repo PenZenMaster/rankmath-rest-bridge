@@ -388,9 +388,16 @@ function rr_aeo_compute_source_sync( ?array $canonical_result = null ): array {
  *   canonical_source_guidance (0-100): equals source_sync.sync_score.
  *   schema_depth (0-100): coverage_pct minus 10 per global_warning. Floor: 0.
  *   llms_completeness (0-100):
- *     +20 each for non-empty intro, business_facts, >=1 section, exclude_patterns,
- *     max_description_chars.
+ *     +20 each for non-empty intro, has_business_facts (v3.4.0: business_name
+ *     plus >=2 of primary_services/service_area/common_questions/
+ *     key_differentiators — see has_business_facts below), >=1 section,
+ *     exclude_patterns, max_description_chars.
  *   overall: simple average of the four scores.
+ *
+ * signals.has_business_facts (v3.4.0, issue #10): business_facts.business_name
+ * is non-empty AND at least two of primary_services, service_area,
+ * common_questions, key_differentiators are populated. A bare business_name
+ * is identity, not AEO-ready business facts.
  *
  * The data_depth_badge is always 'public-only' — the plugin has no knowledge of
  * whether GSC/GA4/GBP connectors are active in the external audit engine.
@@ -437,13 +444,27 @@ function rr_aeo_compute_readiness(): array {
 	// Schema depth score.
 	$schema_score = max( 0.0, $schema['summary']['coverage_pct'] - ( count( $schema['global_warnings'] ) * 10 ) );
 
+	// has_business_facts (v3.4.0, issue #10): a business_name alone is not
+	// "AEO-ready" — at least two of the enrichment fields an AI assistant
+	// would actually surface (services, area, FAQ, differentiators) must
+	// also be populated.
+	$business_facts    = ( ! empty( $config['business_facts'] ) && is_array( $config['business_facts'] ) ) ? $config['business_facts'] : array();
+	$enrichment_fields = array( 'primary_services', 'service_area', 'common_questions', 'key_differentiators' );
+	$enrichment_count  = 0;
+	foreach ( $enrichment_fields as $ef ) {
+		if ( ! empty( $business_facts[ $ef ] ) && is_array( $business_facts[ $ef ] ) ) {
+			++$enrichment_count;
+		}
+	}
+	$has_business_facts = ! empty( $business_facts['business_name'] ) && $enrichment_count >= 2;
+
 	// llms completeness score.
 	$llms_score       = 0;
 	$has_sections_cfg = ! empty( $config['sections'] ) && is_array( $config['sections'] );
 	if ( ! empty( $config['intro'] ) ) {
 		$llms_score += 20;
 	}
-	if ( ! empty( $config['business_facts'] ) && is_array( $config['business_facts'] ) ) {
+	if ( $has_business_facts ) {
 		$llms_score += 20;
 	}
 	if ( $has_sections_cfg ) {
@@ -487,7 +508,8 @@ function rr_aeo_compute_readiness(): array {
 			'overall'                   => $overall,
 		),
 		'signals'          => array(
-			'has_business_facts'                => ( ! empty( $config['business_facts'] ) && is_array( $config['business_facts'] ) ),
+			'has_business_facts'                => $has_business_facts,
+			'business_facts_source'             => $entity['source'],
 			'has_homepage_localbusiness_schema' => $has_homepage_lb,
 			'has_llms_config'                   => ! empty( $config ),
 			'canonical_url_count'               => $sync['canonical_url_count'],

@@ -436,11 +436,13 @@ class AeoGeoReadinessTest extends TestCase {
 					'services' => array( 'label' => 'Services', 'order' => 1 ),
 				),
 				'business_facts'        => array(
-					'business_name' => 'Full Biz',
-					'phone'         => '555-1234',
-					'address'       => '123 Main St, Ann Arbor, MI 48104',
-					'schema_type'   => 'LocalBusiness',
-					'entity_id'     => 'https://full-biz.test/#business',
+					'business_name'    => 'Full Biz',
+					'phone'            => '555-1234',
+					'address'          => '123 Main St, Ann Arbor, MI 48104',
+					'schema_type'      => 'LocalBusiness',
+					'entity_id'        => 'https://full-biz.test/#business',
+					'primary_services' => array( 'Interior Painting', 'Exterior Painting' ),
+					'service_area'     => array( 'Ann Arbor', 'Ypsilanti' ),
 				),
 			)
 		);
@@ -455,6 +457,7 @@ class AeoGeoReadinessTest extends TestCase {
 		$this->assertArrayHasKey( 'signals', $result );
 		$this->assertTrue( $result['signals']['has_business_facts'] );
 		$this->assertTrue( $result['signals']['has_llms_config'] );
+		$this->assertSame( 'manual_business_facts', $result['signals']['business_facts_source'] );
 	}
 
 	public function test_readiness_scoring_no_config(): void {
@@ -501,13 +504,67 @@ class AeoGeoReadinessTest extends TestCase {
 					'services' => array( 'label' => 'Services', 'order' => 1 ),
 				),
 				'business_facts'        => array(
-					'business_name' => 'Biz',
+					'business_name'    => 'Biz',
+					'primary_services' => array( 'Bookkeeping' ),
+					'service_area'     => array( 'Oglesby, IL' ),
 				),
 			)
 		);
 
 		$result = rr_aeo_compute_readiness();
 		$this->assertSame( 100, $result['scores']['llms_completeness'] );
+	}
+
+	public function test_has_business_facts_false_with_only_business_name(): void {
+		// business_name alone (no enrichment fields) is identity, not
+		// AEO-ready business facts — see issue #10.
+		$this->setLlmsConfig(
+			array(
+				'business_facts' => array(
+					'business_name' => 'Name Only Co',
+				),
+			)
+		);
+
+		$result = rr_aeo_compute_readiness();
+		$this->assertFalse( $result['signals']['has_business_facts'] );
+	}
+
+	public function test_has_business_facts_true_with_two_enrichment_fields(): void {
+		$this->setLlmsConfig(
+			array(
+				'business_facts' => array(
+					'business_name'   => 'Kilday Baxter & Associates',
+					'primary_services' => array( 'Bookkeeping', 'Payroll' ),
+					'common_questions' => array(
+						array( 'question' => 'Do I need a CPA?', 'answer' => 'Depends on complexity.' ),
+					),
+				),
+			)
+		);
+
+		$result = rr_aeo_compute_readiness();
+		$this->assertTrue( $result['signals']['has_business_facts'] );
+	}
+
+	public function test_has_business_facts_false_with_only_one_enrichment_field(): void {
+		$this->setLlmsConfig(
+			array(
+				'business_facts' => array(
+					'business_name'    => 'One Field Co',
+					'primary_services' => array( 'Bookkeeping' ),
+				),
+			)
+		);
+
+		$result = rr_aeo_compute_readiness();
+		$this->assertFalse( $result['signals']['has_business_facts'] );
+	}
+
+	public function test_business_facts_source_reflects_resolution_priority(): void {
+		// No manual config, no schema — bloginfo fallback.
+		$result = rr_aeo_compute_readiness();
+		$this->assertSame( 'bloginfo_fallback', $result['signals']['business_facts_source'] );
 	}
 
 	public function test_schema_depth_global_warnings_deduct_score(): void {

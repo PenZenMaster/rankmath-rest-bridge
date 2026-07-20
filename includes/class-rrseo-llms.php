@@ -268,6 +268,109 @@ function rr_validate_llms_section( string $section ) {
 	);
 }
 
+// ── business_facts validation ─────────────────────────────────────────────────
+
+/**
+ * Validates a business_facts payload before it is persisted (v3.4.0, issue #9).
+ *
+ * An empty array is always valid (clears manual business_facts, falling back
+ * to schema/bloginfo resolution). A non-empty payload must include
+ * business_name and description; every other key is optional but is type-
+ * and size-checked when present.
+ *
+ * @param array $facts Proposed business_facts value.
+ * @return true|WP_Error
+ */
+function rr_validate_llms_business_facts( array $facts ) {
+	if ( empty( $facts ) ) {
+		return true;
+	}
+
+	$errors = array();
+
+	if ( empty( $facts['business_name'] ) || ! is_string( $facts['business_name'] ) ) {
+		$errors[] = 'business_name is required and must be a non-empty string.';
+	}
+	if ( empty( $facts['description'] ) || ! is_string( $facts['description'] ) ) {
+		$errors[] = 'description is required and must be a non-empty string.';
+	}
+
+	$string_fields = array(
+		'business_name',
+		'description',
+		'tagline',
+		'website',
+		'phone',
+		'address',
+		'hours',
+		'years_in_business',
+		'schema_type',
+		'entity_id',
+	);
+	foreach ( $string_fields as $field ) {
+		if ( ! isset( $facts[ $field ] ) ) {
+			continue;
+		}
+		if ( ! is_string( $facts[ $field ] ) ) {
+			$errors[] = "{$field} must be a string.";
+		} elseif ( strlen( $facts[ $field ] ) > 5000 ) {
+			$errors[] = "{$field} must not exceed 5000 characters.";
+		}
+	}
+
+	$list_fields = array( 'primary_services', 'service_area', 'key_differentiators' );
+	foreach ( $list_fields as $field ) {
+		if ( ! isset( $facts[ $field ] ) ) {
+			continue;
+		}
+		if ( ! is_array( $facts[ $field ] ) ) {
+			$errors[] = "{$field} must be an array of strings.";
+			continue;
+		}
+		if ( count( $facts[ $field ] ) > 50 ) {
+			$errors[] = "{$field} must not exceed 50 items.";
+			continue;
+		}
+		foreach ( $facts[ $field ] as $item ) {
+			if ( ! is_string( $item ) ) {
+				$errors[] = "{$field} items must be strings.";
+				break;
+			}
+		}
+	}
+
+	if ( isset( $facts['common_questions'] ) ) {
+		if ( ! is_array( $facts['common_questions'] ) ) {
+			$errors[] = 'common_questions must be an array of {question, answer} objects.';
+		} elseif ( count( $facts['common_questions'] ) > 50 ) {
+			$errors[] = 'common_questions must not exceed 50 items.';
+		} else {
+			foreach ( $facts['common_questions'] as $qa ) {
+				$valid_qa = is_array( $qa )
+					&& ! empty( $qa['question'] ) && is_string( $qa['question'] )
+					&& ! empty( $qa['answer'] ) && is_string( $qa['answer'] );
+				if ( ! $valid_qa ) {
+					$errors[] = 'Each common_questions item must have non-empty string question and answer fields.';
+					break;
+				}
+			}
+		}
+	}
+
+	if ( ! empty( $errors ) ) {
+		return new WP_Error(
+			'invalid_business_facts',
+			'One or more business_facts fields failed validation.',
+			array(
+				'status' => 422,
+				'errors' => $errors,
+			)
+		);
+	}
+
+	return true;
+}
+
 // ── business_facts resolver ───────────────────────────────────────────────────
 
 /**
@@ -376,6 +479,84 @@ function rr_resolve_business_facts( array $config ): array {
 // ── llms.txt renderer ─────────────────────────────────────────────────────────
 
 /**
+ * Renders the Business Facts block as an array of llms.txt lines.
+ *
+ * Returns an empty array when rr_resolve_business_facts() yields nothing
+ * (only possible if the bloginfo fallback itself is empty). Covers the full
+ * business_facts field set: identity, tagline/description, services, area,
+ * differentiators, hours/years, contact, schema linkage, and a Common
+ * Questions Q&A block (v3.4.0, issues #9/#10).
+ *
+ * @param array  $config llms config option value.
+ * @param string $label  Section heading label.
+ * @return string[]
+ */
+function rr_render_business_facts_lines( array $config, string $label = 'Business Facts' ): array {
+	$facts = rr_resolve_business_facts( $config );
+	if ( empty( $facts ) ) {
+		return array();
+	}
+
+	$lines   = array();
+	$lines[] = '## ' . $label;
+
+	if ( ! empty( $facts['website'] ) ) {
+		$lines[] = 'Website: ' . $facts['website'];
+	}
+	if ( ! empty( $facts['business_name'] ) ) {
+		$lines[] = 'Business: ' . $facts['business_name'];
+	}
+	if ( ! empty( $facts['tagline'] ) ) {
+		$lines[] = 'Tagline: ' . $facts['tagline'];
+	}
+	if ( ! empty( $facts['description'] ) ) {
+		$lines[] = 'Description: ' . $facts['description'];
+	}
+	if ( ! empty( $facts['primary_services'] ) ) {
+		$lines[] = 'Primary services: ' . implode( ', ', (array) $facts['primary_services'] );
+	}
+	if ( ! empty( $facts['service_area'] ) ) {
+		$lines[] = 'Service area: ' . implode( ', ', (array) $facts['service_area'] );
+	}
+	if ( ! empty( $facts['key_differentiators'] ) ) {
+		$lines[] = 'Key differentiators: ' . implode( ', ', (array) $facts['key_differentiators'] );
+	}
+	if ( ! empty( $facts['years_in_business'] ) ) {
+		$lines[] = 'Years in business: ' . $facts['years_in_business'];
+	}
+	if ( ! empty( $facts['hours'] ) ) {
+		$lines[] = 'Hours: ' . $facts['hours'];
+	}
+	if ( ! empty( $facts['phone'] ) ) {
+		$lines[] = 'Phone: ' . $facts['phone'];
+	}
+	if ( ! empty( $facts['address'] ) ) {
+		$lines[] = 'Address: ' . $facts['address'];
+	}
+	if ( ! empty( $facts['schema_type'] ) ) {
+		$lines[] = 'Schema type: ' . $facts['schema_type'];
+	}
+	if ( ! empty( $facts['entity_id'] ) ) {
+		$lines[] = 'Entity ID: ' . $facts['entity_id'];
+	}
+	$lines[] = '';
+
+	if ( ! empty( $facts['common_questions'] ) && is_array( $facts['common_questions'] ) ) {
+		$lines[] = '## Common Questions';
+		foreach ( $facts['common_questions'] as $qa ) {
+			if ( ! is_array( $qa ) || empty( $qa['question'] ) || empty( $qa['answer'] ) ) {
+				continue;
+			}
+			$lines[] = '### ' . $qa['question'];
+			$lines[] = (string) $qa['answer'];
+			$lines[] = '';
+		}
+	}
+
+	return $lines;
+}
+
+/**
  * Renders the full llms.txt content from the current config and canonical URL set.
  *
  * When sections config is provided (object form with 'label','order','url_patterns' etc.)
@@ -430,6 +611,14 @@ function rr_render_llms_txt( array $config ): array {
 		$lines[] = '';
 	}
 
+	// Business Facts (v3.4.0, issues #9/#10): rendered here by default so
+	// business identity appears in llms.txt even when no sections config
+	// exists. Sites that explicitly place a 'business_facts' section in
+	// their sections config keep it there instead (rendered once, below).
+	if ( empty( $sections_config ) || ! isset( $sections_config['business_facts'] ) ) {
+		$lines = array_merge( $lines, rr_render_business_facts_lines( $config ) );
+	}
+
 	// ── Section-based rendering (P1) ───────────────────────────────────────────
 	$section_counts = array();
 
@@ -472,36 +661,8 @@ function rr_render_llms_txt( array $config ): array {
 		foreach ( $output_order as $section_key ) {
 			// ── Special sections ───────────────────────────────────────────────
 			if ( 'business_facts' === $section_key ) {
-				$facts = rr_resolve_business_facts( $config );
-				if ( ! empty( $facts ) ) {
-					$label   = $sections_config[ $section_key ]['label'] ?? 'Business Facts';
-					$lines[] = '## ' . $label;
-					if ( ! empty( $facts['website'] ) ) {
-						$lines[] = 'Website: ' . $facts['website'];
-					}
-					if ( ! empty( $facts['business_name'] ) ) {
-						$lines[] = 'Business: ' . $facts['business_name'];
-					}
-					if ( ! empty( $facts['primary_services'] ) ) {
-						$lines[] = 'Primary services: ' . implode( ', ', (array) $facts['primary_services'] );
-					}
-					if ( ! empty( $facts['service_area'] ) ) {
-						$lines[] = 'Service area: ' . implode( ', ', (array) $facts['service_area'] );
-					}
-					if ( ! empty( $facts['phone'] ) ) {
-						$lines[] = 'Phone: ' . $facts['phone'];
-					}
-					if ( ! empty( $facts['address'] ) ) {
-						$lines[] = 'Address: ' . $facts['address'];
-					}
-					if ( ! empty( $facts['schema_type'] ) ) {
-						$lines[] = 'Schema type: ' . $facts['schema_type'];
-					}
-					if ( ! empty( $facts['entity_id'] ) ) {
-						$lines[] = 'Entity ID: ' . $facts['entity_id'];
-					}
-					$lines[] = '';
-				}
+				$label = $sections_config[ $section_key ]['label'] ?? 'Business Facts';
+				$lines = array_merge( $lines, rr_render_business_facts_lines( $config, $label ) );
 				continue;
 			}
 

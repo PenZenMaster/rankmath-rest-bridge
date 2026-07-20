@@ -159,6 +159,63 @@ Common WordPress `wp_head` priorities for targeting:
 
 ### llms.txt
 
+#### `GET /llms` / `POST /llms` — llms.txt configuration
+
+`POST /llms` accepts top-level fields matching the config option shape —
+there is no `config` or `data` wrapper; send the fields directly in the
+request body. All fields are optional; omitted fields are left unchanged.
+
+| Field | Type | Notes |
+|---|---|---|
+| `intro` | string | Free text inserted after the header. |
+| `sections` | object | URL classifier config — see `GET /llms/preview`. |
+| `custom_sections` | array | Legacy `{heading, items}` text blocks. |
+| `exclude_patterns` | array of string | URL path prefixes to omit. |
+| `schema_source_post_id` | int | Post to pull LocalBusiness/Organization schema from. |
+| `include_sitemaps` / `include_lastmod` / `exclude_noindex` / `exclude_utility_pages` / `group_by_intent` | bool | Renderer toggles. |
+| `max_description_chars` | int | Per-URL description truncation length. |
+| `business_facts` | object | Site-wide business identity — see below. |
+
+**`business_facts`** is the write path for the curated business identity
+block (v3.4.0, issues #9/#10) — the fields AI assistants and the
+`/aeo-geo/*` readiness scorer consume. **`business_name` and `description`
+are required whenever `business_facts` is sent non-empty**; every other key
+is optional. Strings are capped at 5000 characters, arrays at 50 items.
+Invalid payloads return `422 invalid_business_facts` with a `data.errors`
+array — nothing is silently dropped.
+
+```bash
+curl -X POST "$BASE/llms" -u "$CRED" -H "Content-Type: application/json" -d '{
+  "business_facts": {
+    "business_name": "Kilday Baxter & Associates",
+    "description": "Full-service CPA firm in Oglesby, Illinois.",
+    "tagline": "Accounting and tax services for the Illinois Valley",
+    "phone": "815-883-3500",
+    "address": "755 W. Walnut Street, Oglesby, IL 61348",
+    "hours": "Monday-Friday 8:00 AM - 6:00 PM. Saturday by appointment.",
+    "years_in_business": "30+",
+    "primary_services": ["Bookkeeping", "Payroll", "Tax Preparation"],
+    "service_area": ["Oglesby, IL", "LaSalle, IL", "Peru, IL"],
+    "key_differentiators": ["CPAs on staff", "30+ years serving the Illinois Valley"],
+    "common_questions": [
+      {"question": "Do I need a CPA or is a bookkeeper enough?",
+       "answer": "It depends on the complexity of your finances..."}
+    ]
+  }
+}'
+```
+
+Once written, `business_facts` renders into `/llms.txt` as a **Business
+Facts** block plus a **Common Questions** Q&A block — by default right
+after the intro, or in its configured position if `sections.business_facts`
+is set. This happens automatically; no separate publish step is needed
+beyond `POST /llms-txt/regenerate` to bust the canonical-URL cache if the
+site's URL set also changed.
+
+If `business_facts` is omitted from a write, identity data falls back to
+`schema_source_post_id` schema, then homepage `LocalBusiness`/`Organization`
+schema, then WordPress `bloginfo()` (site name/URL only — least complete).
+
 #### `POST /llms-txt/regenerate` — invalidate cache and re-render
 
 Forces a fresh render of the dynamic `/llms.txt` response. Returns
@@ -205,6 +262,56 @@ curl "$BASE/observe/llms-diff" -u "$CRED"
 
 External links are returned with `status_code: null` and `checked: false` —
 external verification belongs to the Audit Engine, not the plugin.
+
+---
+
+### AEO / GEO (v2.10.0; scoring updated v3.4.0)
+
+Read-only AI/answer-engine-optimization signals for the external Audit
+Engine. All require `manage_options`. The plugin has no knowledge of
+whether GSC/GA4/GBP connectors are active elsewhere, so `data_depth_badge`
+is always `public-only`.
+
+```bash
+# Canonical URL set with sitemap/llms/schema membership flags
+curl "$BASE/canonical-urls/preview" -u "$CRED"
+
+# Top-level readiness snapshot (scores + signals) — see rubric below
+curl "$BASE/aeo-geo/readiness" -u "$CRED"
+
+# Resolved entity signals (business_facts -> schema_source_post_id -> homepage schema -> bloginfo)
+curl "$BASE/aeo-geo/entity" -u "$CRED"
+
+# Per-URL schema type inventory + missing-opportunity flags
+curl "$BASE/aeo-geo/schema-audit" -u "$CRED"
+
+# Three-way sync check: canonical URL set vs XML sitemap vs llms.txt
+curl "$BASE/aeo-geo/source-sync" -u "$CRED"
+```
+
+**`GET /aeo-geo/readiness` scoring rubric** — four 0-100 sub-scores,
+averaged into `overall`:
+
+| Score | Formula |
+|---|---|
+| `entity_clarity` | +25 each for non-empty `business_name`, `phone`, `address`, `schema_type`; +10 if `entity_id` set; -10 per resolver warning. Floor 0. |
+| `canonical_source_guidance` | Equals `source_sync.sync_score` (percent of canonical URLs present in both the XML sitemap and llms.txt). |
+| `schema_depth` | Schema coverage percent across canonical URLs, minus 10 per global warning (no LocalBusiness/Organization anywhere, no FAQPage anywhere, no BreadcrumbList anywhere). |
+| `llms_completeness` | +20 each for non-empty `intro`, `signals.has_business_facts`, any `sections` config, `exclude_patterns`, `max_description_chars`. |
+
+**Key signals:**
+
+- `has_business_facts` — `true` only when `business_facts.business_name` is
+  non-empty **and** at least two of `primary_services`, `service_area`,
+  `common_questions`, `key_differentiators` are populated. A business name
+  alone is identity, not AEO-ready business facts (v3.4.0, issue #10) — set
+  it via `POST /llms`, see [llms.txt](#llmstxt) above.
+- `business_facts_source` — which tier of the resolution priority chain
+  supplied the entity data: `manual_business_facts`, `schema_source_post`,
+  `homepage_schema`, or `bloginfo_fallback`.
+- `has_homepage_localbusiness_schema` — whether the homepage's stored
+  schema graph includes a `LocalBusiness`/`Organization`-family `@type`.
+- `sitemap_llms_in_sync` — `true` when `source_sync.sync_status` is `synced`.
 
 ---
 

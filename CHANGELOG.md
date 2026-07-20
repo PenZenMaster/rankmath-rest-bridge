@@ -1,5 +1,64 @@
 # Changelog
 
+## v3.4.0
+
+AEO/GEO write surface (issues #9, #10) — fixes `POST /llms` business_facts
+persistence, undocumented payload shape, and readiness scoring, surfaced
+by the Kilday Baxter & Associates SEO audit (2026-07-19/20).
+
+### Fixed
+
+- **`business_facts` writes are now validated, not silently dropped**
+  (issue #9). `POST /llms` previously accepted any JSON shape and always
+  returned `success:true` even when nothing matched a registered field —
+  including every payload shape the auditing operator tried (wrapped under
+  `config`, wrapped under `data`, or sent as unregistered root-level keys).
+  `business_facts` writes are now validated by
+  `rr_validate_llms_business_facts()`: `business_name` and `description`
+  are required whenever `business_facts` is sent non-empty; every other
+  field is type- and size-checked (strings capped at 5000 chars, arrays at
+  50 items). Invalid payloads are rejected with `422 invalid_business_facts`
+  and a `data.errors` array instead of a false `success:true`.
+- **`business_facts` now always renders into `/llms.txt`** — previously the
+  Business Facts block only appeared when the site had a `sections` config
+  with an explicit `business_facts` entry, which almost no site configures.
+  It now renders by default (using the same `business_name` ->
+  `schema_source_post_id` schema -> homepage schema -> bloginfo priority
+  chain already used for entity resolution) unless a `sections.business_facts`
+  entry places it explicitly. This is a default output change for every
+  site: llms.txt gains a Business Facts block even with a bare bloginfo
+  fallback.
+- **`aeo-geo/readiness` now scores what it can actually be told** (issue
+  #10). `signals.has_business_facts` previously flipped `true` on any
+  non-empty `business_facts` object, including a bare `business_name` with
+  no AEO-relevant content — now requires `business_name` plus at least two
+  of `primary_services`, `service_area`, `common_questions`,
+  `key_differentiators`. The `llms_completeness` sub-score's business-facts
+  bucket uses the same corrected signal. **This can lower `has_business_facts`
+  and `llms_completeness` for sites that previously scored a pass with
+  identity-only `business_facts`** (e.g. name/phone/address with no
+  services/area/questions/differentiators) — add the enrichment fields via
+  `POST /llms` to recover the score.
+- New `signals.business_facts_source` field on `/aeo-geo/readiness` reports
+  which tier of the resolution chain supplied the entity data
+  (`manual_business_facts`, `schema_source_post`, `homepage_schema`, or
+  `bloginfo_fallback`).
+
+### Added
+
+- New `business_facts` fields: `description`, `tagline`, `hours`,
+  `years_in_business`, `key_differentiators` (array), `common_questions`
+  (array of `{question, answer}`) — rendered into a Business Facts block
+  plus a Common Questions Q&A block in `/llms.txt`.
+- README: documented `POST /llms` payload shape and the full
+  `business_facts` field set (previously undocumented); added an AEO / GEO
+  section covering all four `/aeo-geo/*` endpoints and the readiness
+  scoring rubric (previously undocumented — operators had to
+  reverse-engineer the rubric from field names).
+- 16 new unit tests (207 -> 223): `tests/unit/LlmsBusinessFactsTest.php`
+  (validator + renderer) and additions to `tests/unit/AeoGeoReadinessTest.php`
+  (`has_business_facts` threshold behavior, `business_facts_source`).
+
 ## v3.3.0
 
 WAF-safe snippet transport (issue #8) — completes the render-blocking-CSS

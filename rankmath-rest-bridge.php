@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.3.0
+ * Version:      3.4.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.3.0' );
+define( 'RMB_VERSION', '3.4.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3979,9 +3979,20 @@ function rmb_llms_set_config( WP_REST_Request $request ) {
 		$config['exclude_patterns'] = array_map( 'sanitize_text_field', $patterns );
 	}
 
-	// business_facts (object).
+	// business_facts (object) — validated per issue #9 before it is accepted.
 	$facts = $request->get_param( 'business_facts' );
-	if ( null !== $facts && is_array( $facts ) ) {
+	if ( null !== $facts ) {
+		if ( ! is_array( $facts ) ) {
+			return new WP_Error(
+				'invalid_business_facts',
+				'business_facts must be an object.',
+				array( 'status' => 422 )
+			);
+		}
+		$validated = rr_validate_llms_business_facts( $facts );
+		if ( is_wp_error( $validated ) ) {
+			return $validated;
+		}
 		$config['business_facts'] = $facts;
 	}
 
