@@ -1,11 +1,51 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-07-10
-**Current Version:** 3.3.0
+**Last Updated:** 2026-07-20
+**Current Version:** 3.4.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** fd01178 -- chore: release v3.3.0 zip
+**Last Commit:** 540fdd8 -- chore: release v3.4.1 zip
 **Git Status:** clean
+
+---
+
+## 2026-07-20 Session (final) -- AEO/GEO Write Surface: Issues #9, #10, #11 -- SHIPPED
+
+### Session Summary
+Two field-driven issues (#9, #10) arrived from the Kilday Baxter &
+Associates SEO audit, both traced to the same root cause: `POST /llms`
+`business_facts` writes had no validation, no documented payload shape,
+and never rendered into `/llms.txt` without a hand-authored `sections`
+config. Bundled into a single v3.4.0 release. A replay of the same audit
+against the freshly-deployed v3.4.0 immediately surfaced a regression
+(#11) in that fix -- caught and shipped same-day as v3.4.1.
+
+### Accomplishments
+- **v3.4.0 SHIPPED (issues #9, #10)** -- `business_facts` writes validated
+  (`business_name` + `description` required, size caps, `422
+  invalid_business_facts`); Business Facts + Common Questions block now
+  renders into `/llms.txt` by default; new fields `description`,
+  `tagline`, `hours`, `years_in_business`, `key_differentiators`,
+  `common_questions`; `has_business_facts` tightened to require a name
+  plus >=2 enrichment fields, new `business_facts_source` signal; README
+  gained full `POST /llms` + `/aeo-geo/*` docs (previously undocumented).
+  16 new tests (207 -> 223).
+- **v3.4.1 SHIPPED (issue #11)** -- same-day fix for a regression in the
+  v3.4.0 fix itself: partial `business_facts` writes were replacing the
+  whole stored object instead of merging, contradicting the v3.4.0
+  README's own contract and silently collapsing readiness scores on any
+  incremental update. New `rr_merge_llms_business_facts()`; validation now
+  runs against the merged result. 5 new tests (223 -> 228).
+- Removed 9 superseded release zips (v2.17.4-v3.2.0) at user's
+  confirmation -- only current + immediately-prior zips retained going
+  forward.
+- Suite: 228 tests / 550 assertions; phpcs clean on both releases.
+
+### Next
+User smoke-tests v3.4.1 against a live site; close issues #9/#10/#11 on
+GitHub once confirmed; resume the still-pending Higgins v3.3.0 perf
+deployment (render-block swap, code_b64 + priority:1, PageSpeed
+measurement) carried over from the prior session.
 
 ---
 
