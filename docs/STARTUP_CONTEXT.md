@@ -2,65 +2,72 @@
 
 **Last Updated:** 2026-08-06
 **Branch:** main
-**Version:** 3.5.0 (shipped, zip on CDN; confirmed live on kildaybaxter.com)
-**Last Commit:** cdceafa -- chore: release v3.5.0 zip
+**Version:** 3.6.0 (shipped, zip on CDN; not yet smoke-tested live)
+**Last Commit:** d4b537a -- chore: release v3.6.0 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v3.5.0 shipped and confirmed live (2026-08-06, issue #13)** --
+1. **v3.6.0 shipped (2026-08-06, issue #14)** -- `POST /media` audited
+   upload wrapper around `media_handle_sideload()`: required `alt_text` +
+   `source` (allowlist, stored `_rrseo_media_source`), MIME allowlist
+   checked against real file content via `wp_check_filetype_and_ext()`
+   (415 on mismatch), 10MB cap (413), `is_placeholder`/`source` pairing
+   (`_rrseo_media_placeholder`), `dry_run`. New `GET /media/placeholders`.
+   Extracted `rr_validate_media_fields()`/`rr_validate_media_file()` as
+   pure, unit-testable helpers (16 new tests, 239 -> 255). Not yet
+   smoke-tested live -- next priority.
+
+2. **v3.5.0 shipped and confirmed live (2026-08-06, issue #13)** --
    `POST /schema/{post_id}` now accepts single node (unchanged), bare
    array, or `@graph` envelope; all normalize to a canonical `@graph`
    envelope in `_rrseo_schema_graph`, per-node `@type` validation, 20-node
-   cap (413). `wp_head` emitter needed no changes. 11 new tests (228 ->
-   239), phpcs clean. Live smoke test on kildaybaxter.com post 2090: wrote
-   a Service + BreadcrumbList graph, confirmed one `<script
+   cap (413). Live smoke test on kildaybaxter.com post 2090: wrote a
+   Service + BreadcrumbList graph, confirmed one `<script
    type="application/ld+json">` tag renders both nodes correctly on the
    production page. Closed #13 with evidence.
 
-2. **v3.4.1 smoke test confirmed live (2026-08-06)** -- ran the #11
-   regression test against kildaybaxter.com: baseline full `business_facts`
-   write, then a partial write of `{"business_facts":{"email":"..."}}`.
-   Diff showed only `email` added; every other field preserved unchanged,
-   readiness scores held steady. Closed issues #9, #10, #11 with evidence.
-
-3. **v3.4.0/v3.4.1 shipped (issues #9, #10, #11)** -- AEO/GEO write
-   surface: `business_facts` writes validated and merged (not replaced);
-   Business Facts + Common Questions block renders into `/llms.txt` by
-   default; `has_business_facts` scoring tightened.
+3. **v3.4.1 smoke test confirmed live (2026-08-06)** -- ran the #11
+   regression test against kildaybaxter.com: partial `business_facts`
+   write preserved all other fields, readiness scores held steady.
+   Closed issues #9, #10, #11 with evidence.
 
 ---
 
 ## Next 3 Priorities
 
-1. **#14 `POST /media`** -- next in the "Programmatic page provisioning"
-   milestone sequence (#13 done -> #14 -> #12 -> #15). Audited media-upload
-   wrapper around `media_handle_sideload()`; required `alt_text` + `source`,
-   MIME allowlist, 10MB cap, `_rrseo_media_source`/`_rrseo_media_placeholder`
-   meta, dry_run support.
+1. **Smoke-test v3.6.0 live** -- self-update kildaybaxter.com (or
+   another test site), POST /media with a real image + attach_to_post_id,
+   verify alt text/source meta persisted, MIME/size rejection paths
+   (415/413), and dry_run. Close #14 once confirmed, same pattern as
+   #9/#10/#11/#13.
 
-2. **Resume Higgins v3.3.0 perf deployment** -- carried over across
+2. **#12 `POST /elementor/set-data`** -- third in the "Programmatic page
+   provisioning" milestone sequence (#13 done -> #14 done -> #12 -> #15).
+   Elementor confirmed always-active on target sites (user confirmed
+   2026-08-06), so no inactive-plugin fallback branch needed.
+
+3. **Resume Higgins v3.3.0 perf deployment** -- carried over across
    multiple sessions. POST the Font Awesome + Bootstrap preload/onload
    swap with `code_b64` + `priority:1`; verify PageSpeed mobile moves
-   63 -> 78-85. Higgins should also eventually move to v3.5.x.
-
-3. **#12 `POST /elementor/set-data`** -- third in the milestone sequence,
-   after #14. Elementor confirmed always-active on target sites (user
-   confirmed 2026-08-06), so no inactive-plugin fallback branch needed.
+   63 -> 78-85. Higgins should also eventually move to v3.6.x.
 
 ---
 
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `cdceafa`
+- Branch `main` -- in sync with origin at `d4b537a`
 - Kilday Baxter (kildaybaxter.com) confirmed running v3.5.0 as of the
-  2026-08-06 smoke test (user manually forced the update ahead of the
-  scripted `/self-update` call). Higgins still on v3.3.0.
-- Gates: phpcs clean, phpunit 239 tests / 585 assertions
+  last live smoke test; v3.6.0 not yet deployed/tested on any live site.
+  Higgins still on v3.3.0.
+- Gates: phpcs clean, phpunit 255 tests / 615 assertions
 
 **Files of note:**
+- Media upload validation: `rankmath-rest-bridge.php`
+  (`rr_validate_media_fields()`, `rr_validate_media_file()`,
+  `rmb_media_upload()`, `rmb_media_list_placeholders()`)
 - Schema graph validation: `rankmath-rest-bridge.php`
   (`rr_validate_schema()`, `rr_validate_schema_graph()`, `rmb_schema_set()`)
 - `business_facts` validate/merge/render: `includes/class-rrseo-llms.php`
@@ -70,11 +77,12 @@
   (`rr_aeo_compute_readiness()` -- `has_business_facts` rubric)
 - Release hook note: run `git push` twice (zip commit lands after refspec)
 - GitHub milestone #1 "Programmatic page provisioning" holds #12/#14/#15
-  (open) and #13 (closed) -- sequencing noted via comments on each issue.
+  open and #13 closed -- #14 implemented and shipped, pending live smoke
+  test before close. Sequencing noted via comments on each issue.
 
 **Blockers:**
-- None. v3.5.0 smoke-tested and confirmed live on Kilday Baxter; issue
-  #13 closed.
+- None. v3.6.0 built, tested locally (phpcs/phpunit clean), and pushed;
+  live smoke test still outstanding (priority 1 above).
 
 ---
 
