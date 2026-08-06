@@ -711,10 +711,11 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
   - All settings lockable via `wp-config.php` constant to prevent client revert
   - Use case: client handoff — hide third-party branding, reinforce agency identity
 
-### v3.0 — Plugin as Audit-Engine Executor (Shape B)
+### v3.0 — Plugin as Audit-Engine Executor (Shape B) — COMPLETE (all 4 bites shipped 2026-07-06 through 2026-07-10)
 
-Prerequisite: cache stabilization (done), mu-plugin retirement (in progress),
-white-label work (next). v3.0 starts after white-label lands.
+Prerequisites (cache stabilization, mu-plugin retirement, white-label work)
+all completed prior to Bite 1. Roadmap fully delivered; kept below for
+historical reference and acceptance-criteria traceability.
 
 Reference: `docs/plugin-v3-executor-spec.md`
 
@@ -726,21 +727,21 @@ Reference: `docs/plugin-v3-executor-spec.md`
 - [x] `GET /observe/schema-graph/{post_id}`
 - [x] `GET /observe/llms-diff` (current llms.txt vs canonical URL set)
 
-**Bite 2 — Typed action engine (2-3 weeks)**
-- [ ] `POST /actions/dry-run` -- typed payload validation, simulated result
-- [ ] `POST /actions/execute` -- typed payload, persisted audit row, rollback envelope
-- [ ] Initial action whitelist: `update_setting`, `regenerate_llms_txt`, `update_meta_draft`, `toggle_indexing`
-- [ ] Remove `replace-all` endpoint (retargeted from standalone v3.0 milestone)
+**Bite 2 — Typed action engine (2-3 weeks) — DONE v2.19.0 (2026-07-09)**
+- [x] `POST /actions/dry-run` -- typed payload validation, simulated result
+- [x] `POST /actions/execute` -- typed payload, persisted audit row, rollback envelope
+- [x] Initial action whitelist: `update_setting`, `regenerate_llms_txt`, `update_meta_draft`, `toggle_indexing`
+- [x] Remove `replace-all` endpoint (removed v3.0.0, 2026-07-10)
 
-**Bite 3 — Rollback + state (1-2 weeks)**
-- [ ] `GET /actions/{action_id}` -- state lookup
-- [ ] `POST /actions/{action_id}/rollback` -- replays stored rollback envelope
-- [ ] Audit log extension: `action_id` + `rollback_payload` stored in `_rrseo_change_log` (no new table)
+**Bite 3 — Rollback + state (1-2 weeks) — DONE v3.1.0 (2026-07-10), deployed + smoke-tested**
+- [x] `GET /actions/{action_id}` -- state lookup
+- [x] `POST /actions/{action_id}/rollback` -- replays stored rollback envelope
+- [x] Audit log extension: `action_id` + `rollback_payload` stored in `_rrseo_change_log` (no new table)
 
-**Bite 4 — CI/test hardening (2 weeks)**
-- [ ] GitHub Actions: phpcs + phpunit on push/PR
-- [ ] PHPUnit coverage for every new endpoint (dry-run, execute, rollback, auth failure paths)
-- [ ] Integration test: assert both cache-bust calls fire after every executor write
+**Bite 4 — CI/test hardening (2 weeks) — DONE 2026-07-10, green on first run**
+- [x] GitHub Actions: phpcs + phpunit on push/PR (PHP 7.4 + 8.3, plus release-integrity job)
+- [x] PHPUnit coverage for every new endpoint (dry-run, execute, rollback, auth failure paths)
+- [x] Integration test: assert both cache-bust calls fire after every executor write
 
 **Acceptance criteria**
 - Every executed action has an audit row and verification result.

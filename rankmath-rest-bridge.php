@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.8.0
+ * Version:      3.8.1
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.8.0' );
+define( 'RMB_VERSION', '3.8.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2448,11 +2448,11 @@ add_action(
 				'permission_callback' => $admin_only,
 				'args'                => array(
 					'alt_text'          => array(
-						'required' => true,
+						'required' => false,
 						'type'     => 'string',
 					),
 					'source'            => array(
-						'required' => true,
+						'required' => false,
 						'type'     => 'string',
 					),
 					'filename'          => array(
@@ -5813,6 +5813,25 @@ function rmb_capabilities_get( WP_REST_Request $request ) {
 
 	return $response;
 }
+
+// WordPress core forces `Cache-Control: no-cache, must-revalidate, max-age=0`
+// on every authenticated REST response regardless of what the response
+// object's own header says (confirmed live on two unrelated hosting
+// stacks -- issue #17). rmb_capabilities_get()'s own $response->header()
+// call is overridden downstream by the time WP_REST_Server sends headers.
+// rest_pre_serve_request is the latest filter in the dispatch cycle, right
+// before output is echoed, so a raw header() call here reliably wins.
+add_filter(
+	'rest_pre_serve_request',
+	function ( $served, $result, $request ) {
+		if ( is_a( $request, 'WP_REST_Request' ) && '/rankrocket-seo/v1/capabilities' === $request->get_route() ) {
+			header( 'Cache-Control: public, max-age=60' );
+		}
+		return $served;
+	},
+	10,
+	3
+);
 
 /**
  * Handles POST /check-updates — clears the WordPress and PUC update-check caches.

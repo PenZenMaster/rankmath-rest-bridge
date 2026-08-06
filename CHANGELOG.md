@@ -1,5 +1,49 @@
 # Changelog
 
+## v3.8.1
+
+Two post-close verification findings from v3.8.0 fixed (issues #16, #17)
+-- both discovered by an external audit pass run against kildaybaxter.com
+immediately after #12/#14/#15 closed, same pattern as the issues that
+originally surfaced #9-#15.
+
+### Fixed
+
+- **`POST /media` returned `400` instead of the documented `422` for
+  missing `alt_text`/`source`** (issue #16). Both fields were registered
+  `required: true` at the REST-args level, so WordPress's own framework
+  rejected the request with a generic `rest_missing_callback_param`
+  before `rmb_media_upload()` ever ran -- the handler's own
+  `rr_validate_media_fields()` validator, which returns the documented
+  `422` shape, never got a chance to catch it. Both fields are now
+  `required: false` at the args level; the handler already casts absent
+  params to empty string, so missing and empty now hit the same
+  validation path and both correctly return `422`.
+- **`GET /capabilities`'s `Cache-Control: public, max-age=60` header
+  never reached the client** (issue #17). Confirmed live on two
+  completely different hosting stacks (kildaybaxter.com and
+  higginsoverheaddoor.com/WP Engine + Cloudflare) that WordPress core
+  forces its own no-cache header on every authenticated REST response,
+  overriding whatever the response object specifies -- not a
+  host-specific proxy quirk as first assumed during the v3.8.0 smoke
+  test. Added a `rest_pre_serve_request` hook, the last filter in the
+  REST dispatch cycle before output is echoed, to re-assert the header
+  with a raw `header()` call so it reliably wins.
+
+### Notes
+
+- Both fixes are behavior corrections to endpoints shipped one release
+  earlier (v3.8.0/v3.6.0/v3.5.0) the same day -- no new capabilities, no
+  README wording changes needed (both README claims were already
+  accurate to the *intended* behavior; only the delivery was broken).
+- A third finding from the same audit pass (issue #18, `since: null` on
+  11 pre-3.4.0 capabilities) was reviewed but not fixed here -- the
+  issue's own suggested backfill table contains at least one confirmed-
+  wrong guess (`seo.meta.update: 3.0.0`; that route is in the project's
+  very first commit, `v1.2.0`). Accurate backfill is feasible via
+  `git log -S` archaeology rather than guessing, but wasn't done this
+  release.
+
 ## v3.8.0
 
 `GET /capabilities` (issue #15) — the capstone of the "Programmatic page
