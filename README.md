@@ -493,6 +493,14 @@ for routes that predate this plugin's earliest tracked CHANGELOG entry
 left unset rather than guessed. Pure read, no side effects; response
 carries `Cache-Control: public, max-age=60`.
 
+**Known host caveat:** on WP Engine, this header may still arrive as
+`max-age=0, must-revalidate, private` regardless of plugin version —
+WP Engine's edge layer force-rewrites `Cache-Control` on any request it
+detects as authenticated (visible via its own `X-Pass-Why: auth`
+response header), overriding the origin's header entirely outside PHP.
+Not a plugin bug; nothing to fix on this side. Confirmed correct
+(`public, max-age=60` passes through untouched) on non-WP-Engine hosts.
+
 ---
 
 ### Observation (v2.18.0 — v3.0 Bite 1)
@@ -624,6 +632,14 @@ curl "$BASE/status" -u "$CRED" | jq .version
 ```
 
 Total time: ~3 seconds. The plugin re-activates itself after installation.
+
+**Always run step 3.** `POST /self-update`'s `success: true` response is
+not yet a reliable signal by itself — it currently reports the
+manifest's version as installed without re-reading the actual file on
+disk, so a host-level issue (filesystem permissions, git-based deploy
+sync reverting the write, stale opcache) can produce a false-positive
+success with no version change (tracked in issue #20). Confirm via
+`GET /status` before trusting an automated rollout as complete.
 
 ---
 

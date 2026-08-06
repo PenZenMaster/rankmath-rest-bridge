@@ -2,43 +2,50 @@
 
 **Last Updated:** 2026-08-06
 **Branch:** main
-**Version:** 3.8.0 (shipped, zip on CDN; confirmed live on kildaybaxter.com and higginsoverheaddoor.com)
-**Last Commit:** a67841a -- chore(checkpoint): 2026-08-06_0841 - Programmatic page provisioning milestone shipped and closed
+**Version:** 3.8.1 (shipped, zip on CDN; confirmed live on kildaybaxter.com and higginsoverheaddoor.com)
+**Last Commit:** 594e7b8 -- chore: release v3.8.1 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Higgins render-block fix completed and verified live (2026-08-06)**
+1. **Roadmap/issue review + v3.8.1 fixes (2026-08-06)** -- reviewed
+   outstanding GitHub issues and doc-level technical debt. Found 3 new
+   issues (#16, #17, #18) filed by an external audit pass immediately
+   after #12/#14/#15 closed -- same pattern as the audit that originally
+   surfaced #9-#15. Fixed and live-verified #16 (`POST /media` returned
+   `400` not the documented `422` for missing `alt_text`/`source` --
+   both fields no longer `required` at the REST-args level) and #17
+   (`GET /capabilities`'s `Cache-Control` header was being overridden;
+   root cause corrected from the earlier "host proxy" guess to WordPress
+   core forcing nocache on authenticated REST responses, confirmed
+   identically on two unrelated hosts). #18 (`since: null` backfill)
+   reviewed but not fixed -- its own suggested version table contains a
+   confirmed-wrong guess. Filed #19 (entity_clarity README callout,
+   carried as a doc note since 2026-07-20) and #20 (`POST /self-update`
+   reports false success -- discovered live on Higgins during this
+   session's verification, see below). Cleaned up stale `[ ]` roadmap
+   checkboxes in `projectStatus.md` for v3.0 Bites 2-4 (all shipped
+   2026-07-09/10, verified real test coverage before checking each box).
+
+2. **Higgins render-block fix completed and verified live (2026-08-06)**
    -- closed out the perf deployment carried over since 2026-07-10.
    Found the theme was still separately enqueuing its own blocking
-   `bootstrap`/`font-awesome` stylesheets alongside the existing
+   `bootstrap`/`font-awesome` stylesheets alongside an existing
    priority:1 async-swap snippet from a prior session -- the async
    preload had zero effect because the blocking original was still
    there. Added `/perf/dequeue-rules` for both (after discovering the
    handle-name gotcha -- see Key Context Notes), added the matching
    Bootstrap async snippet, fixed the existing FA snippet's missing
-   `<noscript>` fallback. Verified via direct HTML inspection (dequeue
-   confirmed, both async snippets rendering correctly) after working
-   around WP Engine + Cloudflare's aggressive page caching (also see Key
-   Context Notes). PageSpeed mobile: Performance 53 -> 60-65 across 3
-   post-fix runs, FCP/TBT/SI all consistently improved; LCP stayed noisy
-   (9.3-13.6s) and didn't hit the originally-projected 78-85 -- likely a
-   separate LCP-specific bottleneck (image load / origin response time
-   under throttling), not the CSS block this fix targeted. Real,
-   repeatable win; not fully resolved.
+   `<noscript>` fallback. PageSpeed mobile: Performance 53 -> 60-65
+   across 3 post-fix runs; LCP stayed noisy (9.3-13.6s), short of the
+   originally-projected 78-85 -- likely a separate bottleneck, not
+   investigated further. Real, repeatable win; not fully resolved.
 
-2. **"Programmatic page provisioning" milestone closed (2026-08-06)** --
+3. **"Programmatic page provisioning" milestone closed (2026-08-06)** --
    all 4 issues (#12 elementor set-data, #13 schema graph, #14 media
    upload, #15 capabilities) implemented, shipped v3.5.0-v3.8.0, and
-   live-verified on kildaybaxter.com in one combined smoke test. All 4
-   issues + the GitHub milestone closed with evidence.
-
-3. **v3.8.0 shipped (2026-08-06, issue #15)** -- `GET /capabilities`:
-   plugin_version, wp_version, host state (elementor_active,
-   elementor_pro_active, rank_math_active), capabilities map keyed by
-   stable dotted identifiers, allowed_schema_types, audit_log_enabled.
-   Pure read. 7 new tests (273 -> 280).
+   live-verified on kildaybaxter.com in one combined smoke test.
 
 ---
 
@@ -47,44 +54,53 @@
 1. **Telemetry verdict review** -- `rrc-telemetry.php` collecting since
    2026-07-06, trustworthy from ~2026-07-13 (now well past). Kill switch:
    `RRC_PUA_DISABLE` in wp-config. Carried over across multiple sessions,
-   not yet actioned. Now the top open item.
+   not yet actioned. Top open item.
 
-2. **Higgins LCP still elevated (optional follow-up, not urgent)** --
-   render-block fix is done and verified (see accomplishment above), but
-   LCP held at 9.3-13.6s across post-fix runs vs. the 78-85 performance
-   score originally projected. Worth a closer look at the LCP element
-   itself (likely the hero banner image) and/or WP Engine origin
-   response time if this becomes a priority again -- not investigated
-   further this session per user's call to stop here.
+2. **Issue #20 (`POST /self-update` false-success)** -- medium impact per
+   its own writeup: the README documents this endpoint as the
+   recommended headless/CI deployment path, but it currently can't be
+   trusted to detect its own failure. Fix is well-scoped: re-read the
+   installed plugin file's version via `get_plugin_data()` after
+   `Plugin_Upgrader::install()` and compare against the expected
+   version before reporting success.
 
-3. **No open GitHub issues or milestones as of 2026-08-06** -- next work
-   item is user-directed rather than issue-driven. Worth a fresh look at
-   whether any follow-up items noted in past CHANGELOGs deserve filing
-   (e.g. the `entity_clarity` scoring README callout noted in the
-   2026-07-20 checkpoint, still not filed as an issue).
+3. **Issue #18 (`since: null` backfill on `/capabilities`)** -- low
+   impact, explicitly optional. If picked up, do NOT use the issue's own
+   suggested version table (contains at least one confirmed-wrong guess
+   -- see Key Context Notes). Use `git log -S"route string"` archaeology
+   instead; full history goes back to `v1.2.0`, well past the
+   CHANGELOG.md's tracked floor of v2.11.3.
 
 ---
 
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `a67841a`
-- Kilday Baxter (kildaybaxter.com) confirmed running v3.8.0. Higgins
-  (higginsoverheaddoor.com) also confirmed running v3.8.0 as of the
-  2026-08-06 perf deployment session (was several releases behind at
-  session start; updated itself to latest independently, same pattern
-  observed on Kilday Baxter earlier -- user manually forces these).
+- Branch `main` -- in sync with origin at `594e7b8`
+- Kilday Baxter (kildaybaxter.com) and Higgins (higginsoverheaddoor.com)
+  both confirmed running v3.8.1. Higgins needed a manual wp-admin update
+  after `/self-update` reported false success twice (see issue #20) --
+  worked correctly on kildaybaxter.com via the API both times this
+  session.
 - Gates: phpcs clean, phpunit 280 tests / 799 assertions
+
+**Open GitHub issues (2):**
+- **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
+- **#20** -- `POST /self-update` false-success (medium impact, well-scoped fix)
 
 **Files of note:**
 - Capabilities map: `rankmath-rest-bridge.php`
-  (`rr_get_capabilities_map()`, `rmb_capabilities_get()`)
-- Elementor set-data validation: `rankmath-rest-bridge.php`
-  (`rr_validate_elementor_data()`, `rr_elementor_walk_tree()`,
-  `rr_elementor_clear_css_cache()`, `rmb_elementor_set_data()`)
+  (`rr_get_capabilities_map()`, `rmb_capabilities_get()`, plus the
+  `rest_pre_serve_request` Cache-Control hook right after it)
+- Self-update (has the #20 bug): `rankmath-rest-bridge.php`
+  (`rmb_self_update()` -- trusts `Plugin_Upgrader::install()`'s return
+  value, never re-verifies the installed version from disk)
 - Media upload validation: `rankmath-rest-bridge.php`
   (`rr_validate_media_fields()`, `rr_validate_media_file()`,
   `rmb_media_upload()`, `rmb_media_list_placeholders()`)
+- Elementor set-data validation: `rankmath-rest-bridge.php`
+  (`rr_validate_elementor_data()`, `rr_elementor_walk_tree()`,
+  `rr_elementor_clear_css_cache()`, `rmb_elementor_set_data()`)
 - Schema graph validation: `rankmath-rest-bridge.php`
   (`rr_validate_schema()`, `rr_validate_schema_graph()`, `rmb_schema_set()`)
 - Perf dequeue mechanism: `rankmath-rest-bridge.php`
@@ -94,79 +110,94 @@
   issues resolved and live-verified.
 
 **Blockers:**
-- None. All open work from this session shipped, tested, and verified
-  live. No open issues or milestones remain in the repo.
+- None. #18 and #20 are both explicitly non-urgent per their own
+  writeups; nothing in the repo is currently broken or blocking other
+  work.
 
 ---
 
 ## Key Context Notes
 
-1. **`/perf/dequeue-rules` handles are the actual WP dependency handle, not
-   the rendered `id` attribute** -- WordPress prints stylesheet tags as
-   `id="{handle}-css"`, so a tag showing `id='bootstrap-css'` has the real
-   handle `bootstrap` (not `bootstrap-css`). Dequeuing the wrong string
-   silently no-ops (no error, the rule just never matches anything).
-   Cost a full extra round-trip on Higgins on 2026-08-06. When building
-   dequeue rules from page-source inspection, always strip the `-css`
-   suffix from visible `id` attributes first.
+1. **WP Engine force-rewrites `Cache-Control` on authenticated requests
+   at the edge, unconditionally** -- confirmed via WP Engine's own
+   `X-Cacheable: NO:Passed` / `X-Pass-Why: auth` response headers on
+   higginsoverheaddoor.com. This happens at their reverse proxy, after
+   PHP has already sent the correct header -- no origin-level code
+   change can override it. `GET /capabilities` is verified fully correct
+   (`Cache-Control: public, max-age=60`) on non-WP-Engine hosts
+   (kildaybaxter.com) as of v3.8.1. Don't chase this further on WP
+   Engine sites specifically -- it's platform policy, not a bug.
 
-2. **WP Engine + Cloudflare stacks need a manual cache purge after any
+2. **The original v3.8.0 diagnosis for the `/capabilities` Cache-Control
+   issue was wrong** -- first attributed to kildaybaxter.com's specific
+   host/proxy layer. Re-tested on Higgins (a completely different stack)
+   during the #17 fix and got the identical override, which ruled that
+   out -- the real cause was WordPress core forcing nocache headers on
+   every authenticated REST response, fixed in v3.8.1 via a
+   `rest_pre_serve_request` hook (the last filter before output, so a
+   raw `header()` call there reliably wins). Worth remembering: a
+   single-site observation about "the host is doing X" should be
+   cross-checked on a second, differently-stacked site before being
+   written down as the root cause.
+
+3. **`/perf/dequeue-rules` handles are the actual WP dependency handle,
+   not the rendered `id` attribute** -- WordPress prints stylesheet tags
+   as `id="{handle}-css"`, so a tag showing `id='bootstrap-css'` has the
+   real handle `bootstrap` (not `bootstrap-css`). Dequeuing the wrong
+   string silently no-ops (no error, the rule just never matches
+   anything). Cost a full extra round-trip on Higgins on 2026-08-06.
+   When building dequeue rules from page-source inspection, always strip
+   the `-css` suffix from visible `id` attributes first.
+
+4. **WP Engine + Cloudflare stacks need a manual cache purge after any
    snippet/dequeue-rule write** -- the plugin's `POST /cache/purge` only
    clears WordPress's internal object cache; its Varnish-purge attempt
    (`localhost:80`) times out on WP Engine, which doesn't run a
    locally-reachable Varnish the way that assumes. Both WP Engine's page
    cache and Cloudflare's edge cache can serve HTML far older than the
    most recent write (observed `Cache-Control: max-age=15552000` -- 180
-   days -- with `cf-cache-status: HIT` on Higgins) until purged from
-   their own dashboards/APIs. A `?cb=<random>` query string is a reliable
-   way to force a fresh, uncached fetch for verification without waiting
-   on a real purge. Same applies to kildaybaxter.com if it's on a similar
-   stack -- confirm before assuming a write is invisible just because a
-   plain fetch doesn't show it.
+   days -- with `cf-cache-status: HIT`) until purged from their own
+   dashboards/APIs. A `?cb=<random>` query string forces a fresh,
+   uncached fetch for verification without waiting on a real purge.
 
-3. **Elementor `settings: {}` round-trips as `[]`** -- PHP's JSON encoder
+5. **Full git history goes back to `v1.2.0`, past CHANGELOG.md's
+   tracked floor of v2.11.3** -- relevant for issue #18. `git log
+   -S"route string" -- rankmath-rest-bridge.php` can accurately date
+   when a given route was introduced. Confirmed `/update`, `/get/{id}`,
+   `/snippets`, `/cache/purge`, and `/status` all existed in the very
+   first commit -- so any `since` guess later than that for those routes
+   (e.g. issue #18's own suggested `3.0.0` for `seo.meta.update`) is
+   wrong.
+
+6. **Elementor `settings: {}` round-trips as `[]`** -- PHP's JSON encoder
    can't distinguish an empty associative array from an empty list, so
    `POST /elementor/set-data` stores/returns `"settings":[]` for empty
-   settings objects rather than `{}`. Observed live on kildaybaxter.com
-   during the v3.8.0 smoke test; Elementor's own native storage has the
-   same quirk, so this likely matches native behavior rather than being
-   plugin-specific. Not filed as an issue -- flag if an operator reports
-   the Elementor editor choking on a plugin-written element.
+   settings objects rather than `{}`. Elementor's own native storage has
+   the same quirk, so this likely matches native behavior. Not filed as
+   an issue -- flag if an operator reports the Elementor editor choking
+   on a plugin-written element.
 
-4. **`GET /capabilities`'s `Cache-Control` header gets overridden on
-   kildaybaxter.com** -- the plugin sets `public, max-age=60`, but the
-   live response carries the host's own `no-cache, must-revalidate,
-   max-age=0, no-store, private` instead. Confirmed this is the
-   host/proxy layer overriding response headers on `/wp-json/` paths
-   downstream of PHP, not a plugin defect -- nothing to fix here.
+7. **Missing required REST args (e.g. `alt_text` entirely absent) used
+   to return `400 rest_missing_callback_param` instead of the endpoint's
+   documented `422`** -- fixed for `/media` in v3.8.1 (issue #16) by
+   dropping `required: true` from the REST-args schema and letting the
+   handler's own validator catch both missing and empty values
+   uniformly. Worth checking whether the same pattern exists on other
+   endpoints with `required: true` args if a similar report comes in.
 
-5. **Missing required REST args (e.g. `alt_text` entirely absent) return
-   `400 rest_missing_callback_param`, not the endpoint's own 422** --
-   WP core's route-arg validation intercepts before the callback runs.
-   The plugin's custom 422 validators only fire for present-but-invalid
-   values (e.g. `alt_text: ""`). Both paths confirmed correct in the
-   v3.8.0 smoke test; worth knowing when writing regression tests or
-   README examples so expected status codes match reality.
-
-6. **`business_facts` merge semantics (v3.4.1)** -- sent keys overwrite,
+8. **`business_facts` merge semantics (v3.4.1)** -- sent keys overwrite,
    omitted keys preserved, array fields replace wholesale (not append).
    Sending `business_facts: {}` is now a no-op, not a full clear -- no
    endpoint currently clears the whole object back to schema/bloginfo
    fallback; that would be a separate feature request if ever needed.
 
-7. **`has_business_facts` scoring change is retroactive** -- any site with
-   identity-only `business_facts` (name/phone/address, no
+9. **`has_business_facts` scoring change is retroactive** -- any site
+   with identity-only `business_facts` (name/phone/address, no
    services/area/questions/differentiators) will see `has_business_facts`
    flip false and `llms_completeness`/`overall` drop under v3.4.0+, even
    with no write on their part. Flagged in both CHANGELOGs; not yet
    confirmed whether this affected Kilday Baxter's own live score
    post-deploy.
 
-8. **Docs-only follow-up, not filed as an issue** -- `entity_clarity`
-   scoring caps out when manual `business_facts` omits `schema_type`/
-   `entity_id`, because manual config fully overrides schema-derived
-   signals by design (resolver priority chain, `rr_resolve_business_facts()`).
-   Worth a README callout so operators know to include those two fields.
-
-9. **Git index case quirk** -- playbook tracked as `.claude/claude.md`
-   (lowercase); `git add` with uppercase path silently stages nothing.
+10. **Git index case quirk** -- playbook tracked as `.claude/claude.md`
+    (lowercase); `git add` with uppercase path silently stages nothing.
