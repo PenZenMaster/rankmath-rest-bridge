@@ -1,5 +1,56 @@
 # Changelog
 
+## v3.7.0
+
+`POST /elementor/set-data` (issue #12) — surfaced by the Location Page
+Builder skill's Kilday Baxter Peru, IL rollout (2026-07-24), where three
+drafted pages had to ship as plain Gutenberg HTML because no REST route
+could write Elementor's page tree; someone had to open each page in
+wp-admin and manually "Edit with Elementor."
+
+### Added
+
+- `POST /elementor/set-data` writes `_elementor_data` (JSON-encoded,
+  `wp_slash()`d before `update_post_meta()` to match Elementor's own
+  storage convention), `_elementor_edit_mode` (default `builder`), and
+  `_elementor_template_type` (default `wp-page`). Optional
+  `css_print_method` merges into `_elementor_page_settings`.
+- Top-level shape validation: `elementor_data` must be a non-empty array
+  of `section`/`container` nodes, each with `elType`, `elements` (array),
+  `id`, and `settings` (object) — `422 validation_failed` with per-node,
+  index-tagged errors otherwise (e.g. `elementor_data[1]: missing
+  required 'id'`). Deeper widget content isn't shape-validated, only the
+  section/container/column skeleton.
+- Recursive widget counting and a best-effort, non-blocking warning for
+  any `widgetType` outside `RR_ELEMENTOR_CORE_WIDGET_TYPES` (may require
+  Elementor Pro or a third-party addon) — the write still succeeds, since
+  Pro/addon widgets are legitimate; the list is overridable via the new
+  `rrseo_elementor_core_widget_types` filter.
+- Clears Elementor's CSS cache after a successful write via the public
+  `\Elementor\Plugin::$instance->files_manager->clear_cache()` API (a
+  global clear, not page-specific — chosen over Elementor's internal
+  per-post CSS file classes, which are more likely to change shape
+  between versions). `css_regenerated` in the response reports whether
+  it ran; `false` if Elementor isn't active on the site.
+- `dry_run: true` validates and returns `widget_count`/
+  `elementor_data_bytes` without writing.
+- New pure validation helper `rr_validate_elementor_data()` (plus the
+  recursive `rr_elementor_walk_tree()`), following the same
+  testable-helper pattern as `rr_validate_schema()` and
+  `rr_validate_media_fields()`.
+
+### Notes
+
+- `post_id` is a body field on this endpoint, not a URL path parameter
+  (`/elementor/set-data`, not `/elementor/set-data/{post_id}`) — matches
+  the route contract as filed in issue #12.
+- Auth is the same `manage_options` gate used by every other write
+  endpoint in this plugin, not the per-resource `edit_post` capability
+  the issue's design section suggested — kept consistent with the rest
+  of the REST surface rather than introducing a new capability model for
+  one route.
+- 18 new unit tests (255 -> 273), phpcs clean.
+
 ## v3.6.0
 
 `POST /media` audited media-upload wrapper (issue #14), plus `GET

@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.6.0
+ * Version:      3.7.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.6.0' );
+define( 'RMB_VERSION', '3.7.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -150,6 +150,54 @@ define(
 		'reused',
 		'stock',
 		'screenshot',
+	)
+);
+
+// Elementor set-data meta keys + top-level shape allowlist (issue #12).
+define( 'RR_ELEMENTOR_DATA_META_KEY', '_elementor_data' );
+define( 'RR_ELEMENTOR_EDIT_MODE_META_KEY', '_elementor_edit_mode' );
+define( 'RR_ELEMENTOR_TEMPLATE_TYPE_META_KEY', '_elementor_template_type' );
+define( 'RR_ELEMENTOR_PAGE_SETTINGS_META_KEY', '_elementor_page_settings' );
+
+define( 'RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES', array( 'section', 'container' ) );
+
+// Best-effort list of Elementor (free) core widgetType values, used only to
+// produce a non-blocking warning when a payload references a widget that
+// might require Elementor Pro or a third-party addon. Not authoritative --
+// override via the rrseo_elementor_core_widget_types filter.
+define(
+	'RR_ELEMENTOR_CORE_WIDGET_TYPES',
+	array(
+		'heading',
+		'image',
+		'text-editor',
+		'video',
+		'button',
+		'divider',
+		'spacer',
+		'image-box',
+		'icon-box',
+		'icon',
+		'social-icons',
+		'image-gallery',
+		'image-carousel',
+		'icon-list',
+		'counter',
+		'progress',
+		'testimonial',
+		'tabs',
+		'accordion',
+		'toggle',
+		'alert',
+		'audio',
+		'shortcode',
+		'html',
+		'menu-anchor',
+		'sidebar',
+		'google_maps',
+		'star-rating',
+		'text-path',
+		'read-more',
 	)
 );
 
@@ -2437,6 +2485,46 @@ add_action(
 			)
 		);
 
+		// ── Elementor set-data ───────────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/elementor/set-data',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_elementor_set_data',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'post_id'          => array(
+						'required' => true,
+						'type'     => 'integer',
+					),
+					'elementor_data'   => array(
+						'required' => true,
+						'type'     => 'array',
+					),
+					'edit_mode'        => array(
+						'required' => false,
+						'type'     => 'string',
+						'default'  => 'builder',
+					),
+					'template_type'    => array(
+						'required' => false,
+						'type'     => 'string',
+						'default'  => 'wp-page',
+					),
+					'css_print_method' => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'dry_run'          => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
+				),
+			)
+		);
+
 		// ── llms.txt config ────────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -4007,6 +4095,227 @@ function rmb_media_list_placeholders( WP_REST_Request $request ) {
 		array(
 			'count' => count( $items ),
 			'items' => $items,
+		)
+	);
+}
+
+
+// ── Elementor Set-Data Validation ─────────────────────────────────────────────
+/**
+ * Validates an Elementor `_elementor_data` tree: the top level must be a
+ * non-empty list of section/container nodes, each with `elType`, `elements`
+ * (array), `id`, and `settings` (array). Also walks the full tree to count
+ * widgets and produce a best-effort, non-blocking warning for any
+ * widgetType outside the known core (free) list — see
+ * RR_ELEMENTOR_CORE_WIDGET_TYPES.
+ *
+ * @param mixed $elementor_data Decoded elementor_data payload.
+ * @return array{errors: string[], warnings: string[], widget_count: int}
+ */
+function rr_validate_elementor_data( $elementor_data ) {
+	if ( ! is_array( $elementor_data ) || ! wp_is_numeric_array( $elementor_data ) ) {
+		return array(
+			'errors'       => array( 'elementor_data: must be an array of section/container objects' ),
+			'warnings'     => array(),
+			'widget_count' => 0,
+		);
+	}
+
+	if ( empty( $elementor_data ) ) {
+		return array(
+			'errors'       => array( 'elementor_data: must contain at least one element' ),
+			'warnings'     => array(),
+			'widget_count' => 0,
+		);
+	}
+
+	$errors = array();
+
+	foreach ( $elementor_data as $index => $node ) {
+		if ( ! is_array( $node ) ) {
+			$errors[] = "elementor_data[{$index}]: must be a JSON object";
+			continue;
+		}
+		if ( empty( $node['elType'] ) || ! in_array( $node['elType'], RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES, true ) ) {
+			$errors[] = "elementor_data[{$index}]: elType must be one of " . implode( ', ', RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES );
+			continue;
+		}
+		if ( ! isset( $node['elements'] ) || ! is_array( $node['elements'] ) ) {
+			$errors[] = "elementor_data[{$index}]: missing required 'elements' array";
+			continue;
+		}
+		if ( ! isset( $node['id'] ) || '' === $node['id'] ) {
+			$errors[] = "elementor_data[{$index}]: missing required 'id'";
+			continue;
+		}
+		if ( ! isset( $node['settings'] ) || ! is_array( $node['settings'] ) ) {
+			$errors[] = "elementor_data[{$index}]: missing required 'settings' object";
+		}
+	}
+
+	if ( ! empty( $errors ) ) {
+		return array(
+			'errors'       => $errors,
+			'warnings'     => array(),
+			'widget_count' => 0,
+		);
+	}
+
+	$allowed_core_widgets = apply_filters( 'rrseo_elementor_core_widget_types', RR_ELEMENTOR_CORE_WIDGET_TYPES );
+	$widget_count         = 0;
+	$warnings             = array();
+	rr_elementor_walk_tree( $elementor_data, $allowed_core_widgets, $widget_count, $warnings );
+
+	return array(
+		'errors'       => array(),
+		'warnings'     => array_values( array_unique( $warnings ) ),
+		'widget_count' => $widget_count,
+	);
+}
+
+/**
+ * Recursively walks an Elementor element tree, incrementing $widget_count
+ * for every `elType: widget` node and appending to $warnings when a
+ * widget's `widgetType` isn't in $allowed_core_widgets.
+ *
+ * @param array    $elements             Array of Elementor element nodes.
+ * @param string[] $allowed_core_widgets Known core widgetType values.
+ * @param int      $widget_count         Running count, passed by reference.
+ * @param string[] $warnings             Running warnings list, by reference.
+ */
+function rr_elementor_walk_tree( array $elements, array $allowed_core_widgets, &$widget_count, array &$warnings ) {
+	foreach ( $elements as $node ) {
+		if ( ! is_array( $node ) ) {
+			continue;
+		}
+		if ( isset( $node['elType'] ) && 'widget' === $node['elType'] ) {
+			++$widget_count;
+			$widget_type = isset( $node['widgetType'] ) ? $node['widgetType'] : '';
+			if ( $widget_type && ! in_array( $widget_type, $allowed_core_widgets, true ) ) {
+				$warnings[] = "widgetType '{$widget_type}' is not in the known Elementor core list -- may require Elementor Pro or a third-party addon";
+			}
+		}
+		if ( isset( $node['elements'] ) && is_array( $node['elements'] ) ) {
+			rr_elementor_walk_tree( $node['elements'], $allowed_core_widgets, $widget_count, $warnings );
+		}
+	}
+}
+
+
+// ── Elementor Set-Data Handler ────────────────────────────────────────────────
+/**
+ * Clears Elementor's CSS cache after an _elementor_data write, so the next
+ * front-end render doesn't serve stale CSS. Uses the public files_manager
+ * API (a global cache clear) rather than Elementor's internal per-post CSS
+ * file classes, which are more likely to change shape between versions.
+ * No-op if Elementor isn't loaded.
+ *
+ * @param int $post_id Post ID (unused by the global clear; kept for a
+ *                      future page-specific clear if Elementor exposes one).
+ * @return bool Whether the cache clear ran.
+ */
+function rr_elementor_clear_css_cache( $post_id ) {
+	unset( $post_id );
+	if ( ! class_exists( '\Elementor\Plugin' ) ) {
+		return false;
+	}
+	$plugin = \Elementor\Plugin::$instance;
+	if ( isset( $plugin->files_manager ) && method_exists( $plugin->files_manager, 'clear_cache' ) ) {
+		$plugin->files_manager->clear_cache();
+		return true;
+	}
+	return false;
+}
+
+/**
+ * Handles POST /elementor/set-data — validates and writes an Elementor
+ * page's _elementor_data / _elementor_edit_mode / _elementor_template_type
+ * meta, then clears Elementor's CSS cache.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_elementor_set_data( WP_REST_Request $request ) {
+	$post_id          = intval( $request->get_param( 'post_id' ) );
+	$elementor_data   = $request->get_param( 'elementor_data' );
+	$edit_mode        = (string) $request->get_param( 'edit_mode' );
+	$template_type    = (string) $request->get_param( 'template_type' );
+	$css_print_method = $request->get_param( 'css_print_method' );
+	$dry_run          = (bool) $request->get_param( 'dry_run' );
+
+	if ( ! get_post( $post_id ) ) {
+		return new WP_Error( 'invalid_post', 'Post not found', array( 'status' => 404 ) );
+	}
+
+	$validation = rr_validate_elementor_data( $elementor_data );
+	if ( ! empty( $validation['errors'] ) ) {
+		return new WP_Error(
+			'validation_failed',
+			'Elementor data validation failed',
+			array(
+				'status'   => 422,
+				'errors'   => $validation['errors'],
+				'warnings' => $validation['warnings'],
+			)
+		);
+	}
+
+	$encoded = wp_json_encode( $elementor_data );
+	$bytes   = strlen( $encoded );
+
+	if ( $dry_run ) {
+		return rest_ensure_response(
+			array(
+				'post_id'              => $post_id,
+				'dry_run'              => true,
+				'valid'                => true,
+				'elementor_data_bytes' => $bytes,
+				'widget_count'         => $validation['widget_count'],
+				'edit_mode'            => $edit_mode,
+				'template_type'        => $template_type,
+				'warnings'             => $validation['warnings'],
+			)
+		);
+	}
+
+	update_post_meta( $post_id, RR_ELEMENTOR_DATA_META_KEY, wp_slash( $encoded ) );
+	update_post_meta( $post_id, RR_ELEMENTOR_EDIT_MODE_META_KEY, sanitize_key( $edit_mode ) );
+	update_post_meta( $post_id, RR_ELEMENTOR_TEMPLATE_TYPE_META_KEY, sanitize_key( $template_type ) );
+
+	if ( $css_print_method ) {
+		$page_settings = get_post_meta( $post_id, RR_ELEMENTOR_PAGE_SETTINGS_META_KEY, true );
+		$page_settings = is_array( $page_settings ) ? $page_settings : array();
+
+		$page_settings['css_print_method'] = sanitize_text_field( $css_print_method );
+		update_post_meta( $post_id, RR_ELEMENTOR_PAGE_SETTINGS_META_KEY, $page_settings );
+	}
+
+	$css_regenerated = rr_elementor_clear_css_cache( $post_id );
+
+	rr_audit_log(
+		$post_id,
+		'/elementor/set-data',
+		array(
+			'elementor_data' => array(
+				'bytes'         => $bytes,
+				'widget_count'  => $validation['widget_count'],
+				'edit_mode'     => $edit_mode,
+				'template_type' => $template_type,
+			),
+		),
+		rr_request_id( $request ),
+		'written'
+	);
+
+	return rest_ensure_response(
+		array(
+			'post_id'              => $post_id,
+			'elementor_data_bytes' => $bytes,
+			'widget_count'         => $validation['widget_count'],
+			'edit_mode'            => $edit_mode,
+			'template_type'        => $template_type,
+			'css_regenerated'      => $css_regenerated,
+			'warnings'             => $validation['warnings'],
 		)
 	);
 }

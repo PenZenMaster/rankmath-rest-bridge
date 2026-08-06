@@ -227,6 +227,76 @@ curl "$BASE/media/placeholders" -u "$CRED"
 
 ---
 
+### Elementor
+
+#### `POST /elementor/set-data` — write an Elementor page's element tree
+
+Writes `_elementor_data`, `_elementor_edit_mode`, and
+`_elementor_template_type` via REST, for programmatic page-builder
+workflows that would otherwise have to fall back to plain Gutenberg
+HTML + a manual "Edit with Elementor" conversion per page.
+
+```bash
+curl -X POST "$BASE/elementor/set-data" -u "$CRED" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "post_id": 2090,
+    "elementor_data": [
+      {
+        "id": "sec1", "elType": "section", "settings": {},
+        "elements": [
+          { "id": "col1", "elType": "column", "settings": {},
+            "elements": [
+              { "id": "w1", "elType": "widget", "widgetType": "heading", "settings": {} }
+            ]
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `post_id` | int | Required. |
+| `elementor_data` | array | Required. Top-level array of `section`/`container` nodes, each with `elType`, `elements` (array), `id`, `settings` (object). Stored as a JSON string in `_elementor_data`, matching Elementor's own storage format. |
+| `edit_mode` | string | Default `builder`. |
+| `template_type` | string | Default `wp-page`. Common values: `wp-page`, `wp-post`, `section`, `page`, `landing-page`. |
+| `css_print_method` | string | Optional — merged into `_elementor_page_settings.css_print_method` if provided. |
+| `dry_run` | bool | Default `false`. Validates and returns `widget_count`/`elementor_data_bytes` without writing. |
+
+**Validation:** `422 validation_failed` if the top-level shape is wrong
+(not an array, empty, or a node missing `elType`/`elements`/`id`/`settings`).
+Deeper widget-level content isn't shape-validated — only the section/
+container/column skeleton is. If a nested `widgetType` isn't in the
+plugin's best-effort core-widget list, the write still succeeds; a
+non-blocking warning is returned instead (e.g. `widgetType 'pro-forms' is
+not in the known Elementor core list -- may require Elementor Pro or a
+third-party addon`). That list isn't authoritative — extend it via the
+`rrseo_elementor_core_widget_types` filter if you get false positives.
+
+**Response (200):**
+
+```json
+{
+  "post_id": 2090,
+  "elementor_data_bytes": 8421,
+  "widget_count": 12,
+  "edit_mode": "builder",
+  "template_type": "wp-page",
+  "css_regenerated": true,
+  "warnings": []
+}
+```
+
+After a successful write, Elementor's CSS cache is cleared via
+`\Elementor\Plugin::$instance->files_manager->clear_cache()` (a global
+clear, not page-specific) so the next front-end render doesn't serve
+stale CSS — `css_regenerated` reports whether that ran (`false` if
+Elementor isn't active on the site).
+
+---
+
 ### Snippets
 
 #### `GET /snippets` — list all snippets
