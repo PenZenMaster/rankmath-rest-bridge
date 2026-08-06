@@ -2,78 +2,86 @@
 
 **Last Updated:** 2026-08-06
 **Branch:** main
-**Version:** 3.4.1 (shipped, zip on CDN; confirmed live on kildaybaxter.com)
-**Last Commit:** ac352e5 -- chore(checkpoint): 2026-07-20_1840
+**Version:** 3.5.0 (shipped, zip on CDN; confirmed live on kildaybaxter.com)
+**Last Commit:** cdceafa -- chore: release v3.5.0 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v3.4.1 smoke test confirmed live (2026-08-06)** -- ran the #11
+1. **v3.5.0 shipped and confirmed live (2026-08-06, issue #13)** --
+   `POST /schema/{post_id}` now accepts single node (unchanged), bare
+   array, or `@graph` envelope; all normalize to a canonical `@graph`
+   envelope in `_rrseo_schema_graph`, per-node `@type` validation, 20-node
+   cap (413). `wp_head` emitter needed no changes. 11 new tests (228 ->
+   239), phpcs clean. Live smoke test on kildaybaxter.com post 2090: wrote
+   a Service + BreadcrumbList graph, confirmed one `<script
+   type="application/ld+json">` tag renders both nodes correctly on the
+   production page. Closed #13 with evidence.
+
+2. **v3.4.1 smoke test confirmed live (2026-08-06)** -- ran the #11
    regression test against kildaybaxter.com: baseline full `business_facts`
    write, then a partial write of `{"business_facts":{"email":"..."}}`.
-   Diff showed only `email` added; every other field (primary_services,
-   service_area, common_questions, key_differentiators, etc.) preserved
-   unchanged, and readiness scores held steady instead of collapsing.
-   Closed issues #9, #10, #11 on GitHub with the verification evidence.
+   Diff showed only `email` added; every other field preserved unchanged,
+   readiness scores held steady. Closed issues #9, #10, #11 with evidence.
 
-2. **v3.4.0 shipped (issues #9, #10)** -- AEO/GEO write surface, surfaced
-   by the Kilday Baxter & Associates audit: `business_facts` writes now
-   validated (business_name + description required, 422 on bad input);
-   Business Facts + Common Questions block now renders into `/llms.txt`
-   by default; `has_business_facts` scoring tightened to require real
-   enrichment, not just a name; README gained full `POST /llms` +
-   `/aeo-geo/*` docs.
-
-3. **v3.4.1 shipped (issue #11)** -- caught a regression in the v3.4.0
-   fix itself during an audit replay: partial `business_facts` writes
-   were replacing (not merging), silently wiping fields and collapsing
-   readiness scores. Fixed with `rr_merge_llms_business_facts()`;
-   validation now runs against the merged result.
+3. **v3.4.0/v3.4.1 shipped (issues #9, #10, #11)** -- AEO/GEO write
+   surface: `business_facts` writes validated and merged (not replaced);
+   Business Facts + Common Questions block renders into `/llms.txt` by
+   default; `has_business_facts` scoring tightened.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Resume Higgins v3.3.0 perf deployment** -- carried over across
-   sessions. Self-update (needs user's app password), then POST the
-   Font Awesome + Bootstrap preload/onload swap with `code_b64` +
-   `priority:1`; verify PageSpeed mobile moves 63 -> 78-85. Higgins
-   should also eventually move to v3.4.1.
+1. **#14 `POST /media`** -- next in the "Programmatic page provisioning"
+   milestone sequence (#13 done -> #14 -> #12 -> #15). Audited media-upload
+   wrapper around `media_handle_sideload()`; required `alt_text` + `source`,
+   MIME allowlist, 10MB cap, `_rrseo_media_source`/`_rrseo_media_placeholder`
+   meta, dry_run support.
 
-2. **Triage 4 new issues filed 2026-08-06** -- all from the Location
-   Page Builder skill's Kilday Baxter Peru, IL rollout (2026-07-24):
-   #12 `POST /elementor/set-data`, #13 schema `@graph`/array support
-   on `POST /schema/{post_id}`, #14 `POST /media` upload wrapper,
-   #15 `GET /capabilities` route inventory. None blocking (skill has
-   working fallbacks); designed to bundle as one milestone.
+2. **Resume Higgins v3.3.0 perf deployment** -- carried over across
+   multiple sessions. POST the Font Awesome + Bootstrap preload/onload
+   swap with `code_b64` + `priority:1`; verify PageSpeed mobile moves
+   63 -> 78-85. Higgins should also eventually move to v3.5.x.
 
-3. **Telemetry verdict review** -- `rrc-telemetry.php` collecting since
-   2026-07-06, trustworthy from ~2026-07-13 (now well past). Kill switch:
-   `RRC_PUA_DISABLE` in wp-config.
+3. **Investigate unattended plugin self-update on Kilday Baxter** -- the
+   site was already running v3.5.0 by the time this session went to
+   trigger `/self-update` manually; `/check-updates` reported "latest
+   version" unprompted. Plugin code has no cron/scheduled self-update
+   logic of its own -- likely WP core's background auto-update picked it
+   up via the bundled Plugin Update Checker's transient, meaning automatic
+   updates may be enabled for this plugin on that site. Confirm with user
+   whether that's intended (a bad release could auto-deploy with no human
+   review window) before shipping #14/#12/#15.
 
 ---
 
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `ac352e5`
-- Kilday Baxter (kildaybaxter.com) confirmed running v3.4.1 as of the
-  2026-08-06 smoke test -- first live site on v3.4.x. Higgins still on
-  v3.3.0 (see priority 1 above).
-- Gates: phpcs clean, phpunit 228 tests / 550 assertions
+- Branch `main` -- in sync with origin at `cdceafa`
+- Kilday Baxter (kildaybaxter.com) confirmed running v3.5.0 as of the
+  2026-08-06 smoke test (self-updated on its own -- see priority 3 above).
+  Higgins still on v3.3.0.
+- Gates: phpcs clean, phpunit 239 tests / 585 assertions
 
 **Files of note:**
+- Schema graph validation: `rankmath-rest-bridge.php`
+  (`rr_validate_schema()`, `rr_validate_schema_graph()`, `rmb_schema_set()`)
 - `business_facts` validate/merge/render: `includes/class-rrseo-llms.php`
   (`rr_validate_llms_business_facts()`, `rr_merge_llms_business_facts()`,
   `rr_render_business_facts_lines()`)
 - Readiness scoring: `includes/class-rrseo-aeo-geo.php`
   (`rr_aeo_compute_readiness()` -- `has_business_facts` rubric)
 - Release hook note: run `git push` twice (zip commit lands after refspec)
+- GitHub milestone #1 "Programmatic page provisioning" holds #12/#14/#15
+  (open) and #13 (closed) -- sequencing noted via comments on each issue.
 
 **Blockers:**
-- None. v3.4.1 smoke-tested and confirmed live on Kilday Baxter;
-  issues #9/#10/#11 closed.
+- None. v3.5.0 smoke-tested and confirmed live on Kilday Baxter; issue
+  #13 closed. Unattended self-update behavior (priority 3) needs a
+  decision, not strictly blocking.
 
 ---
 
