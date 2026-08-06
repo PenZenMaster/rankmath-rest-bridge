@@ -1,5 +1,43 @@
 # Changelog
 
+## v3.6.0
+
+`POST /media` audited media-upload wrapper (issue #14), plus `GET
+/media/placeholders` — surfaced by the Location Page Builder skill, which
+needs a scriptable upload path with the same auth/audit/dry-run model as
+the plugin's other write endpoints, rather than falling back to core's
+unaudited `POST /wp/v2/media` or the wp-admin UI.
+
+### Added
+
+- `POST /media` (`multipart/form-data`) wraps `media_handle_sideload()`.
+  Required `alt_text` (non-empty — enforces accessibility at the source)
+  and `source` (`ai_placeholder`, `client_supplied`, `reused`, `stock`, or
+  `screenshot`, stored as `_rrseo_media_source`). Optional `filename`,
+  `title`, `caption`, `attach_to_post_id`, `is_placeholder` (stored as
+  `_rrseo_media_placeholder`; requires `source:ai_placeholder` when true),
+  and `dry_run`.
+- MIME allowlist (`image/jpeg`, `image/png`, `image/webp`, `image/avif`)
+  checked against the real file content via `wp_check_filetype_and_ext()`,
+  not the client-supplied `Content-Type` header — `415` on mismatch. 10 MB
+  size cap — `413` if exceeded. `422` on empty/missing `alt_text`, an
+  unrecognized `source`, or an `is_placeholder`/`source` mismatch.
+- `GET /media/placeholders` — lists every attachment flagged
+  `_rrseo_media_placeholder`, for the manual-replace checklist
+  page-builder workflows generate per rollout.
+- New pure validation helpers `rr_validate_media_fields()` and
+  `rr_validate_media_file()`, following the same testable-helper pattern
+  as `rr_validate_schema()` and `rr_validate_llms_business_facts()`.
+
+### Notes
+
+- Audit-log entries are written only when `attach_to_post_id` is supplied.
+  `rr_audit_log()` is per-post meta; an unattached library upload has no
+  post to attach a log entry to, so it's silently skipped rather than
+  logged nowhere useful.
+- 16 new unit tests (239 -> 255) covering both validation helpers, phpcs
+  clean.
+
 ## v3.5.0
 
 `POST /schema/{post_id}` accepts multiple JSON-LD nodes (issue #13) —

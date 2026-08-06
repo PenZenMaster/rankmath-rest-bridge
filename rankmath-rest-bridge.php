@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.5.0
+ * Version:      3.6.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.5.0' );
+define( 'RMB_VERSION', '3.6.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -126,6 +126,32 @@ define( 'RR_SITEMAP_EXCLUSIONS_KEY', 'rrseo_sitemap_exclusions' );
 // Performance module option keys (G-04 dequeue rules, G-05 defer handles).
 define( 'RR_PERF_DEQUEUE_KEY', 'rrseo_perf_dequeue_rules' );
 define( 'RR_PERF_DEFER_KEY', 'rrseo_perf_defer_handles' );
+
+// Media upload meta keys + validation allowlists (issue #14).
+define( 'RR_MEDIA_SOURCE_META_KEY', '_rrseo_media_source' );
+define( 'RR_MEDIA_PLACEHOLDER_META_KEY', '_rrseo_media_placeholder' );
+define( 'RR_MEDIA_MAX_BYTES', 10 * 1024 * 1024 ); // 10 MB hard cap.
+
+define(
+	'RR_MEDIA_ALLOWED_MIME_TYPES',
+	array(
+		'image/jpeg',
+		'image/png',
+		'image/webp',
+		'image/avif',
+	)
+);
+
+define(
+	'RR_MEDIA_ALLOWED_SOURCES',
+	array(
+		'ai_placeholder',
+		'client_supplied',
+		'reused',
+		'stock',
+		'screenshot',
+	)
+);
 
 // Whitelist of WordPress conditional functions accepted in dequeue rule when_not arrays.
 // Validated at write time (REST handler) and at apply time (wp_enqueue_scripts hook).
@@ -2352,6 +2378,65 @@ add_action(
 			)
 		);
 
+		// ── Media upload ──────────────────────────────────────────────────────────
+		// MUST be registered before the /media/{id}-style wildcard, if one is
+		// ever added — 'placeholders' would otherwise be captured as an id.
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/media/placeholders',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_media_list_placeholders',
+				'permission_callback' => $admin_only,
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/media',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_media_upload',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'alt_text'          => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'source'            => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'filename'          => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'caption'           => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'title'             => array(
+						'required' => false,
+						'type'     => 'string',
+					),
+					'attach_to_post_id' => array(
+						'required' => false,
+						'type'     => 'integer',
+					),
+					'is_placeholder'    => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
+					'dry_run'           => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
+				),
+			)
+		);
+
 		// ── llms.txt config ────────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -3689,6 +3774,239 @@ function rmb_images_bulk_alt( WP_REST_Request $request ) {
 		array(
 			'count'   => count( $results ),
 			'results' => $results,
+		)
+	);
+}
+
+
+// ── Media Upload Validation ───────────────────────────────────────────────────
+/**
+ * Validates alt_text, source, and the is_placeholder/source pairing for a
+ * media upload. Has no WP dependencies beyond RR_MEDIA_ALLOWED_SOURCES, so
+ * it is unit-testable without a real file upload.
+ *
+ * @param string $alt_text       Candidate ALT text.
+ * @param string $source         Candidate source value.
+ * @param bool   $is_placeholder Whether is_placeholder was sent as true.
+ * @return array{error: string|null, code: string|null}
+ */
+function rr_validate_media_fields( $alt_text, $source, $is_placeholder ) {
+	if ( '' === trim( (string) $alt_text ) ) {
+		return array(
+			'error' => 'alt_text is required and cannot be empty',
+			'code'  => 'invalid_alt_text',
+		);
+	}
+
+	if ( ! in_array( $source, RR_MEDIA_ALLOWED_SOURCES, true ) ) {
+		return array(
+			'error' => "source '{$source}' not allowed. Allowed: " . implode( ', ', RR_MEDIA_ALLOWED_SOURCES ),
+			'code'  => 'invalid_source',
+		);
+	}
+
+	if ( $is_placeholder && 'ai_placeholder' !== $source ) {
+		return array(
+			'error' => "is_placeholder:true requires source:'ai_placeholder'",
+			'code'  => 'invalid_source',
+		);
+	}
+
+	return array(
+		'error' => null,
+		'code'  => null,
+	);
+}
+
+/**
+ * Validates a media file's byte size and detected MIME type against the
+ * plugin's allowlist/cap. Has no WP dependencies beyond the two RR_MEDIA_*
+ * constants, so it is unit-testable with a plain integer and string.
+ *
+ * @param int    $bytes File size in bytes.
+ * @param string $mime  Detected MIME type (from wp_check_filetype_and_ext(),
+ *                       not the client-supplied header), or '' if undetected.
+ * @return array{error: string|null, code: string|null, status: int|null}
+ */
+function rr_validate_media_file( $bytes, $mime ) {
+	if ( $bytes > RR_MEDIA_MAX_BYTES ) {
+		return array(
+			'error'  => 'File exceeds the ' . ( RR_MEDIA_MAX_BYTES / 1024 / 1024 ) . 'MB limit',
+			'code'   => 'file_too_large',
+			'status' => 413,
+		);
+	}
+
+	if ( ! $mime || ! in_array( $mime, RR_MEDIA_ALLOWED_MIME_TYPES, true ) ) {
+		return array(
+			'error'  => "File type '" . ( $mime ? $mime : 'unknown' ) . "' not allowed. Allowed: " . implode( ', ', RR_MEDIA_ALLOWED_MIME_TYPES ),
+			'code'   => 'invalid_mime_type',
+			'status' => 415,
+		);
+	}
+
+	return array(
+		'error'  => null,
+		'code'   => null,
+		'status' => null,
+	);
+}
+
+
+// ── Media Upload Handlers ─────────────────────────────────────────────────────
+/**
+ * Handles POST /media — validates and sideloads an image into the media
+ * library, tagging it with _rrseo_media_source / _rrseo_media_placeholder
+ * meta so programmatic page-builder workflows can track placeholder-vs-real
+ * image state centrally.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_media_upload( WP_REST_Request $request ) {
+	$alt_text          = trim( (string) $request->get_param( 'alt_text' ) );
+	$source            = (string) $request->get_param( 'source' );
+	$is_placeholder    = (bool) $request->get_param( 'is_placeholder' );
+	$dry_run           = (bool) $request->get_param( 'dry_run' );
+	$attach_to_post_id = intval( $request->get_param( 'attach_to_post_id' ) );
+	$filename          = $request->get_param( 'filename' );
+	$title             = $request->get_param( 'title' );
+	$caption           = $request->get_param( 'caption' );
+
+	$field_check = rr_validate_media_fields( $alt_text, $source, $is_placeholder );
+	if ( $field_check['error'] ) {
+		return new WP_Error( $field_check['code'], $field_check['error'], array( 'status' => 422 ) );
+	}
+
+	if ( $attach_to_post_id && ! get_post( $attach_to_post_id ) ) {
+		return new WP_Error( 'invalid_post', 'attach_to_post_id does not match an existing post', array( 'status' => 404 ) );
+	}
+
+	$files = $request->get_file_params();
+	if ( empty( $files['file'] ) || UPLOAD_ERR_OK !== $files['file']['error'] ) {
+		return new WP_Error( 'missing_file', 'file is required (multipart/form-data)', array( 'status' => 422 ) );
+	}
+	$file = $files['file'];
+	if ( $filename ) {
+		$file['name'] = sanitize_file_name( $filename );
+	}
+
+	// Verify the real file content, not just the client-supplied MIME header.
+	$filetype = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
+	$mime     = $filetype['type'];
+
+	$file_check = rr_validate_media_file( (int) $file['size'], (string) $mime );
+	if ( $file_check['error'] ) {
+		return new WP_Error( $file_check['code'], $file_check['error'], array( 'status' => $file_check['status'] ) );
+	}
+
+	if ( $dry_run ) {
+		return rest_ensure_response(
+			array(
+				'dry_run'   => true,
+				'valid'     => true,
+				'mime_type' => $mime,
+				'bytes'     => (int) $file['size'],
+				'alt_text'  => $alt_text,
+				'source'    => $source,
+			)
+		);
+	}
+
+	require_once ABSPATH . 'wp-admin/includes/file.php';
+	require_once ABSPATH . 'wp-admin/includes/media.php';
+	require_once ABSPATH . 'wp-admin/includes/image.php';
+
+	$post_data = array();
+	if ( $caption ) {
+		$post_data['post_excerpt'] = sanitize_text_field( $caption );
+	}
+
+	$media_id = media_handle_sideload( $file, $attach_to_post_id, $title ? sanitize_text_field( $title ) : null, $post_data );
+	if ( is_wp_error( $media_id ) ) {
+		return new WP_Error( 'upload_failed', $media_id->get_error_message(), array( 'status' => 500 ) );
+	}
+
+	update_post_meta( $media_id, '_wp_attachment_image_alt', $alt_text );
+	update_post_meta( $media_id, RR_MEDIA_SOURCE_META_KEY, $source );
+	update_post_meta( $media_id, RR_MEDIA_PLACEHOLDER_META_KEY, $is_placeholder ? '1' : '0' );
+
+	$metadata = wp_get_attachment_metadata( $media_id );
+
+	// Only per-post writes get an audit-log entry — rr_audit_log() is post
+	// meta, and unattached library uploads (no attach_to_post_id) have no
+	// post to attach one to.
+	if ( $attach_to_post_id ) {
+		rr_audit_log(
+			$attach_to_post_id,
+			'/media',
+			array(
+				'media' => array(
+					'media_id'  => $media_id,
+					'bytes'     => (int) $file['size'],
+					'mime_type' => $mime,
+					'source'    => $source,
+				),
+			),
+			rr_request_id( $request ),
+			'written'
+		);
+	}
+
+	$response = rest_ensure_response(
+		array(
+			'media_id'   => $media_id,
+			'source_url' => wp_get_attachment_url( $media_id ),
+			'mime_type'  => $mime,
+			'bytes'      => (int) $file['size'],
+			'width'      => isset( $metadata['width'] ) ? $metadata['width'] : null,
+			'height'     => isset( $metadata['height'] ) ? $metadata['height'] : null,
+			'alt_text'   => $alt_text,
+			'meta'       => array(
+				RR_MEDIA_SOURCE_META_KEY      => $source,
+				RR_MEDIA_PLACEHOLDER_META_KEY => $is_placeholder,
+			),
+		)
+	);
+	$response->set_status( 201 );
+	return $response;
+}
+
+/**
+ * Handles GET /media/placeholders — lists attachments flagged as AI
+ * placeholders (_rrseo_media_placeholder = 1), for the manual-replace
+ * checklist page-builder workflows generate per rollout.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_media_list_placeholders( WP_REST_Request $request ) {
+	$attachments = get_posts(
+		array(
+			'post_type'      => 'attachment',
+			'post_status'    => 'inherit',
+			'posts_per_page' => -1,
+			'meta_key'       => RR_MEDIA_PLACEHOLDER_META_KEY,
+			'meta_value'     => '1',
+		)
+	);
+
+	$items = array();
+	foreach ( $attachments as $att ) {
+		$items[] = array(
+			'id'          => $att->ID,
+			'filename'    => basename( get_attached_file( $att->ID ) ),
+			'url'         => wp_get_attachment_url( $att->ID ),
+			'alt'         => get_post_meta( $att->ID, '_wp_attachment_image_alt', true ),
+			'source'      => get_post_meta( $att->ID, RR_MEDIA_SOURCE_META_KEY, true ),
+			'post_parent' => $att->post_parent,
+		);
+	}
+
+	return rest_ensure_response(
+		array(
+			'count' => count( $items ),
+			'items' => $items,
 		)
 	);
 }

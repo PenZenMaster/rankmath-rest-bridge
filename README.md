@@ -169,6 +169,64 @@ for single-node vs. graph.
 
 ---
 
+### Media
+
+#### `POST /media` — audited media-upload wrapper
+
+Wraps `media_handle_sideload()` with the plugin's validation/audit-log
+conventions. `multipart/form-data`, not JSON.
+
+```bash
+curl -X POST "$BASE/media" -u "$CRED" \
+  -F "file=@hero.webp" \
+  -F "alt_text=Downtown Peru, IL along Route 6" \
+  -F "source=client_supplied" \
+  -F "attach_to_post_id=2090"
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `file` | binary | Required. |
+| `alt_text` | string | Required, non-empty — no empty ALT text is ever written. |
+| `source` | string | Required. One of `ai_placeholder`, `client_supplied`, `reused`, `stock`, `screenshot`. Stored as `_rrseo_media_source`. |
+| `is_placeholder` | bool | Default `false`. If `true`, `source` must be `ai_placeholder`. Stored as `_rrseo_media_placeholder`. |
+| `filename` | string | Optional — overrides the uploaded file's name. |
+| `title`, `caption` | string | Optional. |
+| `attach_to_post_id` | int | Optional — sets `post_parent`; also required for an audit-log entry (audit log is per-post meta, so unattached library uploads aren't logged). |
+| `dry_run` | bool | Default `false`. Validates MIME/size/alt_text/source without uploading. |
+
+MIME allowlist: `image/jpeg`, `image/png`, `image/webp`, `image/avif`
+(checked against the real file content via `wp_check_filetype_and_ext()`,
+not the client-supplied header) — `415` on anything else. Size cap 10 MB —
+`413` if exceeded. `422` on missing/empty `alt_text`, an unrecognized
+`source`, or `is_placeholder:true` with a non-`ai_placeholder` source.
+
+**Response (201):**
+
+```json
+{
+  "media_id": 4712,
+  "source_url": "https://kildaybaxter.com/wp-content/uploads/2026/08/hero.webp",
+  "mime_type": "image/webp",
+  "bytes": 84210,
+  "width": 1600,
+  "height": 900,
+  "alt_text": "Downtown Peru, IL along Route 6",
+  "meta": { "_rrseo_media_source": "client_supplied", "_rrseo_media_placeholder": false }
+}
+```
+
+#### `GET /media/placeholders` — list AI-placeholder media
+
+Returns every attachment where `_rrseo_media_placeholder` is set, for the
+manual-replace checklist page-builder workflows generate per rollout.
+
+```bash
+curl "$BASE/media/placeholders" -u "$CRED"
+```
+
+---
+
 ### Snippets
 
 #### `GET /snippets` — list all snippets
