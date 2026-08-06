@@ -96,6 +96,79 @@ for term IDs — use `POST /update` directly for term meta writes.
 
 ---
 
+### Schema (JSON-LD)
+
+#### `GET /schema/{post_id}` — read the stored JSON-LD schema
+
+```bash
+curl "$BASE/schema/123" -u "$CRED"
+```
+
+Returns whatever was stored: a single node object, or a `@graph` envelope
+for multi-node writes. `schema: null` if nothing has been written yet.
+
+#### `POST /schema/{post_id}` — validate and store JSON-LD schema
+
+Accepts any of three shapes in the `schema` field. All three validate each
+node's `@type` against the allowed list and normalize to a canonical
+`@graph` envelope on write, except a single node, which is stored exactly
+as received.
+
+**1. Single node** (unchanged since v3.0.0):
+
+```bash
+curl -X POST "$BASE/schema/123" -u "$CRED" \
+  -H "Content-Type: application/json" \
+  -d '{"schema": {"@context": "https://schema.org", "@type": "Service", "name": "Bookkeeping"}}'
+```
+
+**2. Bare array of nodes** — wrapped into a `@graph` envelope with
+`@context` defaulted to `https://schema.org`:
+
+```bash
+curl -X POST "$BASE/schema/123" -u "$CRED" \
+  -H "Content-Type: application/json" \
+  -d '{"schema": [
+        {"@type": "Service", "name": "Bookkeeping"},
+        {"@type": "BreadcrumbList", "itemListElement": []}
+      ]}'
+```
+
+**3. `@graph` envelope** (preferred canonical form for multi-node writes):
+
+```bash
+curl -X POST "$BASE/schema/123" -u "$CRED" \
+  -H "Content-Type: application/json" \
+  -d '{"schema": {
+        "@context": "https://schema.org",
+        "@graph": [
+          {"@type": "Service", "name": "Bookkeeping"},
+          {"@type": "FAQPage", "mainEntity": []}
+        ]
+      }}'
+```
+
+Provider references between nodes (e.g. `Service.provider` -> a
+`LocalBusiness.@id` on another page) are stored verbatim — the caller is
+responsible for keeping `@id` values consistent across nodes and pages.
+
+Optional `dry_run: true` validates without writing.
+
+**Errors:**
+
+- `422 validation_failed` — a node's `@type` isn't in the allowed list, a
+  required field is missing, or a `@graph` array is empty. The `errors`
+  array is per-node for multi-node payloads (e.g. `schema: @graph[1] @type
+  'Widget' not allowed. Allowed: ...`).
+- `413 validation_failed` — more than 20 nodes in one graph (raise via the
+  `rrseo_schema_graph_max_nodes` filter).
+
+The `wp_head` emitter (priority 5) outputs whatever is stored verbatim in
+one `<script type="application/ld+json">` tag — no separate rendering path
+for single-node vs. graph.
+
+---
+
 ### Snippets
 
 #### `GET /snippets` — list all snippets

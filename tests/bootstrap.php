@@ -475,6 +475,18 @@ if ( ! function_exists( 'delete_transient' ) ) {
     }
 }
 
+// wp_is_numeric_array — mirrors WP core: true for empty arrays and arrays
+// with only sequential int keys, false if any key is a string.
+if ( ! function_exists( 'wp_is_numeric_array' ) ) {
+    function wp_is_numeric_array( $data ) {
+        if ( ! is_array( $data ) ) {
+            return false;
+        }
+        $string_keys = array_filter( array_keys( $data ), 'is_string' );
+        return count( $string_keys ) === 0;
+    }
+}
+
 // ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------

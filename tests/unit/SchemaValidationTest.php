@@ -107,4 +107,132 @@ class SchemaValidationTest extends TestCase {
         $this->assertArrayHasKey( 'warnings', $result );
         $this->assertArrayHasKey( 'schema',   $result );
     }
+
+    // ------------------------------------------------------------------
+    // Multi-node input (issue #13): bare array and @graph envelope
+    // ------------------------------------------------------------------
+
+    public function test_bare_array_of_nodes_normalizes_to_graph_envelope(): void {
+        $result = rr_validate_schema( [
+            [ '@type' => 'Service', 'name' => 'Bookkeeping' ],
+            [ '@type' => 'BreadcrumbList' ],
+        ] );
+
+        $this->assertEmpty( $result['errors'] );
+        $this->assertEquals( 'https://schema.org', $result['schema']['@context'] );
+        $this->assertCount( 2, $result['schema']['@graph'] );
+        $this->assertEquals( 'Service', $result['schema']['@graph'][0]['@type'] );
+        $this->assertEquals( 'BreadcrumbList', $result['schema']['@graph'][1]['@type'] );
+    }
+
+    public function test_graph_envelope_with_context_passes_through(): void {
+        $result = rr_validate_schema( [
+            '@context' => 'https://schema.org',
+            '@graph'   => [
+                [ '@type' => 'Service' ],
+                [ '@type' => 'FAQPage' ],
+            ],
+        ] );
+
+        $this->assertEmpty( $result['errors'] );
+        $this->assertEquals( 'https://schema.org', $result['schema']['@context'] );
+        $this->assertCount( 2, $result['schema']['@graph'] );
+    }
+
+    public function test_graph_envelope_missing_context_defaults_to_schema_org(): void {
+        $result = rr_validate_schema( [
+            '@graph' => [ [ '@type' => 'Service' ] ],
+        ] );
+
+        $this->assertEmpty( $result['errors'] );
+        $this->assertEquals( 'https://schema.org', $result['schema']['@context'] );
+    }
+
+    public function test_empty_graph_array_returns_error(): void {
+        $result = rr_validate_schema( [
+            '@context' => 'https://schema.org',
+            '@graph'   => [],
+        ] );
+
+        $this->assertNotEmpty( $result['errors'] );
+        $this->assertStringContainsString( 'at least one node', $result['errors'][0] );
+        $this->assertNull( $result['schema'] );
+    }
+
+    public function test_top_level_empty_array_still_reports_missing_fields(): void {
+        // Regression: an empty PHP array must not be mistaken for an empty
+        // graph — it should fall through to single-node validation exactly
+        // like it did before multi-node support existed.
+        $result = rr_validate_schema( [] );
+        $this->assertCount( 2, $result['errors'] );
+        $this->assertStringContainsString( '@context', $result['errors'][0] );
+        $this->assertStringContainsString( '@type', $result['errors'][1] );
+    }
+
+    public function test_graph_node_with_unknown_type_reports_index(): void {
+        $result = rr_validate_schema( [
+            [ '@type' => 'Service' ],
+            [ '@type' => 'UnknownCustomType' ],
+        ] );
+
+        $this->assertNotEmpty( $result['errors'] );
+        $this->assertStringContainsString( '@graph[1]', $result['errors'][0] );
+        $this->assertStringContainsString( 'not allowed', $result['errors'][0] );
+        $this->assertNull( $result['schema'] );
+    }
+
+    public function test_graph_node_missing_type_reports_index(): void {
+        $result = rr_validate_schema( [
+            [ '@type' => 'Service' ],
+            [ 'name' => 'No type here' ],
+        ] );
+
+        $this->assertNotEmpty( $result['errors'] );
+        $this->assertStringContainsString( '@graph[1]', $result['errors'][0] );
+        $this->assertStringContainsString( 'missing required @type', $result['errors'][0] );
+    }
+
+    public function test_graph_node_non_object_reports_index(): void {
+        $result = rr_validate_schema( [
+            [ '@type' => 'Service' ],
+            'not-an-object',
+        ] );
+
+        $this->assertNotEmpty( $result['errors'] );
+        $this->assertStringContainsString( '@graph[1]', $result['errors'][0] );
+        $this->assertStringContainsString( 'must be a JSON object', $result['errors'][0] );
+    }
+
+    public function test_graph_exceeding_max_nodes_returns_413_status(): void {
+        $nodes = array_fill( 0, 21, [ '@type' => 'Service' ] );
+
+        $result = rr_validate_schema( $nodes );
+
+        $this->assertNotEmpty( $result['errors'] );
+        $this->assertStringContainsString( 'exceeds max of 20 nodes', $result['errors'][0] );
+        $this->assertArrayHasKey( 'status', $result );
+        $this->assertEquals( 413, $result['status'] );
+        $this->assertNull( $result['schema'] );
+    }
+
+    public function test_graph_at_exactly_max_nodes_passes(): void {
+        $nodes = array_fill( 0, 20, [ '@type' => 'Service' ] );
+
+        $result = rr_validate_schema( $nodes );
+
+        $this->assertEmpty( $result['errors'] );
+        $this->assertCount( 20, $result['schema']['@graph'] );
+    }
+
+    public function test_json_string_array_of_nodes_is_parsed_and_normalized(): void {
+        $json = json_encode( [
+            [ '@type' => 'Service' ],
+            [ '@type' => 'BreadcrumbList' ],
+        ] );
+
+        $result = rr_validate_schema( $json );
+
+        $this->assertEmpty( $result['errors'] );
+        $this->assertCount( 2, $result['schema']['@graph'] );
+    }
 }

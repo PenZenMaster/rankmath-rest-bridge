@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.4.1
+ * Version:      3.5.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.4.1' );
+define( 'RMB_VERSION', '3.5.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -1168,8 +1168,11 @@ add_action(
 
 
 // ── Schema JSON-LD output ─────────────────────────────────────────────────────
-// Outputs whatever graph is stored in _rrseo_schema_graph for singular posts.
-// Safe to coexist with RankMath (different @type values produce separate blocks).
+// Outputs whatever graph is stored in _rrseo_schema_graph for singular posts:
+// a single node object, or a { "@context", "@graph": [...] } envelope for
+// multi-node writes (see rr_validate_schema_graph()). Either shape is emitted
+// verbatim in one <script> tag. Safe to coexist with RankMath (different
+// @type values produce separate blocks).
 add_action(
 	'wp_head',
 	function () {
@@ -1517,7 +1520,12 @@ function rr_validate_display_on( string $value ): bool {
 /**
  * Validates a JSON-LD schema object.
  *
- * Accepts either a PHP array or a JSON string.
+ * Accepts either a PHP array or a JSON string. Three shapes are supported:
+ * a single node (`{"@type": ...}`), a bare array of nodes (`[{...}, {...}]`),
+ * or a `@graph` envelope (`{"@context": ..., "@graph": [{...}, {...}]}`).
+ * The latter two are normalized to a canonical `@graph` envelope on write;
+ * single-node input is stored exactly as received.
+ *
  * Returns array( 'errors' => string[], 'warnings' => string[], 'schema' => array|null ).
  *
  * @param array|string $schema Schema as a PHP array or raw JSON string.
@@ -1547,6 +1555,19 @@ function rr_validate_schema( $schema ) {
 		);
 	}
 
+	// Bare array of nodes, e.g. [ {...}, {...} ]. An empty array falls through
+	// to single-node validation below, which reports the usual missing-field
+	// errors instead of a graph-specific "no nodes" error.
+	if ( ! empty( $schema ) && wp_is_numeric_array( $schema ) ) {
+		return rr_validate_schema_graph( 'https://schema.org', $schema );
+	}
+
+	// @graph envelope: a top-level object carrying an @graph array of nodes.
+	if ( isset( $schema['@graph'] ) && is_array( $schema['@graph'] ) ) {
+		$context = empty( $schema['@context'] ) ? 'https://schema.org' : $schema['@context'];
+		return rr_validate_schema_graph( $context, $schema['@graph'] );
+	}
+
 	if ( empty( $schema['@context'] ) ) {
 		$errors[] = 'schema: missing required @context';
 	}
@@ -1564,6 +1585,71 @@ function rr_validate_schema( $schema ) {
 		'errors'   => $errors,
 		'warnings' => $warnings,
 		'schema'   => $schema,
+	);
+}
+
+/**
+ * Validates a list of JSON-LD nodes and normalizes them into a canonical
+ * `@graph` envelope. Shared by bare-array and `@graph`-wrapped input.
+ *
+ * @param string $context Top-level @context value for the envelope.
+ * @param array  $nodes   List of node objects.
+ * @return array{errors: string[], warnings: string[], schema: array|null, status?: int}
+ */
+function rr_validate_schema_graph( $context, array $nodes ) {
+	if ( empty( $nodes ) ) {
+		return array(
+			'errors'   => array( 'schema: @graph must contain at least one node' ),
+			'warnings' => array(),
+			'schema'   => null,
+		);
+	}
+
+	$max_nodes = apply_filters( 'rrseo_schema_graph_max_nodes', 20 );
+	if ( count( $nodes ) > $max_nodes ) {
+		return array(
+			'errors'   => array( "schema: @graph exceeds max of {$max_nodes} nodes" ),
+			'warnings' => array(),
+			'schema'   => null,
+			'status'   => 413,
+		);
+	}
+
+	$allowed     = apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES );
+	$errors      = array();
+	$clean_nodes = array();
+
+	foreach ( $nodes as $index => $node ) {
+		if ( ! is_array( $node ) ) {
+			$errors[] = "schema: @graph[{$index}] must be a JSON object";
+			continue;
+		}
+		if ( empty( $node['@type'] ) ) {
+			$errors[] = "schema: @graph[{$index}] missing required @type";
+			continue;
+		}
+		if ( ! in_array( $node['@type'], $allowed, true ) ) {
+			$errors[] = "schema: @graph[{$index}] @type '{$node['@type']}' not allowed. Allowed: " . implode( ', ', $allowed );
+			continue;
+		}
+		$clean_nodes[] = $node;
+	}
+
+	if ( ! empty( $errors ) ) {
+		return array(
+			'errors'   => $errors,
+			'warnings' => array(),
+			'schema'   => null,
+		);
+	}
+
+	return array(
+		'errors'   => array(),
+		'warnings' => array(),
+		'schema'   => array(
+			'@context' => $context,
+			'@graph'   => $clean_nodes,
+		),
 	);
 }
 
@@ -2188,7 +2274,7 @@ add_action(
 					'args'                => array(
 						'schema'  => array(
 							'required' => true,
-							'type'     => 'object',
+							'type'     => array( 'object', 'array' ),
 						),
 						'dry_run' => array(
 							'required' => false,
@@ -3394,7 +3480,7 @@ function rmb_schema_set( WP_REST_Request $request ) {
 			'validation_failed',
 			'Schema validation failed',
 			array(
-				'status'   => 422,
+				'status'   => isset( $validation['status'] ) ? $validation['status'] : 422,
 				'errors'   => $validation['errors'],
 				'warnings' => $validation['warnings'],
 			)
@@ -3404,6 +3490,7 @@ function rmb_schema_set( WP_REST_Request $request ) {
 	$clean_schema  = $validation['schema'];
 	$before_schema = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
 	$before        = $before_schema ? $before_schema : null;
+	$node_count    = isset( $clean_schema['@graph'] ) ? count( $clean_schema['@graph'] ) : 1;
 
 	if ( ! $dry_run ) {
 		update_post_meta( $post_id, RR_SCHEMA_META_KEY, $clean_schema );
@@ -3412,8 +3499,10 @@ function rmb_schema_set( WP_REST_Request $request ) {
 			'/schema',
 			array(
 				'schema' => array(
-					'before' => $before,
-					'after'  => $clean_schema,
+					'before'           => $before,
+					'after'            => $clean_schema,
+					'graph_node_count' => $node_count,
+					'bytes'            => strlen( wp_json_encode( $clean_schema ) ),
 				),
 			),
 			rr_request_id( $request ),

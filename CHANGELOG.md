@@ -1,5 +1,50 @@
 # Changelog
 
+## v3.5.0
+
+`POST /schema/{post_id}` accepts multiple JSON-LD nodes (issue #13) —
+surfaced by the Location Page Builder skill's Kilday Baxter Peru, IL
+rollout (2026-07-24), where city pages needed co-located `Service` and
+`BreadcrumbList` nodes but the endpoint only stored one.
+
+### Added
+
+- `POST /schema/{post_id}`'s `schema` field now accepts three shapes:
+  - **Single node** (unchanged) — stored exactly as received.
+  - **Bare array of nodes** (`[{...}, {...}]`) — wrapped into a `@graph`
+    envelope with `@context` defaulted to `https://schema.org`.
+  - **`@graph` envelope** (`{"@context": ..., "@graph": [...]}`) — the
+    preferred canonical form for multi-node writes.
+- Each node's `@type` is validated against `RR_ALLOWED_SCHEMA_TYPES`
+  independently via the new `rr_validate_schema_graph()`, with per-node,
+  index-tagged error messages (e.g. `schema: @graph[1] @type 'Widget' not
+  allowed`).
+- Graphs capped at 20 nodes via the new `rrseo_schema_graph_max_nodes`
+  filter; exceeding it returns `413` instead of the usual `422`.
+- Audit log entries for `/schema` now record `graph_node_count` and
+  `bytes` alongside the existing before/after values.
+- README gained a new "Schema (JSON-LD)" section documenting `GET`/`POST
+  /schema/{post_id}` and all three accepted request shapes — the endpoint
+  previously had no README coverage at all.
+
+### Notes
+
+- Storage key is unchanged (`_rrseo_schema_graph`) and was already named
+  for graph support; only the write-path validation was single-node only.
+- The `wp_head:5` emitter required no changes — it already outputs
+  whatever is stored verbatim in one `<script>` tag, so a `@graph`
+  envelope renders correctly with no separate code path.
+- Provider `@id` references between nodes are stored verbatim, never
+  auto-rewritten; callers are responsible for keeping cross-node/cross-page
+  `@id` references consistent.
+- An empty top-level array (`schema: []`) still falls through to
+  single-node validation and reports the standard missing-`@context`/
+  missing-`@type` errors, rather than a graph-specific "no nodes" error —
+  preserves the pre-v3.5.0 behavior for that edge case.
+- 11 new unit tests (228 -> 239) covering bare-array normalization, `@graph`
+  envelope pass-through, per-node error indexing, the empty-array
+  regression case, and the 20-node cap.
+
 ## v3.4.1
 
 Fix `POST /llms` `business_facts` writes replacing instead of merging
