@@ -1,11 +1,59 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-07-20
-**Current Version:** 3.4.1
+**Last Updated:** 2026-08-06
+**Current Version:** 3.8.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 540fdd8 -- chore: release v3.4.1 zip
+**Last Commit:** ce63aad -- chore: confirm v3.8.0 combined smoke test, close #12/#14/#15 + milestone
 **Git Status:** clean
+
+---
+
+## 2026-08-06 Session (final) -- Programmatic Page Provisioning Milestone: Issues #12-#15 -- SHIPPED and CLOSED
+
+### Session Summary
+Four issues filed 2026-08-06 by the Location Page Builder skill's Kilday
+Baxter Peru, IL rollout (2026-07-24) were triaged, sequenced into a
+GitHub milestone by risk/dependency, and built out end-to-end in one
+session: #13 (schema `@graph` support), #14 (`POST /media`), #12 (`POST
+/elementor/set-data`), #15 (`GET /capabilities`). Session opened with the
+carryover v3.4.1 smoke test (issues #9/#10/#11), then moved straight into
+the new milestone. All four milestone issues were implemented, released
+(v3.5.0-v3.8.0), and live-verified on kildaybaxter.com by end of session;
+the milestone is now closed.
+
+### Accomplishments
+- **Issues #9/#10/#11 closed** -- live smoke test confirmed the v3.4.1
+  `business_facts` merge fix holds on kildaybaxter.com.
+- **v3.5.0 SHIPPED + CLOSED (#13)** -- `POST /schema/{post_id}` accepts
+  single node, bare array, or `@graph` envelope, normalized to a
+  canonical `@graph` in `_rrseo_schema_graph`; 20-node cap (413). 11 new
+  tests (228 -> 239). Live-verified: Service + BreadcrumbList graph
+  renders correctly in one `<script>` tag on a production page.
+- **v3.6.0 SHIPPED + CLOSED (#14)** -- `POST /media` audited upload
+  wrapper: required `alt_text`/`source`, MIME allowlist checked against
+  real file content (415), 10MB cap (413), `is_placeholder`/`source`
+  pairing, `dry_run`; new `GET /media/placeholders`. 16 new tests (239 ->
+  255).
+- **v3.7.0 SHIPPED + CLOSED (#12)** -- `POST /elementor/set-data` writes
+  `_elementor_data`/`_elementor_edit_mode`/`_elementor_template_type`;
+  shape validated (422), widgets counted, non-blocking Pro-widget
+  warnings, CSS cache cleared. 18 new tests (255 -> 273).
+- **v3.8.0 SHIPPED + CLOSED (#15)** -- `GET /capabilities`: version, host
+  state, dotted-key capability map with `available`/`route`/`since`,
+  `allowed_schema_types`, `audit_log_enabled`. 7 new tests (273 -> 280).
+- **Combined live smoke test** -- self-updated kildaybaxter.com 3.5.0 ->
+  3.8.0; verified all three remaining capabilities against a scratch
+  draft page (persistence confirmed via REST meta, full reject-path
+  coverage on media upload), cleaned up, closed #12/#14/#15 plus the
+  GitHub milestone (4/4 resolved).
+- Suite: 280 tests / 799 assertions; phpcs clean on all four releases.
+
+### Next
+Resume the Higgins v3.3.0 perf deployment (now several releases behind
+current) -- render-block swap, `code_b64` + `priority:1`, PageSpeed
+measurement, then move Higgins to v3.8.x. Telemetry verdict review on
+`rrc-telemetry.php` also still outstanding. No open GitHub issues remain.
 
 ---
 
