@@ -1,5 +1,42 @@
 # Changelog
 
+## v3.8.0
+
+`GET /capabilities` (issue #15) — the capstone of the "Programmatic page
+provisioning" milestone. #13 (schema graph, v3.5.0), #14 (media upload,
+v3.6.0), and #12 (Elementor set-data, v3.7.0) all shipped this milestone;
+this release adds the discovery endpoint that lets a consumer (the
+Location Page Builder skill, or any other integration) find out what a
+given plugin build supports without per-route probing.
+
+### Added
+
+- `GET /capabilities` returns `plugin_version`, `plugin_namespace`,
+  `wp_version`, host state (`elementor_active`, `elementor_pro_active`,
+  `rank_math_active`), a `capabilities` map, `allowed_schema_types`, and
+  `audit_log_enabled`.
+- Capability keys are stable dotted identifiers (`schema.write.graph`,
+  `elementor.set_data`, `media.upload`, ...) rather than URLs — routes can
+  change shape across versions, the feature identifier doesn't. Each entry
+  carries `available`, `route`, and `since` (the version it shipped in,
+  `null` for routes predating this plugin's earliest tracked CHANGELOG
+  entry, v2.11.3 — the exact introducing version isn't reliably known, so
+  it's left unset rather than guessed).
+- Pure read, no side effects. Response carries `Cache-Control: public,
+  max-age=60`.
+- New pure helper `rr_get_capabilities_map()`, unit-tested for structural
+  invariants (dotted-lowercase keys, required fields present, `since` is
+  string-or-null) rather than exact content, so the test suite doesn't
+  need updating every time a capability is added.
+
+### Notes
+
+- This closes out the milestone opened by #9-#11 (AEO/GEO write surface,
+  v3.4.0/v3.4.1) and #12-#15 (programmatic page provisioning, v3.5.0-
+  v3.8.0) — all nine issues filed against the Kilday Baxter & Associates
+  and Location Page Builder rollouts are now implemented.
+- 7 new unit tests (273 -> 280), phpcs clean.
+
 ## v3.7.0
 
 `POST /elementor/set-data` (issue #12) — surfaced by the Location Page

@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.7.0
+ * Version:      3.8.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.7.0' );
+define( 'RMB_VERSION', '3.8.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2880,6 +2880,17 @@ add_action(
 			)
 		);
 
+		// ── Capabilities ──────────────────────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/capabilities',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_capabilities_get',
+				'permission_callback' => $admin_only,
+			)
+		);
+
 		// ── Force update check ────────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -5676,6 +5687,131 @@ function rmb_status( WP_REST_Request $request ) {
 	}
 
 	return rest_ensure_response( $response );
+}
+
+
+// ── Capabilities ─────────────────────────────────────────────────────────────
+/**
+ * Returns the plugin's capability map: dotted, stable feature keys mapped
+ * to availability, the route that implements them, the version they
+ * shipped in, and (for anything not yet available) the tracking issue.
+ *
+ * `since` is `null` for routes that predate this plugin's earliest tracked
+ * CHANGELOG entry (v2.11.3) — the exact introducing version isn't
+ * reliably known, so it's left unset rather than guessed.
+ *
+ * @return array<string, array{available: bool, route: string, since: string|null, issue?: string}>
+ */
+function rr_get_capabilities_map() {
+	return array(
+		'seo.meta.update'          => array(
+			'available' => true,
+			'route'     => 'POST /update',
+			'since'     => null,
+		),
+		'seo.meta.get'             => array(
+			'available' => true,
+			'route'     => 'GET /get/{id}',
+			'since'     => null,
+		),
+		'seo.meta.bulk_update'     => array(
+			'available' => true,
+			'route'     => 'POST /meta/bulk-update',
+			'since'     => null,
+		),
+		'images.alt.update'        => array(
+			'available' => true,
+			'route'     => 'POST /images/{id}/alt',
+			'since'     => null,
+		),
+		'schema.write.single_node' => array(
+			'available' => true,
+			'route'     => 'POST /schema/{post_id}',
+			'since'     => null,
+		),
+		'schema.write.graph'       => array(
+			'available' => true,
+			'route'     => 'POST /schema/{post_id} (bare array or @graph envelope)',
+			'since'     => '3.5.0',
+		),
+		'media.upload'             => array(
+			'available' => true,
+			'route'     => 'POST /media',
+			'since'     => '3.6.0',
+		),
+		'elementor.set_data'       => array(
+			'available' => true,
+			'route'     => 'POST /elementor/set-data',
+			'since'     => '3.7.0',
+		),
+		'llms.write'               => array(
+			'available' => true,
+			'route'     => 'POST /llms',
+			'since'     => null,
+		),
+		'llms.business_facts'      => array(
+			'available' => true,
+			'route'     => 'POST /llms (business_facts)',
+			'since'     => '3.4.0',
+		),
+		'snippets.set'             => array(
+			'available' => true,
+			'route'     => 'POST /snippets',
+			'since'     => null,
+		),
+		'snippets.bulk_create'     => array(
+			'available' => true,
+			'route'     => 'POST /snippets/bulk',
+			'since'     => null,
+		),
+		'actions.execute'          => array(
+			'available' => true,
+			'route'     => 'POST /actions/execute',
+			'since'     => null,
+		),
+		'actions.rollback'         => array(
+			'available' => true,
+			'route'     => 'POST /actions/{action_id}/rollback',
+			'since'     => null,
+		),
+		'aeo_geo.readiness'        => array(
+			'available' => true,
+			'route'     => 'GET /aeo-geo/readiness',
+			'since'     => null,
+		),
+	);
+}
+
+/**
+ * Handles GET /capabilities — machine-readable route inventory and version
+ * manifest, recommended as the first call for any new integration so a
+ * consumer can probe what this plugin build supports in one round trip
+ * instead of per-route OPTIONS calls or trial-and-error POSTs.
+ *
+ * Pure read, no side effects; response is cacheable for a short window.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_capabilities_get( WP_REST_Request $request ) {
+	unset( $request );
+
+	$response = rest_ensure_response(
+		array(
+			'plugin_version'       => RMB_VERSION,
+			'plugin_namespace'     => 'rankrocket-seo/v1',
+			'wp_version'           => get_bloginfo( 'version' ),
+			'elementor_active'     => class_exists( '\Elementor\Plugin' ),
+			'elementor_pro_active' => class_exists( '\ElementorPro\Plugin' ),
+			'rank_math_active'     => class_exists( 'RankMath' ),
+			'capabilities'         => rr_get_capabilities_map(),
+			'allowed_schema_types' => apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
+			'audit_log_enabled'    => true,
+		)
+	);
+	$response->header( 'Cache-Control', 'public, max-age=60' );
+
+	return $response;
 }
 
 /**

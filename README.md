@@ -454,6 +454,45 @@ Returns version, routing vocabulary version (`emit_routing_version: 2` for
 v2.13.0+), canonical/robots consolidation flags, snippet count, llms.txt URL,
 and more. Useful for audit scripts and CI health checks.
 
+#### `GET /capabilities` — route inventory and version manifest
+
+**Recommended as the first call for any new integration.** Returns a
+machine-readable capability map so a consumer can probe what this plugin
+build supports in one round trip, instead of per-route `OPTIONS` calls or
+trial-and-error `POST`s that can't distinguish "route doesn't exist" from
+"route exists but silently no-ops."
+
+```bash
+curl "$BASE/capabilities" -u "$CRED"
+```
+
+```json
+{
+  "plugin_version": "3.7.0",
+  "plugin_namespace": "rankrocket-seo/v1",
+  "wp_version": "6.6.2",
+  "elementor_active": true,
+  "elementor_pro_active": true,
+  "rank_math_active": false,
+  "capabilities": {
+    "seo.meta.update": { "available": true, "route": "POST /update", "since": null },
+    "schema.write.graph": { "available": true, "route": "POST /schema/{post_id} (bare array or @graph envelope)", "since": "3.5.0" },
+    "media.upload": { "available": true, "route": "POST /media", "since": "3.6.0" },
+    "elementor.set_data": { "available": true, "route": "POST /elementor/set-data", "since": "3.7.0" }
+  },
+  "allowed_schema_types": ["LocalBusiness", "Service", "BreadcrumbList", "..."],
+  "audit_log_enabled": true
+}
+```
+
+Capability keys are stable, dotted identifiers (`schema.write.graph`, not
+a URL) — key off these, not route paths, since routes can change shape
+across versions while the feature identifier stays put. `since` is `null`
+for routes that predate this plugin's earliest tracked CHANGELOG entry
+(v2.11.3); the exact introducing version isn't reliably known, so it's
+left unset rather than guessed. Pure read, no side effects; response
+carries `Cache-Control: public, max-age=60`.
+
 ---
 
 ### Observation (v2.18.0 — v3.0 Bite 1)
