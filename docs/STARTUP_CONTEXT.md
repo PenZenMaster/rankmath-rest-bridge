@@ -45,15 +45,9 @@
    swap with `code_b64` + `priority:1`; verify PageSpeed mobile moves
    63 -> 78-85. Higgins should also eventually move to v3.5.x.
 
-3. **Investigate unattended plugin self-update on Kilday Baxter** -- the
-   site was already running v3.5.0 by the time this session went to
-   trigger `/self-update` manually; `/check-updates` reported "latest
-   version" unprompted. Plugin code has no cron/scheduled self-update
-   logic of its own -- likely WP core's background auto-update picked it
-   up via the bundled Plugin Update Checker's transient, meaning automatic
-   updates may be enabled for this plugin on that site. Confirm with user
-   whether that's intended (a bad release could auto-deploy with no human
-   review window) before shipping #14/#12/#15.
+3. **#12 `POST /elementor/set-data`** -- third in the milestone sequence,
+   after #14. Elementor confirmed always-active on target sites (user
+   confirmed 2026-08-06), so no inactive-plugin fallback branch needed.
 
 ---
 
@@ -62,8 +56,8 @@
 **Git:**
 - Branch `main` -- in sync with origin at `cdceafa`
 - Kilday Baxter (kildaybaxter.com) confirmed running v3.5.0 as of the
-  2026-08-06 smoke test (self-updated on its own -- see priority 3 above).
-  Higgins still on v3.3.0.
+  2026-08-06 smoke test (user manually forced the update ahead of the
+  scripted `/self-update` call). Higgins still on v3.3.0.
 - Gates: phpcs clean, phpunit 239 tests / 585 assertions
 
 **Files of note:**
@@ -80,8 +74,7 @@
 
 **Blockers:**
 - None. v3.5.0 smoke-tested and confirmed live on Kilday Baxter; issue
-  #13 closed. Unattended self-update behavior (priority 3) needs a
-  decision, not strictly blocking.
+  #13 closed.
 
 ---
 
