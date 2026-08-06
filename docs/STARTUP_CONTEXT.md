@@ -2,69 +2,76 @@
 
 **Last Updated:** 2026-08-06
 **Branch:** main
-**Version:** 3.6.0 (shipped, zip on CDN; not yet smoke-tested live)
-**Last Commit:** d4b537a -- chore: release v3.6.0 zip
+**Version:** 3.7.0 (shipped, zip on CDN; not yet smoke-tested live)
+**Last Commit:** 1a69ac0 -- chore: release v3.7.0 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v3.6.0 shipped (2026-08-06, issue #14)** -- `POST /media` audited
+1. **v3.7.0 shipped (2026-08-06, issue #12)** -- `POST
+   /elementor/set-data` writes `_elementor_data` (wp_slash()d JSON,
+   matching Elementor's own convention), `_elementor_edit_mode`,
+   `_elementor_template_type`. Top-level section/container shape
+   validated (422 on malformed input), widgets recursively counted,
+   unrecognized `widgetType` produces a non-blocking warning (best-effort
+   list, `rrseo_elementor_core_widget_types` filter) rather than
+   rejecting. CSS cache cleared via `files_manager->clear_cache()`.
+   `post_id` is a body field (not URL param); auth uses the standard
+   `manage_options` gate, not the issue's suggested `edit_post` model --
+   both deliberate, noted in the commit. 18 new tests (255 -> 273). Not
+   yet smoke-tested live -- next priority, alongside #14.
+
+2. **v3.6.0 shipped (2026-08-06, issue #14)** -- `POST /media` audited
    upload wrapper around `media_handle_sideload()`: required `alt_text` +
-   `source` (allowlist, stored `_rrseo_media_source`), MIME allowlist
-   checked against real file content via `wp_check_filetype_and_ext()`
-   (415 on mismatch), 10MB cap (413), `is_placeholder`/`source` pairing
-   (`_rrseo_media_placeholder`), `dry_run`. New `GET /media/placeholders`.
-   Extracted `rr_validate_media_fields()`/`rr_validate_media_file()` as
-   pure, unit-testable helpers (16 new tests, 239 -> 255). Not yet
-   smoke-tested live -- next priority.
+   `source`, MIME allowlist checked against real file content (415 on
+   mismatch), 10MB cap (413), `is_placeholder`/`source` pairing,
+   `dry_run`. New `GET /media/placeholders`. 16 new tests (239 -> 255).
+   Not yet smoke-tested live.
 
-2. **v3.5.0 shipped and confirmed live (2026-08-06, issue #13)** --
-   `POST /schema/{post_id}` now accepts single node (unchanged), bare
-   array, or `@graph` envelope; all normalize to a canonical `@graph`
-   envelope in `_rrseo_schema_graph`, per-node `@type` validation, 20-node
-   cap (413). Live smoke test on kildaybaxter.com post 2090: wrote a
-   Service + BreadcrumbList graph, confirmed one `<script
-   type="application/ld+json">` tag renders both nodes correctly on the
-   production page. Closed #13 with evidence.
-
-3. **v3.4.1 smoke test confirmed live (2026-08-06)** -- ran the #11
-   regression test against kildaybaxter.com: partial `business_facts`
-   write preserved all other fields, readiness scores held steady.
-   Closed issues #9, #10, #11 with evidence.
+3. **v3.5.0 shipped and confirmed live (2026-08-06, issue #13)** --
+   `POST /schema/{post_id}` now accepts single node, bare array, or
+   `@graph` envelope; all normalize to a canonical `@graph` envelope.
+   Live smoke test on kildaybaxter.com post 2090 confirmed correct
+   rendering. Closed #13 with evidence.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Smoke-test v3.6.0 live** -- self-update kildaybaxter.com (or
-   another test site), POST /media with a real image + attach_to_post_id,
-   verify alt text/source meta persisted, MIME/size rejection paths
-   (415/413), and dry_run. Close #14 once confirmed, same pattern as
-   #9/#10/#11/#13.
+1. **Smoke-test v3.7.0 and v3.6.0 live, in one pass** -- self-update
+   kildaybaxter.com to v3.7.0, then: (a) POST /elementor/set-data with a
+   small real section/widget tree against a test/scratch post, verify
+   meta persisted and CSS cache clear ran; (b) POST /media with a real
+   image + attach_to_post_id, verify alt/source meta persisted and the
+   415/413 reject paths. Close #12 and #14 once confirmed, same pattern
+   as #9/#10/#11/#13.
 
-2. **#12 `POST /elementor/set-data`** -- third in the "Programmatic page
-   provisioning" milestone sequence (#13 done -> #14 done -> #12 -> #15).
-   Elementor confirmed always-active on target sites (user confirmed
-   2026-08-06), so no inactive-plugin fallback branch needed.
+2. **#15 `GET /capabilities`** -- last (capstone) in the "Programmatic
+   page provisioning" milestone sequence (#13 -> #14 -> #12 -> #15, all
+   implemented except #15). Enumerates #12/#13/#14 plus pre-existing
+   routes in one pass now that all three are real.
 
 3. **Resume Higgins v3.3.0 perf deployment** -- carried over across
    multiple sessions. POST the Font Awesome + Bootstrap preload/onload
    swap with `code_b64` + `priority:1`; verify PageSpeed mobile moves
-   63 -> 78-85. Higgins should also eventually move to v3.6.x.
+   63 -> 78-85. Higgins should also eventually move to v3.7.x.
 
 ---
 
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `d4b537a`
+- Branch `main` -- in sync with origin at `1a69ac0`
 - Kilday Baxter (kildaybaxter.com) confirmed running v3.5.0 as of the
-  last live smoke test; v3.6.0 not yet deployed/tested on any live site.
-  Higgins still on v3.3.0.
-- Gates: phpcs clean, phpunit 255 tests / 615 assertions
+  last live smoke test; v3.6.0/v3.7.0 not yet deployed/tested on any
+  live site. Higgins still on v3.3.0.
+- Gates: phpcs clean, phpunit 273 tests / 677 assertions
 
 **Files of note:**
+- Elementor set-data validation: `rankmath-rest-bridge.php`
+  (`rr_validate_elementor_data()`, `rr_elementor_walk_tree()`,
+  `rr_elementor_clear_css_cache()`, `rmb_elementor_set_data()`)
 - Media upload validation: `rankmath-rest-bridge.php`
   (`rr_validate_media_fields()`, `rr_validate_media_file()`,
   `rmb_media_upload()`, `rmb_media_list_placeholders()`)
@@ -77,12 +84,13 @@
   (`rr_aeo_compute_readiness()` -- `has_business_facts` rubric)
 - Release hook note: run `git push` twice (zip commit lands after refspec)
 - GitHub milestone #1 "Programmatic page provisioning" holds #12/#14/#15
-  open and #13 closed -- #14 implemented and shipped, pending live smoke
-  test before close. Sequencing noted via comments on each issue.
+  open and #13 closed -- #12/#14 implemented and shipped, pending live
+  smoke test before close. Sequencing noted via comments on each issue.
 
 **Blockers:**
-- None. v3.6.0 built, tested locally (phpcs/phpunit clean), and pushed;
-  live smoke test still outstanding (priority 1 above).
+- None. v3.7.0 built, tested locally (phpcs/phpunit clean), and pushed;
+  live smoke tests for both #12 and #14 still outstanding (priority 1
+  above).
 
 ---
 
