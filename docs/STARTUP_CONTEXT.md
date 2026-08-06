@@ -1,15 +1,23 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-07-20 (shutdown 18:40)
+**Last Updated:** 2026-08-06
 **Branch:** main
-**Version:** 3.4.1 (shipped, zip on CDN; not yet deployed to any live site)
-**Last Commit:** 540fdd8 -- chore: release v3.4.1 zip
+**Version:** 3.4.1 (shipped, zip on CDN; confirmed live on kildaybaxter.com)
+**Last Commit:** ac352e5 -- chore(checkpoint): 2026-07-20_1840
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **v3.4.0 shipped (issues #9, #10)** -- AEO/GEO write surface, surfaced
+1. **v3.4.1 smoke test confirmed live (2026-08-06)** -- ran the #11
+   regression test against kildaybaxter.com: baseline full `business_facts`
+   write, then a partial write of `{"business_facts":{"email":"..."}}`.
+   Diff showed only `email` added; every other field (primary_services,
+   service_area, common_questions, key_differentiators, etc.) preserved
+   unchanged, and readiness scores held steady instead of collapsing.
+   Closed issues #9, #10, #11 on GitHub with the verification evidence.
+
+2. **v3.4.0 shipped (issues #9, #10)** -- AEO/GEO write surface, surfaced
    by the Kilday Baxter & Associates audit: `business_facts` writes now
    validated (business_name + description required, 422 on bad input);
    Business Facts + Common Questions block now renders into `/llms.txt`
@@ -17,29 +25,28 @@
    enrichment, not just a name; README gained full `POST /llms` +
    `/aeo-geo/*` docs.
 
-2. **v3.4.1 shipped same day (issue #11)** -- caught a regression in the
-   v3.4.0 fix itself during an audit replay: partial `business_facts`
-   writes were replacing (not merging), silently wiping fields and
-   collapsing readiness scores. Fixed with `rr_merge_llms_business_facts()`;
+3. **v3.4.1 shipped (issue #11)** -- caught a regression in the v3.4.0
+   fix itself during an audit replay: partial `business_facts` writes
+   were replacing (not merging), silently wiping fields and collapsing
+   readiness scores. Fixed with `rr_merge_llms_business_facts()`;
    validation now runs against the merged result.
-
-3. **Repo cleanup** -- removed 9 superseded release zips (v2.17.4-v3.2.0);
-   suite grew 207 -> 228 tests, phpcs clean on both releases.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Smoke-test v3.4.1** -- user is testing the merge fix live; confirm
-   a partial `business_facts` write (e.g. adding one field) now preserves
-   the rest and readiness scores hold. Close issues #9/#10/#11 on GitHub
-   once confirmed.
+1. **Resume Higgins v3.3.0 perf deployment** -- carried over across
+   sessions. Self-update (needs user's app password), then POST the
+   Font Awesome + Bootstrap preload/onload swap with `code_b64` +
+   `priority:1`; verify PageSpeed mobile moves 63 -> 78-85. Higgins
+   should also eventually move to v3.4.1.
 
-2. **Resume Higgins v3.3.0 perf deployment** -- carried over from before
-   this session's audit detour. Self-update (needs user's app password),
-   then POST the Font Awesome + Bootstrap preload/onload swap with
-   `code_b64` + `priority:1`; verify PageSpeed mobile moves 63 -> 78-85.
-   Higgins should also eventually move to v3.4.1.
+2. **Triage 4 new issues filed 2026-08-06** -- all from the Location
+   Page Builder skill's Kilday Baxter Peru, IL rollout (2026-07-24):
+   #12 `POST /elementor/set-data`, #13 schema `@graph`/array support
+   on `POST /schema/{post_id}`, #14 `POST /media` upload wrapper,
+   #15 `GET /capabilities` route inventory. None blocking (skill has
+   working fallbacks); designed to bundle as one milestone.
 
 3. **Telemetry verdict review** -- `rrc-telemetry.php` collecting since
    2026-07-06, trustworthy from ~2026-07-13 (now well past). Kill switch:
@@ -50,10 +57,10 @@
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `540fdd8`
-- No live site yet running v3.4.x; Kilday Baxter tested v3.3.0 and pre-fix
-  v3.4.0 directly via its own deployment (not through this repo's release
-  flow -- confirm how that site gets updates before assuming self-update).
+- Branch `main` -- in sync with origin at `ac352e5`
+- Kilday Baxter (kildaybaxter.com) confirmed running v3.4.1 as of the
+  2026-08-06 smoke test -- first live site on v3.4.x. Higgins still on
+  v3.3.0 (see priority 1 above).
 - Gates: phpcs clean, phpunit 228 tests / 550 assertions
 
 **Files of note:**
@@ -65,8 +72,8 @@
 - Release hook note: run `git push` twice (zip commit lands after refspec)
 
 **Blockers:**
-- None. Both fixes deployed to GitHub; live-site smoke test is user's
-  next step, in progress as of shutdown.
+- None. v3.4.1 smoke-tested and confirmed live on Kilday Baxter;
+  issues #9/#10/#11 closed.
 
 ---
 
