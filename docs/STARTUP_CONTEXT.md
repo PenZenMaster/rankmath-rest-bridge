@@ -1,6 +1,6 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-08-06
+**Last Updated:** 2026-08-07
 **Branch:** main
 **Version:** 3.8.1 (shipped, zip on CDN; confirmed live on kildaybaxter.com and higginsoverheaddoor.com)
 **Last Commit:** 594e7b8 -- chore: release v3.8.1 zip
@@ -9,7 +9,25 @@
 
 ## Last 3 Accomplishments
 
-1. **Roadmap/issue review + v3.8.1 fixes (2026-08-06)** -- reviewed
+1. **Telemetry verdict review completed (2026-08-07)** -- reviewed
+   `rrc-telemetry.php`'s 32-day sample (2026-07-06 -> 2026-08-07) from
+   rankrocket.co via CSV export (`docs/plugin-usage-2026-08-07.csv`).
+   Two cleanup candidates found: `wordpress-importer` (DEAD -- zero
+   hooks, zero admin hits, never fired) and `wordfence-activator-1.4.0`
+   (stale since 2026-05-13, likely an orphaned installer stub distinct
+   from the real `wordfence` plugin, which is fully active). User to
+   remove both via wp-admin. Bigger finding: `seo-by-rank-math` and
+   `seo-by-rank-math-pro` have fired zero hooks since 2026-05-15 (~12
+   weeks) on rankrocket.co -- functionally retired there, relevant
+   evidence for the Future/Deferred "P3 RankMath Reference Purge" item,
+   but NOT sufficient to act on alone: cross-checked against this
+   session's earlier `/status` calls, Higgins still shows
+   `rankmath_active: true` (a live client dependency), so the purge
+   prerequisite ("confirm no active clients rely on the fallback")
+   remains unmet. Everything else on rankrocket.co (11 other plugins +
+   this plugin itself) shows healthy, recent activity.
+
+2. **Roadmap/issue review + v3.8.1 fixes (2026-08-06)** -- reviewed
    outstanding GitHub issues and doc-level technical debt. Found 3 new
    issues (#16, #17, #18) filed by an external audit pass immediately
    after #12/#14/#15 closed -- same pattern as the audit that originally
@@ -28,7 +46,7 @@
    checkboxes in `projectStatus.md` for v3.0 Bites 2-4 (all shipped
    2026-07-09/10, verified real test coverage before checking each box).
 
-2. **Higgins render-block fix completed and verified live (2026-08-06)**
+3. **Higgins render-block fix completed and verified live (2026-08-06)**
    -- closed out the perf deployment carried over since 2026-07-10.
    Found the theme was still separately enqueuing its own blocking
    `bootstrap`/`font-awesome` stylesheets alongside an existing
@@ -42,27 +60,23 @@
    originally-projected 78-85 -- likely a separate bottleneck, not
    investigated further. Real, repeatable win; not fully resolved.
 
-3. **"Programmatic page provisioning" milestone closed (2026-08-06)** --
-   all 4 issues (#12 elementor set-data, #13 schema graph, #14 media
-   upload, #15 capabilities) implemented, shipped v3.5.0-v3.8.0, and
-   live-verified on kildaybaxter.com in one combined smoke test.
-
 ---
 
 ## Next 3 Priorities
 
-1. **Telemetry verdict review** -- `rrc-telemetry.php` collecting since
-   2026-07-06, trustworthy from ~2026-07-13 (now well past). Kill switch:
-   `RRC_PUA_DISABLE` in wp-config. Carried over across multiple sessions,
-   not yet actioned. Top open item.
-
-2. **Issue #20 (`POST /self-update` false-success)** -- medium impact per
+1. **Issue #20 (`POST /self-update` false-success)** -- medium impact per
    its own writeup: the README documents this endpoint as the
    recommended headless/CI deployment path, but it currently can't be
    trusted to detect its own failure. Fix is well-scoped: re-read the
    installed plugin file's version via `get_plugin_data()` after
    `Plugin_Upgrader::install()` and compare against the expected
-   version before reporting success.
+   version before reporting success. Now the top open item.
+
+2. **rankrocket.co plugin cleanup (user-actioned, not this repo)** --
+   remove `wordpress-importer` (DEAD) and investigate/remove
+   `wordfence-activator-1.4.0` (stale orphan) via wp-admin, per the
+   2026-08-07 telemetry verdict review. Not tracked as a GitHub issue --
+   it's site housekeeping, not a plugin code change.
 
 3. **Issue #18 (`since: null` backfill on `/capabilities`)** -- low
    impact, explicitly optional. If picked up, do NOT use the issue's own

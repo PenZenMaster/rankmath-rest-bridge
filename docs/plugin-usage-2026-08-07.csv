@@ -1,0 +1,18 @@
+"Plugin Slug","Hooks (sampled)","Est. Hook Calls","Admin Hits","Last Seen (unix)",Verdict
+complianz-gdpr-premium,86262,43131000,0,1786070416,ACTIVE
+disable-comments,4260,2130000,0,1786070070,ACTIVE
+elementor-pro,145325,72662500,0,1786070416,ACTIVE
+elementor,264131,132065500,0,1786070415,ACTIVE
+google-site-kit,68213,34106500,0,1786070415,ACTIVE
+header-footer-code-manager,829,414500,0,1786070342,ACTIVE
+health-check,676,338000,0,1786066247,ACTIVE
+kadence-pro,209190,104595000,0,1786070414,ACTIVE
+link-whisper-premium,10634,5317000,0,1786070399,ACTIVE
+litespeed-cache,26092,13046000,0,1786070414,ACTIVE
+seo-by-rank-math-pro,635,317500,1,1778806112,ACTIVE
+seo-by-rank-math,12045,6022500,0,1778806111,ACTIVE
+updraftplus,29378,14689000,0,1786070416,ACTIVE
+wordfence-activator-1.4.0,0,0,3,1778685116,"ADMIN ONLY"
+wordfence,13436,6718000,7,1786070416,ACTIVE
+wordpress-importer,0,0,0,0,DEAD
+rankmath-rest-bridge,63523,31761500,0,1786070408,ACTIVE

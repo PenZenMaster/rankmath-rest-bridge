@@ -772,6 +772,7 @@ Reference: `docs/plugin-v3-executor-spec.md`
   - Optionally rename remaining internal `rank_math_*` / `rankmath` identifiers to `rrseo_*` equivalents in a coordinated search-and-replace pass
   - Use case: new client builds with no RankMath installed; sites migrating off Yoast or AIO SEO where RankMath was never present
   - Prerequisite: confirm no active clients rely on the `rank_math_*` read-path fallback before removing it
+  - **Evidence so far (2026-08-07 telemetry verdict review, `docs/plugin-usage-2026-08-07.csv`):** on rankrocket.co, `seo-by-rank-math`/`seo-by-rank-math-pro` fired zero hooks for ~12 weeks (last activity 2026-05-15) — functionally retired on the dogfood site. But `/status` on higginsoverheaddoor.com still reports `rankmath_active: true` (a live client dependency as of 2026-08-06), so the prerequisite remains unmet — this is a partial data point, not a green light
 
 ---
 
