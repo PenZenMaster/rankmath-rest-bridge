@@ -3,7 +3,7 @@
 **Last Updated:** 2026-08-07
 **Branch:** main
 **Version:** 3.8.1 (shipped, zip on CDN; confirmed live on kildaybaxter.com and higginsoverheaddoor.com)
-**Last Commit:** 594e7b8 -- chore: release v3.8.1 zip
+**Last Commit:** c4e147c -- docs: record telemetry verdict review findings (rankrocket.co)
 
 ---
 
@@ -90,7 +90,7 @@
 ## Current State
 
 **Git:**
-- Branch `main` -- in sync with origin at `594e7b8`
+- Branch `main` -- in sync with origin at `c4e147c`
 - Kilday Baxter (kildaybaxter.com) and Higgins (higginsoverheaddoor.com)
   both confirmed running v3.8.1. Higgins needed a manual wp-admin update
   after `/self-update` reported false success twice (see issue #20) --

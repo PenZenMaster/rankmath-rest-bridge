@@ -1,15 +1,68 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-08-06
-**Current Version:** 3.8.0
+**Current Version:** 3.8.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** ce63aad -- chore: confirm v3.8.0 combined smoke test, close #12/#14/#15 + milestone
+**Last Commit:** c4e147c -- docs: record telemetry verdict review findings (rankrocket.co)
 **Git Status:** clean
 
 ---
 
-## 2026-08-06 Session (final) -- Programmatic Page Provisioning Milestone: Issues #12-#15 -- SHIPPED and CLOSED
+## 2026-08-06 Session (final) -- v3.8.1 Post-Close Fixes (#16/#17), Telemetry Verdict Review Complete
+
+### Session Summary
+Continuation of the same day's milestone-closing session. At the user's
+request, reviewed outstanding GitHub issues and doc-level technical
+debt: found and fixed two real bugs (#16, #17) surfaced by an external
+post-close audit of the milestone work, filed two new issues (#19 a
+long-carried docs gap, #20 a genuine self-update reliability bug
+discovered live during verification on Higgins), cleaned up
+long-stale roadmap checkboxes, and finally closed out the telemetry
+verdict review that had sat as the top open priority since 2026-07-10.
+
+### Accomplishments
+- **v3.8.1 SHIPPED + CLOSED #16, #17** -- `POST /media` now returns the
+  documented `422` (not WP's generic `400`) for missing `alt_text`/
+  `source`. `GET /capabilities`'s `Cache-Control` header fix required
+  correcting an earlier wrong root-cause guess (host proxy -> actually
+  WordPress core forcing nocache on authenticated REST responses,
+  confirmed via cross-host testing) -- fixed via a `rest_pre_serve_request`
+  hook. Both live-verified on kildaybaxter.com and higginsoverheaddoor.com.
+- **Found WP Engine has its own separate Cache-Control override**
+  (`X-Pass-Why: auth` on every authenticated request, after PHP already
+  sent the correct header) -- documented as host platform policy, not a
+  plugin defect.
+- **Found + filed #20**: `POST /self-update` reported false success
+  twice on Higgins (`to_version: 3.8.1` while `/status` stayed on
+  `3.8.0`) -- `rmb_self_update()` never re-verifies the installed
+  version from disk. Worked around via manual wp-admin update; bug
+  filed with a well-scoped fix proposed, not yet implemented.
+- **Reviewed #18, declined its own suggested fix** -- the issue's
+  version-backfill table contains a confirmed-wrong guess; git history
+  goes back to v1.2.0 (past CHANGELOG's v2.11.3 floor), so accurate
+  backfill is feasible via `git log -S` archaeology instead.
+- **Filed #19** for the entity_clarity README callout carried as a doc
+  note since 2026-07-20.
+- **Cleaned up stale roadmap checkboxes** for v3.0 Bites 2-4 (shipped
+  2026-07-09/10, never checked off) -- verified real test coverage
+  before checking each box.
+- **Telemetry verdict review completed** -- reviewed rrc-telemetry.php's
+  32-day rankrocket.co sample via CSV export. Two cleanup candidates
+  for the user (`wordpress-importer` DEAD, `wordfence-activator-1.4.0`
+  stale orphan). RankMath silent ~12 weeks on rankrocket.co -- relevant
+  but not sufficient evidence for the P3 RankMath Reference Purge item;
+  Higgins still shows `rankmath_active: true`.
+- Suite: 280 tests / 799 assertions throughout; phpcs clean.
+
+### Next
+Fix issue #20 (self-update false-success) -- now the top open item.
+User completes rankrocket.co plugin cleanup separately. #18 optional,
+pick up only if nothing else is queued.
+
+---
+
+## 2026-08-06 Session -- Programmatic Page Provisioning Milestone: Issues #12-#15 -- SHIPPED and CLOSED
 
 ### Session Summary
 Four issues filed 2026-08-06 by the Location Page Builder skill's Kilday
