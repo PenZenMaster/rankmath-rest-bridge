@@ -12,12 +12,13 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-04-29
- * Last Modified Date: 2026-07-06
+ * Last Modified Date: 2026-08-13
  *
  * Comments:
  * v1.00 - Initial release. Admin panel for viewing plugin data.
  * v1.01 - I18n: deactivation dialog strings wrapped; repaired literal \x
  *         escape sequences in Loading placeholders (ASCII ellipsis).
+ * v1.02 - Redirects submenu page (issue #21 Stage 1).
  *
  * @package RankRocket_SEO
  */
@@ -109,6 +110,15 @@ class RRSEO_Admin {
 			'manage_options',
 			'rankrocket-seo-snippets',
 			array( $this, 'render_snippets' )
+		);
+
+		$this->page_hooks['redirects'] = add_submenu_page(
+			'rankrocket-seo',
+			$this->page_title( __( 'Redirects', 'rankrocket-seo' ) ),
+			__( 'Redirects', 'rankrocket-seo' ),
+			'manage_options',
+			'rankrocket-seo-redirects',
+			array( $this, 'render_redirects' )
 		);
 
 		$this->page_hooks['llms'] = add_submenu_page(
@@ -227,6 +237,20 @@ class RRSEO_Admin {
 		<div class="wrap">
 			<h1><?php echo esc_html( $this->page_title( __( 'Snippets', 'rankrocket-seo' ) ) ); ?></h1>
 			<div id="rrseo-page-snippets">
+				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Renders the Redirects page shell.
+	 */
+	public function render_redirects(): void {
+		?>
+		<div class="wrap">
+			<h1><?php echo esc_html( $this->page_title( __( 'Redirects', 'rankrocket-seo' ) ) ); ?></h1>
+			<div id="rrseo-page-redirects">
 				<p><?php esc_html_e( 'Loading...', 'rankrocket-seo' ); ?></p>
 			</div>
 		</div>

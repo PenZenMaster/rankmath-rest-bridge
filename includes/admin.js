@@ -442,6 +442,99 @@
 		} );
 	}
 
+	// ── Redirects ─────────────────────────────────────────────────────────────────
+
+	/**
+	 * Renders the Redirects page: a "Test a URL" tool plus a read-only table
+	 * of stored rules. Create/update/delete are REST-only in Stage 1 (issue
+	 * #21), matching the audit-engine-first design of this endpoint — the
+	 * table here is for visibility, not data entry.
+	 *
+	 * @param {HTMLElement} container
+	 */
+	function renderRedirects( container ) {
+		var html = '<div class="rrseo-card" style="margin-bottom:16px;">';
+		html += '<h2>Test a URL</h2>';
+		html += '<p>Checks a path against the stored rules without redirecting anything.</p>';
+		html += '<div class="rrseo-toolbar">';
+		html += '<input type="text" id="rrseo-redirect-test-url" class="regular-text" placeholder="/old-page or a full URL">';
+		html += ' <button id="rrseo-redirect-test-btn" class="button button-primary">Test</button>';
+		html += '</div>';
+		html += '<div id="rrseo-redirect-test-result" style="margin-top:8px;"></div>';
+		html += '</div>';
+
+		html += '<div id="rrseo-redirects-table">' + loading() + '</div>';
+		container.innerHTML = html;
+
+		document.getElementById( 'rrseo-redirect-test-btn' ).addEventListener( 'click', function () {
+			var input  = document.getElementById( 'rrseo-redirect-test-url' );
+			var result = document.getElementById( 'rrseo-redirect-test-result' );
+			var url    = input.value.trim();
+			if ( ! url ) {
+				result.innerHTML = errHtml( 'Enter a URL or path first.' );
+				return;
+			}
+			result.innerHTML = loading();
+
+			apiFetch( {
+				path:   '/rankrocket-seo/v1/redirects/preview',
+				method: 'POST',
+				data:   { url: url },
+			} ).then( function ( r ) {
+				if ( ! r.would_redirect ) {
+					result.innerHTML = '<p>' + badge( 'No match', 'orange' ) + ' — this URL would not be redirected.</p>';
+					return;
+				}
+				result.innerHTML = '<p>' + badge( 'Match: ' + r.matched_rule_id, 'green' )
+					+ ' → <code>' + esc( r.target ) + '</code> (' + esc( r.status_code ) + ')</p>';
+			} ).catch( function ( e ) {
+				result.innerHTML = errHtml( e.message || 'Preview failed.' );
+			} );
+		} );
+
+		loadRedirectsTable();
+	}
+
+	/**
+	 * Fetches /redirects and renders the read-only rule table.
+	 */
+	function loadRedirectsTable() {
+		var tableDiv = document.getElementById( 'rrseo-redirects-table' );
+		if ( ! tableDiv ) {
+			return;
+		}
+
+		apiFetch( { path: '/rankrocket-seo/v1/redirects' } ).then( function ( data ) {
+			var redirects = data.redirects || [];
+			if ( ! redirects.length ) {
+				tableDiv.innerHTML = '<p>No redirects configured. Use the REST API (<code>POST /redirects</code>) or the Audit Engine to create one.</p>';
+				return;
+			}
+
+			var html = '<p>' + badge( data.count + ' redirect(s)', 'green' ) + '</p>';
+			html += '<table class="widefat rrseo-table">';
+			html += '<thead><tr>';
+			html += '<th>Source</th><th>Target</th><th>Type</th><th>Status</th><th>Enabled</th><th>Created</th>';
+			html += '</tr></thead><tbody>';
+
+			redirects.forEach( function ( r ) {
+				html += '<tr>';
+				html += '<td><code>' + esc( r.source ) + '</code></td>';
+				html += '<td><code>' + esc( r.target ) + '</code></td>';
+				html += '<td>' + esc( r.match_type ) + '</td>';
+				html += '<td>' + esc( r.status_code ) + '</td>';
+				html += '<td>' + ( r.enabled ? badge( 'Enabled', 'green' ) : badge( 'Disabled', 'red' ) ) + '</td>';
+				html += '<td>' + esc( ( r.created_at || '' ).slice( 0, 10 ) ) + '</td>';
+				html += '</tr>';
+			} );
+
+			html += '</tbody></table>';
+			tableDiv.innerHTML = html;
+		} ).catch( function ( e ) {
+			tableDiv.innerHTML = errHtml( e.message || 'Failed to load redirects.' );
+		} );
+	}
+
 	// ── llms.txt ──────────────────────────────────────────────────────────────────
 
 	/**
@@ -715,12 +808,13 @@
 	// ── Router ────────────────────────────────────────────────────────────────────
 
 	var pages = {
-		'rrseo-page-overview': renderOverview,
-		'rrseo-page-posts':    renderPosts,
-		'rrseo-page-images':   renderImages,
-		'rrseo-page-snippets': renderSnippets,
-		'rrseo-page-llms':     renderLlms,
-		'rrseo-page-sitemap':  renderSitemap,
+		'rrseo-page-overview':  renderOverview,
+		'rrseo-page-posts':     renderPosts,
+		'rrseo-page-images':    renderImages,
+		'rrseo-page-snippets':  renderSnippets,
+		'rrseo-page-redirects': renderRedirects,
+		'rrseo-page-llms':      renderLlms,
+		'rrseo-page-sitemap':   renderSitemap,
 	};
 
 	document.addEventListener( 'DOMContentLoaded', function () {

@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.9.1
+
+Redirects admin UI (issue #21 Stage 1 follow-up).
+
+### Added
+
+- New **Redirects** page in the RankRocket SEO admin menu
+  (`includes/class-rrseo-admin.php` + `includes/admin.js`): a read-only
+  table of stored rules (source, target, match type, status code,
+  enabled, created date) plus a "Test a URL" tool that calls
+  `POST /redirects/preview` to check whether a path would redirect
+  without applying anything.
+
+### Notes
+
+- Matches this admin panel's existing read-only/observability design --
+  every other page (Overview, Posts & Pages, Image ALT, Snippets,
+  llms.txt, Sitemap) is a read-only view backed by REST GETs, with write
+  actions (create/update/delete) left to the REST API / Audit Engine.
+  Create/update/delete for redirects remain REST-only, consistent with
+  that pattern -- not a gap, a deliberate match to how every other
+  managed-entity page in this panel already works.
+- No new REST routes or server-side data handlers; the page is a pure
+  consumer of the v3.9.0 `/redirects` and `/redirects/preview` endpoints.
+
 ## v3.9.0
 
 REST-managed redirects (issue #21 Stage 1). Every RankRocket audit against a
