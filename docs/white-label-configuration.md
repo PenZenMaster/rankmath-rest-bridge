@@ -20,6 +20,7 @@ define( 'RRSEO_WL_DESCRIPTION', 'SEO control layer.' ); // Plugins list descript
 define( 'RRSEO_WL_AUTHOR',      'Acme Agency' );        // Author name in Plugins list
 define( 'RRSEO_WL_AUTHOR_URL',  'https://acme.com' );   // Author link in Plugins list
 define( 'RRSEO_WL_SUPPORT_URL', 'https://acme.com/support' ); // Adds a Support row link
+define( 'RRSEO_WL_ICON',        'dashicons-shield' );   // Admin-menu sidebar icon
 ```
 
 **What changes:**
@@ -30,7 +31,14 @@ define( 'RRSEO_WL_SUPPORT_URL', 'https://acme.com/support' ); // Adds a Support 
 | Plugins screen — Description | (original) | (your text) |
 | Plugins screen — Author | Rank Rocket Co | Acme Agency |
 | Admin menu item | RankRocket SEO | Acme SEO |
+| Admin menu sidebar icon | `dashicons-chart-line` | (your icon) |
 | Browser tab / page `<h1>` | RankRocket SEO | Acme SEO |
+
+**`RRSEO_WL_ICON` accepts anything WordPress's own `add_menu_page()`
+`$icon_url` parameter does:** a dashicon class (`'dashicons-shield'`), a
+full image URL, a base64-encoded SVG data URI
+(`'data:image/svg+xml;base64,...'`), or `'none'` for a blank/CSS-styled
+icon. Omit it to keep the default (`dashicons-chart-line`).
 
 ---
 
@@ -88,3 +96,15 @@ add_filter(
   `wp-config.php` edit is required.
 - The plugin's internal REST namespace (`rankrocket-seo/v1`) and option keys
   are unaffected by white-label constants.
+- **Already true by design, no configuration needed:**
+  - The admin menu and every sub-page require the `manage_options`
+    capability, so non-admin site users never see it regardless of
+    white-label settings.
+  - There's no "Powered by RankRocket" footer, upgrade nag, or promotional
+    badge anywhere in the admin UI to remove — this isn't a freemium
+    plugin with upsell branding.
+  - The Plugins-screen "View Details" link is stripped unconditionally
+    (not just under white-label) since this is a private, non-WordPress.org
+    plugin with no listing page for that link to point to.
+  - All settings here are `wp-config.php` constants, never database-stored
+    — there's no admin UI path for a client to revert them.

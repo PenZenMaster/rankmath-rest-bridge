@@ -1,5 +1,40 @@
 # Changelog
 
+## v3.14.1
+
+White-label backlog cleanup -- resolved a years-old, never-fully-verified
+backlog item ("rename plugin name, description, and icon").
+
+### Added
+
+- New `RRSEO_WL_ICON` `wp-config.php` constant: sets the admin-menu
+  sidebar icon. Accepts anything WordPress's own `add_menu_page()`
+  `$icon_url` parameter does -- a dashicon class, a full image URL, a
+  base64-encoded SVG data URI, or `'none'`. Defaults to the existing
+  `dashicons-chart-line` when undefined. New `RRSEO_White_Label::wl_icon()`
+  static helper.
+
+### Notes
+
+- This was the **one real gap** in the backlog item -- name, description,
+  author, and support-link renaming, plus full Plugins-screen hiding,
+  already shipped in v2.12.0/v2.13.0. Verified (not assumed) against the
+  other listed sub-requirements before closing the item:
+  - Menu restriction to non-admin users -- already true by design, the
+    entire admin menu requires `manage_options`.
+  - Removing logos/upgrade-badges/"Powered by" footers -- nothing like
+    that exists anywhere in this plugin's admin UI to remove.
+  - Replacing the "View Details" link -- already stripped
+    unconditionally (not just under white-label), since this is a
+    private plugin with no WordPress.org listing for that link to point
+    to.
+  - Settings lockable via `wp-config.php` constants, non-revertable by a
+    client -- the core architecture of this entire module; nothing is
+    ever database-stored.
+- `docs/white-label-configuration.md` updated with the new constant and
+  a "true by design" note for the sub-requirements above, so this
+  doesn't get carried as an open question again.
+
 ## v3.14.0
 
 FAQ Stage 2 (issue #26): visible Q&A content emission.

@@ -19,6 +19,8 @@
  * v1.01 - I18n: deactivation dialog strings wrapped; repaired literal \x
  *         escape sequences in Loading placeholders (ASCII ellipsis).
  * v1.02 - Redirects submenu page (issue #21 Stage 1).
+ * v1.03 - Admin-menu icon now reads RRSEO_White_Label::wl_icon() instead
+ *         of a hardcoded dashicon (white-label backlog cleanup).
  *
  * @package RankRocket_SEO
  */
@@ -71,7 +73,7 @@ class RRSEO_Admin {
 			'manage_options',
 			'rankrocket-seo',
 			array( $this, 'render_overview' ),
-			'dashicons-chart-line',
+			RRSEO_White_Label::wl_icon(),
 			58
 		);
 

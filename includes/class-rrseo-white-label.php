@@ -15,16 +15,24 @@
  *   RRSEO_WL_AUTHOR_URL    string  Author URL in Plugins list.
  *   RRSEO_WL_SUPPORT_URL   string  URL for the Support link in the plugin row.
  *   RRSEO_WL_HIDE_PLUGIN   bool    true = remove entry from Plugins screen entirely.
+ *   RRSEO_WL_ICON          string  Admin-menu sidebar icon: a dashicon class
+ *                                  (e.g. 'dashicons-shield'), an image URL, a
+ *                                  base64 SVG data URI, or 'none' -- anything
+ *                                  add_menu_page()'s $icon_url accepts.
+ *                                  Default 'dashicons-chart-line'.
  *
  * Author(s):
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-05-10
- * Last Modified Date: 2026-05-12
+ * Last Modified Date: 2026-08-13
  *
  * Comments:
  * v1.01 - Tier 2: suppress PUC update row and details modal on Dashboard > Updates.
  * v1.00 - Initial release. Tier 1 (rename) and Tier 2 (hide) white-label support.
+ * v1.02 - RRSEO_WL_ICON: admin-menu sidebar icon override (backlog item
+ *         "Rename plugin name, description, and icon" -- name/description
+ *         were already covered; icon was the one real gap).
  *
  * @package RankRocket_SEO
  */
@@ -70,6 +78,17 @@ class RRSEO_White_Label {
 	 */
 	public static function wl_hidden(): bool {
 		return defined( 'RRSEO_WL_HIDE_PLUGIN' ) && true === RRSEO_WL_HIDE_PLUGIN;
+	}
+
+	/**
+	 * Returns the admin-menu sidebar icon: a dashicon class, image URL,
+	 * base64 SVG data URI, or 'none' -- whatever RRSEO_WL_ICON is set to,
+	 * or the default dashicon when it isn't defined.
+	 *
+	 * @return string
+	 */
+	public static function wl_icon(): string {
+		return defined( 'RRSEO_WL_ICON' ) ? (string) RRSEO_WL_ICON : 'dashicons-chart-line';
 	}
 
 	// ── Instance ──────────────────────────────────────────────────────────────────

@@ -907,13 +907,25 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
       deactivation dialog). REST error strings deliberately untranslated.
 
 ### After AEO/GEO Audit Data Layer
-- [ ] **White Labeling** — agency/developer rebranding capabilities:
-  - Rename plugin name, description, and icon in Plugins menu and sidebar
-  - Hide or restrict main menu / sub-menus for non-admin users
-  - Remove plugin logos, upgrade badges, and "Powered by" footers from settings pages
-  - Replace default "View Details" / "Support" links with custom agency URL
-  - All settings lockable via `wp-config.php` constant to prevent client revert
-  - Use case: client handoff — hide third-party branding, reinforce agency identity
+- [x] ~~**White Labeling** — agency/developer rebranding capabilities~~ —
+      verified and closed 2026-08-13 (v3.14.1). Had sat unchecked since
+      before v3.0 despite most of it shipping in v2.12.0/v2.13.0; this
+      session verified each sub-item individually rather than assuming:
+  - [x] Rename plugin name, description — shipped v2.12.0
+        (`RRSEO_WL_NAME`/`RRSEO_WL_DESCRIPTION`/`RRSEO_WL_AUTHOR`/
+        `RRSEO_WL_AUTHOR_URL`). **Icon was the one real gap** — fixed
+        2026-08-13 (v3.14.1) with new `RRSEO_WL_ICON` constant.
+  - [x] Hide main menu for non-admin users — already true by design (the
+        entire admin menu requires `manage_options`); no separate control
+        needed.
+  - [x] Remove plugin logos/upgrade badges/"Powered by" footers — N/A,
+        nothing like that exists anywhere in this plugin's admin UI.
+  - [x] Replace "View Details"/"Support" links — Support: `RRSEO_WL_SUPPORT_URL`
+        (v2.12.0). View Details: stripped unconditionally, not just under
+        white-label (private plugin, no WordPress.org listing to link to).
+  - [x] Settings lockable via `wp-config.php` constants — the core
+        architecture of the whole module; nothing is ever database-stored.
+  - Documented in `docs/white-label-configuration.md`.
 
 ### v3.0 — Plugin as Audit-Engine Executor (Shape B) — COMPLETE (all 4 bites shipped 2026-07-06 through 2026-07-10)
 
