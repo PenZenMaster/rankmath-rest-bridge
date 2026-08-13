@@ -697,13 +697,25 @@ curl "$BASE/status" -u "$CRED" | jq .version
 
 Total time: ~3 seconds. The plugin re-activates itself after installation.
 
-**Always run step 3.** `POST /self-update`'s `success: true` response is
-not yet a reliable signal by itself — it currently reports the
-manifest's version as installed without re-reading the actual file on
-disk, so a host-level issue (filesystem permissions, git-based deploy
-sync reverting the write, stale opcache) can produce a false-positive
-success with no version change (tracked in issue #20). Confirm via
-`GET /status` before trusting an automated rollout as complete.
+**`success: true` is now a reliable signal (v3.9.3+, issue #20).** After
+the upgrader runs, the endpoint re-reads the installed plugin file's
+version directly from disk (`get_plugin_data()`, not the `RMB_VERSION`
+constant, which is compiled from whatever was already loaded when the
+request started). If a host-level issue prevents the write from
+persisting — filesystem permissions, git-based deploy sync reverting the
+file, stale opcache — the endpoint now returns a `500` instead of a false
+`success: true`:
+
+- `update_did_not_persist` — the upgrader reported success but the
+  version on disk doesn't match what was expected. Response includes
+  `installed_version` and `expected_version`.
+- `update_verification_failed` — the installed plugin file couldn't be
+  read back at all (check filesystem permissions).
+
+`to_version` in a successful response now reflects the disk-verified
+version, not the manifest's claimed version. Running step 3 (`GET
+/status`) is still good practice for CI/CD visibility, but is no longer
+the only way to catch a silent failure.
 
 ---
 

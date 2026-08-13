@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.9.2
+ * Version:      3.9.3
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.9.2' );
+define( 'RMB_VERSION', '3.9.3' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -6256,13 +6256,52 @@ function rmb_self_update( WP_REST_Request $request ) {
 		activate_plugin( $plugin_file );
 	}
 
+	// Re-read the freshly-installed version from disk before reporting success
+	// (issue #20). RMB_VERSION is a PHP constant compiled from whatever was
+	// loaded at the start of this request, so it cannot be used to verify a
+	// write that just happened in the same request -- only a fresh file read
+	// can confirm the install actually persisted (filesystem permissions and
+	// host-level deploy sync have both been observed to silently no-op the
+	// upgrader's write on some hosts).
+	$installed_data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
+	$installed_ver  = ( isset( $installed_data['Version'] ) && '' !== $installed_data['Version'] )
+		? $installed_data['Version']
+		: null;
+
+	if ( null === $installed_ver ) {
+		return new WP_Error(
+			'update_verification_failed',
+			'The upgrader reported success but the installed plugin file could not be read back to confirm its version. Check filesystem permissions.',
+			array(
+				'status'  => 500,
+				'zip_url' => $zip_url,
+			)
+		);
+	}
+
+	// An explicitly-provided zip_url has no known expected version to compare
+	// against; only the manifest path resolves a real $remote_ver to check.
+	if ( 'provided' !== $remote_ver && $installed_ver !== $remote_ver ) {
+		return new WP_Error(
+			'update_did_not_persist',
+			"Upgrader reported success but the installed version ({$installed_ver}) does not match the expected"
+				. " version ({$remote_ver}). The write may not have persisted -- check filesystem permissions or"
+				. ' host-level deploy sync.',
+			array(
+				'status'            => 500,
+				'installed_version' => $installed_ver,
+				'expected_version'  => $remote_ver,
+			)
+		);
+	}
+
 	return rest_ensure_response(
 		array(
 			'success'      => true,
 			'from_version' => $current_ver,
-			'to_version'   => $remote_ver,
+			'to_version'   => $installed_ver,
 			'zip_url'      => $zip_url,
-			'message'      => "Updated from {$current_ver} to {$remote_ver}. Plugin re-activated.",
+			'message'      => "Updated from {$current_ver} to {$installed_ver}. Plugin re-activated.",
 		)
 	);
 }

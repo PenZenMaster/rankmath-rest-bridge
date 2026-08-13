@@ -1,5 +1,49 @@
 # Changelog
 
+## v3.9.3
+
+Fixed `POST /self-update` reporting success without verifying the
+install actually landed (issue #20).
+
+### Fixed
+
+- `rmb_self_update()` (`rankmath-rest-bridge.php`) returned
+  `success: true` and a `to_version` taken from the update manifest as
+  soon as `Plugin_Upgrader::install()` returned without a `WP_Error` or
+  `false` -- it never re-read the freshly-installed plugin file to
+  confirm the version actually changed. `RMB_VERSION` is a PHP constant
+  compiled from whatever was loaded at the start of the request, so it
+  can't be used to verify a write that just happened in the same
+  request.
+- After the upgrader runs (and the plugin is re-activated), the endpoint
+  now calls `get_plugin_data()` on the installed file to read its
+  `Version` header directly from disk:
+  - `update_verification_failed` (`500`) -- the installed plugin file
+    couldn't be read back at all (filesystem permissions).
+  - `update_did_not_persist` (`500`, with `installed_version` and
+    `expected_version`) -- the upgrader reported success but the
+    on-disk version doesn't match what the manifest said should be
+    installed.
+  - On success, `to_version` now reflects the disk-verified version,
+    not the manifest's claimed version.
+- The exact-match check only applies when `zip_url` was resolved from
+  the manifest (a known expected version exists to compare against). An
+  explicitly-provided `zip_url` has no such expected value, so only the
+  file-readback check applies in that path.
+
+### Notes
+
+- Originally discovered live on `higginsoverheaddoor.com` (WP Engine)
+  during v3.8.1 verification, 2026-08-06: the endpoint reported success
+  twice while `GET /status` kept showing the old version; the install
+  only actually completed via a manual wp-admin update.
+  `kildaybaxter.com` (different host) self-updated correctly via the
+  same endpoint in the same session, so this wasn't universally broken
+  -- something about that specific environment prevented the write from
+  persisting, and the endpoint had no way to detect it until now.
+- README's Self-Update section updated to document the new failure
+  modes and the `to_version` semantics change.
+
 ## v3.9.2
 
 Fixed `POST /redirects/bulk` and `POST /snippets/bulk` ignoring
