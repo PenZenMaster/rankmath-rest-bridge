@@ -1,11 +1,39 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-08-13
-**Current Version:** 3.14.0
+**Current Version:** 3.14.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 3a36d95 -- chore: release v3.14.0 zip
+**Last Commit:** a601b0a -- chore: release v3.14.1 zip
 **Git Status:** clean
+
+---
+
+## 2026-08-13 Session (final) -- White-Label Fix + Live Deployment: v3.14.1
+
+### Session Summary
+Short close-out to the day. Fixed the White Labeling backlog item
+(verified each sub-requirement individually; only the admin-menu icon
+was actually missing) and shipped it as v3.14.1. User then deployed
+v3.14.1 to `trevoraspiranti.com` and it was live-verified via the
+public sitemap comment -- the first live deployment past v3.8.1 all
+session, and the first real-world confirmation that the issue #20
+self-update fix (shipped earlier today) works correctly in production.
+
+### Accomplishments
+- **v3.14.1 SHIPPED** -- new `RRSEO_WL_ICON` constant
+  (`RRSEO_White_Label::wl_icon()`) for the admin-menu sidebar icon,
+  closing out a backlog item that had sat unchecked since before v3.0.
+  Everything else in that bullet (renaming, hiding, non-revertable
+  constants-only config, no upsell branding to remove) was already true
+  by design or shipped in v2.12.0/v2.13.0 -- verified, not assumed.
+- **v3.14.1 DEPLOYED + LIVE-VERIFIED** on `trevoraspiranti.com`,
+  confirmed via the public `/sitemap_index.xml` trailing comment.
+
+### Next
+No carried-forward blocker. #18/#19 remain low-priority/optional.
+Consider deploying v3.14.1 to Kilday Baxter and Higgins when
+convenient -- not urgent.
 
 ---
 
