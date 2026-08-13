@@ -1,11 +1,89 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-08-06
-**Current Version:** 3.8.1
+**Last Updated:** 2026-08-13
+**Current Version:** 3.12.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** c4e147c -- docs: record telemetry verdict review findings (rankrocket.co)
+**Last Commit:** 2b3a921 -- chore: release v3.12.0 zip
 **Git Status:** clean
+
+---
+
+## 2026-08-13 Session -- Issues #21/#25/#20/#24/#23/#22 Cycle: v3.9.0 -> v3.12.0
+
+### Session Summary
+User filed issue #21 (REST-managed redirects) from a live audit against
+`trevoraspiranti.com`. Scoped it down with the user's sign-off on the key
+tradeoffs, shipped the REST API then a matching admin UI page. While
+verifying, found a real regression (#25: `dry_run:true` silently
+persisting writes on the new bulk endpoint, plus the same pre-existing
+bug in `/snippets/bulk`) and fixed it same-session, then picked up the
+carried-over #20 (`self-update` false-success) and fixed that too. The
+same audit had surfaced three more feature requests (#22 FAQ, #23
+schema-hygiene, #24 Agentic Browsing diagnostics); all three were scoped
+together via parallel research forks that ground-truthed each issue's
+own technical claims against actual code (two of three turned out to be
+wrong), then implemented and shipped one at a time. #22 was split after
+Stage 1 shipped -- Stage 2 (visible content emission) filed as a fresh,
+better-scoped issue (#26) rather than left as a vague carryover.
+
+### Accomplishments
+- **v3.9.0 + v3.9.1 SHIPPED (#21 Stage 1)** -- full REST-managed redirect
+  surface (`GET/POST /redirects`, `GET/POST/DELETE /redirects/{id}`,
+  `POST /redirects/bulk`, `POST /redirects/preview`) plus a matching
+  admin UI page (read-only table + "Test a URL" tool, matching this
+  panel's existing observability-only design). Scoped down from the
+  original proposal: exact/prefix matching only, relative targets only,
+  single-hop loop rejection only, no hit_count telemetry, no typed-action
+  integration -- all explicitly deferred, not silently dropped. New
+  `includes/class-rrseo-redirects.php`. 43 new tests (280 -> 323).
+- **v3.9.2 SHIPPED + CLOSED #25** -- `POST /redirects/bulk` and the
+  pre-existing `POST /snippets/bulk` both silently ignored `dry_run:true`
+  and persisted writes anyway. Both now register the arg and gate the
+  write behind `! $dry_run`. 2 new regression tests (323 -> 325).
+- **v3.9.3 SHIPPED + CLOSED #20** -- `POST /self-update` now re-reads the
+  installed version from disk via `get_plugin_data()` before reporting
+  success, instead of trusting the manifest's claimed version. Returns
+  `500` on a genuine mismatch instead of a false `success: true`.
+- **v3.10.0 SHIPPED + CLOSED #24** -- `GET /observe/agentic-browsing/{post_id}`,
+  3 static-DOM checks (primary action, schema completeness, BreadcrumbList
+  presence) matching PSI's Agentic Browsing sub-audits. Live-verified
+  before writing code (via a one-shot, user-supplied and since-revoked
+  application password against `trevoraspiranti.com`) that
+  `apply_filters('the_content', ...)` returns real Elementor-rendered
+  HTML inside a REST request -- the issue's own claim that this endpoint
+  "already renders the page" was false (it's a pure meta read); the
+  actual rendering endpoints needed live verification instead. Extracted
+  `rr_observe_extract_schema_types()` for reuse. 12 new tests (325 -> 337).
+- **v3.11.0 SHIPPED + CLOSED #23** -- `strip_third_party` field on the
+  existing `POST /schema/{post_id}` (the issue's own simpler fallback
+  variant, not a separate `/schema-hygiene` resource). Implemented as a
+  `wp_head` output-buffer scrub, chosen over Elementor-widget-data parsing
+  because the issue's own real-world example reads like dynamically-
+  rendered widget output, which parsing `_elementor_data` would not have
+  caught. New `includes/class-rrseo-schema-hygiene.php`. 18 new tests
+  (337 -> 355).
+- **v3.12.0 SHIPPED -- #22 Stage 1 closed, Stage 2 split into #26** --
+  `GET/POST/DELETE /faq/{post_id}` merges an `FAQPage` schema node onto a
+  post's existing graph without disturbing other nodes. Required new
+  read-modify-write logic (`rr_schema_merge_node()`/
+  `rr_schema_remove_node_type()`) since `rmb_schema_set()` only does
+  wholesale replace. New `wp_kses_post` sanitization posture for
+  `answer` -- deliberately stricter than snippets' intentional
+  verbatim/unescaped storage. Visible content emission deferred to #26
+  (this plugin has zero `the_content` filter precedent; needs the same
+  kind of live verification #24 needed before implementation). New
+  `includes/class-rrseo-faq.php`. 24 new tests (355 -> 379).
+- Suite grew 280 -> 379 tests (99 new) across the session; phpcs clean on
+  every commit; all six release zips built via the pre-push hook and
+  verified before push.
+
+### Next
+Deploy v3.12.0 to a live site (none updated past v3.8.1 this session,
+outside of read-only diagnostic checks). Issue #26 (FAQ Stage 2) needs a
+live-verification step (Elementor `the_content` filter priority) before
+implementation, same shape as #24's blocker. #18/#19 remain low-priority,
+unchanged from before this session.
 
 ---
 
