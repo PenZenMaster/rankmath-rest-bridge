@@ -1,5 +1,54 @@
 # Changelog
 
+## v3.10.0
+
+`GET /observe/agentic-browsing/{post_id}` (issue #24).
+
+### Added
+
+- Reports pass/fail on the three publicly documented PSI Agentic
+  Browsing sub-audits, so audit workflows don't need to open PSI in a
+  browser or make a separate, rate-limited PSI API call just to see
+  which sub-check is failing:
+  - **`primary_action_machine_readable`** -- a `<form>`, an
+    aria-labelled button/link, or an anchor with clear, non-generic
+    link text (a small vague-text blocklist: "click here", "learn
+    more", etc. don't count).
+  - **`schema_matches_content`** -- does the post have any registered
+    schema at all (reuses the same graph-walk as `/observe/schema-graph`).
+  - **`navigation_predictability`** -- does the post's own schema
+    graph include a `BreadcrumbList` node.
+- Response: `score`/`max_score` fraction plus a `checks[]` array, each
+  with `status` (`pass`/`fail`), `detail`, and (where an existing
+  endpoint can fix the finding) `remediation_hint`.
+- All three checks run against the post's rendered content
+  (`apply_filters('the_content', ...)`) and its stored
+  `_rrseo_schema_graph` meta -- static-DOM only, no JS execution, no
+  external network calls, no caching (recomputed every call, matching
+  every other `/observe/*` endpoint).
+- Extracted `rr_observe_extract_schema_types()` out of the existing
+  `rmb_observe_schema_graph()` handler so both endpoints share one
+  graph-walk implementation instead of duplicating it.
+- New capability: `observe.agentic_browsing`.
+
+### Notes
+
+- Single-post only in this release. A site-wide
+  `/observe/agentic-browsing/audit` sweep (mirroring
+  `/aeo-geo/schema-audit`'s pattern) is deferred -- that existing
+  pattern has no pagination or batch cap (`get_posts(numberposts=>-1)`),
+  a pre-existing scaling characteristic worth addressing before a
+  second endpoint copies it, not something new here.
+- Live-verified before implementation (2026-08-13, trevoraspiranti.com,
+  Elementor Pro): `apply_filters('the_content', ...)` returns real
+  Elementor-rendered HTML even when called from inside a REST API
+  request, not just on normal front-end page loads -- this was the
+  main open risk raised while scoping the issue, now confirmed.
+- 12 new unit tests (325 -> 337) for the four new pure helpers
+  (`rr_observe_extract_schema_types()` and the three check functions).
+  REST handlers are thin wrappers and are not unit-tested directly,
+  matching this module's existing convention.
+
 ## v3.9.3
 
 Fixed `POST /self-update` reporting success without verifying the

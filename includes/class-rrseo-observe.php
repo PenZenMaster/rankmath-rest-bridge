@@ -14,10 +14,15 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-06
- * Last Modified Date: 2026-07-06
+ * Last Modified Date: 2026-08-13
  *
  * Comments:
  * v1.00 - Initial release. Five GET /observe/* endpoints per the Shape B spec.
+ * v1.01 - GET /observe/agentic-browsing/{post_id} (issue #24): 3 static-DOM
+ *         checks (primary action, schema completeness, BreadcrumbList
+ *         presence) matching PSI's Agentic Browsing sub-audits. Extracted
+ *         rr_observe_extract_schema_types() out of rmb_observe_schema_graph()
+ *         so both endpoints share one graph-walk implementation.
  *
  * @package RankRocket_SEO
  */
@@ -250,6 +255,131 @@ function rr_observe_diff_url_sets( array $llms_urls, array $canonical_urls, stri
 		'in_both'               => $in_both,
 		'in_llms_not_canonical' => $in_llms_not_canonical,
 		'in_canonical_not_llms' => $in_canonical_not_llms,
+	);
+}
+
+/**
+ * Flattens a stored schema graph (single node or @graph envelope) into a
+ * deduplicated list of @type values.
+ *
+ * @param mixed $graph Value from get_post_meta( $post_id, RR_SCHEMA_META_KEY, true ).
+ * @return string[]
+ */
+function rr_observe_extract_schema_types( $graph ): array {
+	if ( empty( $graph ) || ! is_array( $graph ) ) {
+		return array();
+	}
+
+	$types = array();
+	$nodes = isset( $graph['@graph'] ) && is_array( $graph['@graph'] ) ? $graph['@graph'] : array( $graph );
+	foreach ( $nodes as $node ) {
+		if ( is_array( $node ) && isset( $node['@type'] ) ) {
+			foreach ( (array) $node['@type'] as $type ) {
+				$types[] = (string) $type;
+			}
+		}
+	}
+	return array_values( array_unique( $types ) );
+}
+
+/**
+ * Detects whether rendered HTML exposes a machine-readable primary action:
+ * a <form>, an aria-labelled button/link, or an anchor with clear,
+ * non-generic link text. Static-DOM heuristic (issue #24 check #1) — does
+ * not execute JS or follow links.
+ *
+ * @param string $html Rendered post content.
+ * @return array{status: string, detail: string}
+ */
+function rr_observe_check_primary_action( string $html ): array {
+	if ( '' === trim( $html ) ) {
+		return array(
+			'status' => 'fail',
+			'detail' => 'No rendered content to inspect.',
+		);
+	}
+
+	if ( preg_match( '/<form\b/i', $html ) ) {
+		return array(
+			'status' => 'pass',
+			'detail' => 'A <form> element was found — forms are an unambiguous machine-readable primary action.',
+		);
+	}
+
+	if ( preg_match( '/<(a|button)\b[^>]*\baria-label\s*=\s*(["\'])(.*?)\2/is', $html, $m ) ) {
+		return array(
+			'status' => 'pass',
+			'detail' => 'An aria-labelled ' . strtolower( $m[1] ) . ' was found: "' . trim( wp_strip_all_tags( $m[3] ) ) . '".',
+		);
+	}
+
+	$vague = array( 'click here', 'here', 'more', 'read more', 'learn more', 'submit', 'go' );
+	if ( preg_match_all( '/<a\b[^>]*>(.*?)<\/a\s*>/is', $html, $matches ) ) {
+		foreach ( $matches[1] as $raw_text ) {
+			$text = html_entity_decode( wp_strip_all_tags( $raw_text ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+			$text = trim( preg_replace( '/\s+/', ' ', $text ) );
+			if ( '' === $text || in_array( strtolower( $text ), $vague, true ) ) {
+				continue;
+			}
+			if ( str_word_count( $text ) >= 3 ) {
+				return array(
+					'status' => 'pass',
+					'detail' => 'A link with unambiguous text was found: "' . $text . '".',
+				);
+			}
+		}
+	}
+
+	return array(
+		'status' => 'fail',
+		'detail' => 'No <form>, aria-labelled control, or link with clear action text was found.',
+	);
+}
+
+/**
+ * Checks whether the post declares any substantive schema type (issue #24
+ * check #2). A coarse but honest proxy for "structured data matches the
+ * page's declared entity type" — this plugin has no independent signal for
+ * what a page's entity type "should" be outside of the schema itself.
+ *
+ * @param string[] $types Schema @type values present on the post (see
+ *                         rr_observe_extract_schema_types()).
+ * @return array{status: string, detail: string, remediation_hint: string|null}
+ */
+function rr_observe_check_schema_completeness( array $types ): array {
+	if ( empty( $types ) ) {
+		return array(
+			'status'           => 'fail',
+			'detail'           => 'No schema is registered for this post.',
+			'remediation_hint' => 'add_schema_via_post_schema_endpoint',
+		);
+	}
+	return array(
+		'status'           => 'pass',
+		'detail'           => 'Schema present: ' . implode( ', ', $types ) . '.',
+		'remediation_hint' => null,
+	);
+}
+
+/**
+ * Checks whether the post's own schema graph includes a BreadcrumbList node
+ * — a static-DOM proxy for navigation predictability (issue #24 check #3).
+ *
+ * @param string[] $types Schema @type values present on the post.
+ * @return array{status: string, detail: string, remediation_hint: string|null}
+ */
+function rr_observe_check_breadcrumb_navigation( array $types ): array {
+	if ( in_array( 'BreadcrumbList', $types, true ) ) {
+		return array(
+			'status'           => 'pass',
+			'detail'           => 'BreadcrumbList schema is registered for this post.',
+			'remediation_hint' => null,
+		);
+	}
+	return array(
+		'status'           => 'fail',
+		'detail'           => 'No BreadcrumbList schema was found on this post.',
+		'remediation_hint' => 'add_breadcrumblist_via_post_schema_endpoint',
 	);
 }
 
@@ -538,19 +668,7 @@ function rmb_observe_schema_graph( WP_REST_Request $request ) {
 
 	$graph      = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
 	$has_schema = ! empty( $graph ) && is_array( $graph );
-
-	$types = array();
-	if ( $has_schema ) {
-		$nodes = isset( $graph['@graph'] ) && is_array( $graph['@graph'] ) ? $graph['@graph'] : array( $graph );
-		foreach ( $nodes as $node ) {
-			if ( is_array( $node ) && isset( $node['@type'] ) ) {
-				foreach ( (array) $node['@type'] as $type ) {
-					$types[] = (string) $type;
-				}
-			}
-		}
-		$types = array_values( array_unique( $types ) );
-	}
+	$types      = $has_schema ? rr_observe_extract_schema_types( $graph ) : array();
 
 	return new WP_REST_Response(
 		array(
@@ -592,6 +710,63 @@ function rmb_observe_llms_diff( WP_REST_Request $request ): WP_REST_Response { /
 			'in_llms_not_canonical' => $diff['in_llms_not_canonical'],
 			'in_canonical_not_llms' => $diff['in_canonical_not_llms'],
 			'in_sync'               => empty( $diff['in_llms_not_canonical'] ) && empty( $diff['in_canonical_not_llms'] ),
+		),
+		200
+	);
+}
+
+/**
+ * Handles GET /observe/agentic-browsing/{post_id} — reports pass/fail on
+ * the three publicly documented Agentic Browsing sub-audits (issue #24):
+ * machine-readable primary action, schema completeness, and navigation
+ * predictability (BreadcrumbList presence). Static-DOM checks only, no JS
+ * execution or external network calls, recomputed on every call (no
+ * caching, matching the rest of this module).
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_observe_agentic_browsing( WP_REST_Request $request ) {
+	$post_id = intval( $request->get_param( 'post_id' ) );
+	$post    = get_post( $post_id );
+	if ( ! $post || 'publish' !== $post->post_status ) {
+		return new WP_Error( 'invalid_post', 'Published post not found', array( 'status' => 404 ) );
+	}
+
+	$html  = rr_observe_rendered_content( $post );
+	$graph = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
+	$types = rr_observe_extract_schema_types( $graph );
+
+	$checks = array(
+		array_merge(
+			array( 'id' => 'primary_action_machine_readable' ),
+			rr_observe_check_primary_action( $html )
+		),
+		array_merge(
+			array( 'id' => 'schema_matches_content' ),
+			rr_observe_check_schema_completeness( $types )
+		),
+		array_merge(
+			array( 'id' => 'navigation_predictability' ),
+			rr_observe_check_breadcrumb_navigation( $types )
+		),
+	);
+
+	$score = 0;
+	foreach ( $checks as $check ) {
+		if ( 'pass' === $check['status'] ) {
+			++$score;
+		}
+	}
+
+	return new WP_REST_Response(
+		array(
+			'post_id'     => $post_id,
+			'url'         => get_permalink( $post ),
+			'score'       => $score,
+			'max_score'   => count( $checks ),
+			'checks'      => $checks,
+			'measured_at' => gmdate( 'Y-m-d\TH:i:s\Z' ),
 		),
 		200
 	);

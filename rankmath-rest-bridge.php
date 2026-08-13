@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.9.3
+ * Version:      3.10.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.9.3' );
+define( 'RMB_VERSION', '3.10.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3191,6 +3191,17 @@ add_action(
 			)
 		);
 
+		// ── Agentic Browsing diagnostics (issue #24) ─────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/observe/agentic-browsing/(?P<post_id>\d+)',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_observe_agentic_browsing',
+				'permission_callback' => $admin_only,
+			)
+		);
+
 		// ── v3.0 Bite 2: typed action engine ─────────────────────────────────────
 		$action_args = array(
 			'action_type' => array(
@@ -5935,6 +5946,11 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'POST /redirects',
 			'since'     => '3.9.0',
+		),
+		'observe.agentic_browsing' => array(
+			'available' => true,
+			'route'     => 'GET /observe/agentic-browsing/{post_id}',
+			'since'     => '3.10.0',
 		),
 	);
 }

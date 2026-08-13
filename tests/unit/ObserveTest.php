@@ -217,4 +217,82 @@ class ObserveTest extends TestCase {
 			rr_observe_normalize_compare_url( 'https://Example.test/Page/' )
 		);
 	}
+
+	// ── rr_observe_extract_schema_types() (issue #24) ─────────────────────────
+
+	public function test_extract_schema_types_empty_for_non_array(): void {
+		$this->assertSame( array(), rr_observe_extract_schema_types( null ) );
+		$this->assertSame( array(), rr_observe_extract_schema_types( '' ) );
+		$this->assertSame( array(), rr_observe_extract_schema_types( array() ) );
+	}
+
+	public function test_extract_schema_types_single_node(): void {
+		$graph = array( '@type' => 'LocalBusiness' );
+		$this->assertSame( array( 'LocalBusiness' ), rr_observe_extract_schema_types( $graph ) );
+	}
+
+	public function test_extract_schema_types_graph_envelope_deduplicated(): void {
+		$graph = array(
+			'@graph' => array(
+				array( '@type' => 'LocalBusiness' ),
+				array( '@type' => array( 'Service', 'LocalBusiness' ) ),
+				array( 'no_type_here' => true ),
+			),
+		);
+		$this->assertSame( array( 'LocalBusiness', 'Service' ), rr_observe_extract_schema_types( $graph ) );
+	}
+
+	// ── rr_observe_check_primary_action() (issue #24 check #1) ────────────────
+
+	public function test_primary_action_passes_on_form(): void {
+		$check = rr_observe_check_primary_action( '<p>text</p><form action="/apply"><input></form>' );
+		$this->assertSame( 'pass', $check['status'] );
+	}
+
+	public function test_primary_action_passes_on_aria_labelled_button(): void {
+		$check = rr_observe_check_primary_action( '<button aria-label="Start application">Go</button>' );
+		$this->assertSame( 'pass', $check['status'] );
+	}
+
+	public function test_primary_action_passes_on_unambiguous_link_text(): void {
+		$check = rr_observe_check_primary_action( '<a href="/apply">Get Pre-Approved in Minutes</a>' );
+		$this->assertSame( 'pass', $check['status'] );
+	}
+
+	public function test_primary_action_fails_on_vague_link_text_only(): void {
+		$check = rr_observe_check_primary_action( '<p>Some text.</p><a href="/x">Click here</a><a href="/y">Learn more</a>' );
+		$this->assertSame( 'fail', $check['status'] );
+	}
+
+	public function test_primary_action_fails_on_empty_content(): void {
+		$check = rr_observe_check_primary_action( '' );
+		$this->assertSame( 'fail', $check['status'] );
+	}
+
+	// ── rr_observe_check_schema_completeness() (issue #24 check #2) ───────────
+
+	public function test_schema_completeness_fails_when_no_types(): void {
+		$check = rr_observe_check_schema_completeness( array() );
+		$this->assertSame( 'fail', $check['status'] );
+		$this->assertSame( 'add_schema_via_post_schema_endpoint', $check['remediation_hint'] );
+	}
+
+	public function test_schema_completeness_passes_when_types_present(): void {
+		$check = rr_observe_check_schema_completeness( array( 'LocalBusiness' ) );
+		$this->assertSame( 'pass', $check['status'] );
+		$this->assertNull( $check['remediation_hint'] );
+	}
+
+	// ── rr_observe_check_breadcrumb_navigation() (issue #24 check #3) ─────────
+
+	public function test_breadcrumb_navigation_passes_when_breadcrumblist_present(): void {
+		$check = rr_observe_check_breadcrumb_navigation( array( 'LocalBusiness', 'BreadcrumbList' ) );
+		$this->assertSame( 'pass', $check['status'] );
+	}
+
+	public function test_breadcrumb_navigation_fails_when_absent(): void {
+		$check = rr_observe_check_breadcrumb_navigation( array( 'LocalBusiness' ) );
+		$this->assertSame( 'fail', $check['status'] );
+		$this->assertSame( 'add_breadcrumblist_via_post_schema_endpoint', $check['remediation_hint'] );
+	}
 }

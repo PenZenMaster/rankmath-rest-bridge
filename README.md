@@ -587,10 +587,28 @@ curl "$BASE/observe/schema-graph/123" -u "$CRED"
 
 # Drift between llms.txt and the canonical URL set
 curl "$BASE/observe/llms-diff" -u "$CRED"
+
+# Agentic Browsing diagnostics (v3.10.0) — 3 static-DOM checks, score + detail
+curl "$BASE/observe/agentic-browsing/123" -u "$CRED"
 ```
 
 External links are returned with `status_code: null` and `checked: false` —
 external verification belongs to the Audit Engine, not the plugin.
+
+**`GET /observe/agentic-browsing/{post_id}` (v3.10.0)** — reports pass/fail on
+the three PSI Agentic Browsing sub-audits without opening a browser or
+calling the PSI API:
+
+| Check id | What it checks |
+|---|---|
+| `primary_action_machine_readable` | A `<form>`, an aria-labelled button/link, or an anchor with clear, non-generic link text ("click here"/"learn more" don't count) |
+| `schema_matches_content` | Does the post have any registered schema at all (same graph as `/observe/schema-graph`) |
+| `navigation_predictability` | Does the post's own schema graph include a `BreadcrumbList` node |
+
+Response includes `score`/`max_score` and a `checks[]` array with
+`status`/`detail`/`remediation_hint` per check. Static-DOM only — no JS
+execution, no external network calls, no caching. Single-post only; a
+site-wide `/audit` sweep is not yet implemented.
 
 ---
 
