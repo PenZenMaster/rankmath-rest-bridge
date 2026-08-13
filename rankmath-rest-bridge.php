@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.11.0
+ * Version:      3.12.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.11.0' );
+define( 'RMB_VERSION', '3.12.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -313,6 +313,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-redirects.php';
 
 // ── Schema hygiene: strip third-party JSON-LD (issue #23) ──────────────────
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-schema-hygiene.php';
+
+// ── FAQ schema (issue #22 Stage 1) ──────────────────────────────────────────
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-faq.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -2414,6 +2417,41 @@ add_action(
 							'default'  => false,
 						),
 					),
+				),
+			)
+		);
+
+		// ── FAQ schema (issue #22 Stage 1) ───────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/faq/(?P<post_id>\d+)',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_faq_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_faq_set',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'items'   => array(
+							'required' => true,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'object' ),
+						),
+						'dry_run' => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+					),
+				),
+				array(
+					'methods'             => 'DELETE',
+					'callback'            => 'rmb_faq_delete',
+					'permission_callback' => $admin_only,
 				),
 			)
 		);
@@ -6048,6 +6086,16 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'POST /schema/{post_id} (strip_third_party)',
 			'since'     => '3.11.0',
+		),
+		'faq.read'                 => array(
+			'available' => true,
+			'route'     => 'GET /faq/{post_id}',
+			'since'     => '3.12.0',
+		),
+		'faq.write'                => array(
+			'available' => true,
+			'route'     => 'POST /faq/{post_id}',
+			'since'     => '3.12.0',
 		),
 	);
 }

@@ -193,6 +193,49 @@ curl -X POST "$BASE/schema/123" -u "$CRED" -H "Content-Type: application/json" \
 
 ---
 
+### FAQ (v3.12.0, Stage 1)
+
+#### `GET /faq/{post_id}` — read the currently-stored FAQ items
+#### `POST /faq/{post_id}` — merge an FAQPage node onto the post's schema graph
+#### `DELETE /faq/{post_id}` — remove the FAQPage node
+
+```bash
+curl -X POST "$BASE/faq/123" -u "$CRED" -H "Content-Type: application/json" -d '{
+  "items": [
+    {"question": "What credit score do I need for an FHA loan?", "answer": "580 minimum with 3.5% down, or 500 with 10% down."},
+    {"question": "How long does pre-approval take?", "answer": "Typically a few minutes to begin, with a decision in 24-48 hours."}
+  ]
+}'
+```
+
+Writes an `FAQPage` node (with `Question`/`Answer` sub-nodes, `@id` set to
+`{permalink}#faq`) into the same `_rrseo_schema_graph` meta key
+`POST /schema/{post_id}` uses — **merged in**, not a replacement: any
+`LocalBusiness`, `Service`, etc. node already registered for the post is
+left untouched. Re-posting is idempotent — a second call replaces the
+previous `FAQPage` node rather than duplicating it.
+
+Fields:
+
+| Field | Required | Notes |
+|---|---|---|
+| `items` | yes | Array of `{question, answer}`. Non-empty required, else `422`. |
+| `dry_run` | no | Validate and return the would-be result without writing. |
+
+`answer` accepts inline HTML, sanitized via `wp_kses_post`. `question` is
+plain text (`sanitize_text_field`). A missing trailing `?` or exceeding
+500 chars (question) / 2000 chars (answer) are non-blocking `warnings`,
+not rejections.
+
+**Stage 1 scope — not yet supported:**
+- No visible Q&A HTML emission. This endpoint writes schema only — pair
+  it with your own on-page FAQ content (Elementor, Gutenberg, theme
+  template) that matches the same question/answer text, or Google may
+  flag a content-schema mismatch and withhold the rich result.
+- No `/faq/bulk` batch endpoint yet.
+
+---
+
 ### Media
 
 #### `POST /media` — audited media-upload wrapper

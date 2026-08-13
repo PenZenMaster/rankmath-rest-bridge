@@ -1,5 +1,51 @@
 # Changelog
 
+## v3.12.0
+
+FAQ schema, Stage 1 (issue #22).
+
+### Added
+
+- `GET/POST/DELETE /faq/{post_id}` merges (or removes) an `FAQPage`
+  JSON-LD node onto a post's existing schema graph from a simple
+  `items: [{question, answer}]` payload -- without disturbing any other
+  node already registered there (`LocalBusiness`, `Service`, etc.).
+  `rmb_schema_set()` itself has no such merge (it always replaces the
+  whole stored graph wholesale); this required new read-modify-write
+  logic:
+  - `rr_schema_graph_nodes()` -- normalizes any stored shape (single
+    node, bare array, `@graph` envelope) into a flat node list.
+  - `rr_schema_merge_node()` / `rr_schema_remove_node_type()` --
+    replace-by-@type / remove-by-@type, generic enough to reuse for
+    any future single-purpose node, not FAQ-specific.
+- Re-posting is idempotent: a second `POST` replaces the previous
+  `FAQPage` node rather than accumulating duplicates.
+- Validation: `question`/`answer` required and non-empty (`422`
+  otherwise). A missing trailing `?` or exceeding the 500/2000-char
+  caps are non-blocking `warnings`, not rejections, matching the
+  issue's own spec.
+- `answer` accepts inline HTML, sanitized via `wp_kses_post` -- a
+  stricter, new sanitization posture for this plugin. Existing snippet
+  content is intentionally stored and emitted verbatim/unescaped by
+  design (admin-authored HTML/JS); FAQ answers are a different,
+  appropriate trust level.
+- `dry_run` supported on the write path.
+- New capabilities: `faq.read`, `faq.write`.
+
+### Notes
+
+- **Stage 1 scope: schema only.** The visible Q&A HTML emission
+  (`after_content`/`before_content` positioning) from the original
+  issue is deferred to a later stage -- this plugin has no
+  `the_content` filter precedent to build on yet (confirmed while
+  scoping), and shipping the schema half alone first was judged
+  lower-risk. `#22`'s proposed `/faq/bulk` batch endpoint is also
+  deferred; single-post CRUD only in this release.
+- 24 new unit tests (355 -> 379) covering the pure helpers and the
+  `rr_faq_get/set/delete()` pipeline functions directly, matching the
+  pattern established for the redirects module. REST handlers
+  (`rmb_faq_*`) are thin wrappers and not tested directly.
+
 ## v3.11.0
 
 Schema hygiene: `strip_third_party` field on `POST /schema/{post_id}`

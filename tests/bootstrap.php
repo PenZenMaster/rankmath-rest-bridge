@@ -517,6 +517,20 @@ if ( ! function_exists( 'wp_safe_redirect' ) ) {
 }
 
 // ------------------------------------------------------------------
+// FAQ module stubs (issue #22 Stage 1)
+// ------------------------------------------------------------------
+
+// wp_kses_post — strips <script>/<style> and trims; not a full HTML
+// sanitizer, but sufficient for tests exercising validation logic rather
+// than the sanitizer itself.
+if ( ! function_exists( 'wp_kses_post' ) ) {
+    function wp_kses_post( $data ) {
+        $data = preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', (string) $data );
+        return trim( $data );
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';
