@@ -514,7 +514,7 @@
 			var html = '<p>' + badge( data.count + ' redirect(s)', 'green' ) + '</p>';
 			html += '<table class="widefat rrseo-table">';
 			html += '<thead><tr>';
-			html += '<th>Source</th><th>Target</th><th>Type</th><th>Status</th><th>Enabled</th><th>Created</th>';
+			html += '<th>Source</th><th>Target</th><th>Type</th><th>Status</th><th>Enabled</th><th>Hits</th><th>Created</th>';
 			html += '</tr></thead><tbody>';
 
 			redirects.forEach( function ( r ) {
@@ -524,6 +524,7 @@
 				html += '<td>' + esc( r.match_type ) + '</td>';
 				html += '<td>' + esc( r.status_code ) + '</td>';
 				html += '<td>' + ( r.enabled ? badge( 'Enabled', 'green' ) : badge( 'Disabled', 'red' ) ) + '</td>';
+				html += '<td>' + esc( r.hit_count || 0 ) + '</td>';
 				html += '<td>' + esc( ( r.created_at || '' ).slice( 0, 10 ) ) + '</td>';
 				html += '</tr>';
 			} );

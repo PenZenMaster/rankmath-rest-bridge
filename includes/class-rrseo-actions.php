@@ -16,7 +16,7 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-09
- * Last Modified Date: 2026-07-10
+ * Last Modified Date: 2026-08-13
  *
  * Comments:
  * v1.00 - Initial release. POST /actions/dry-run + /actions/execute with the
@@ -26,6 +26,10 @@
  *         lookup and POST /actions/{action_id}/rollback replaying stored
  *         envelopes, with drift detection (force:true override), double-
  *         rollback protection, and dry-run support.
+ * v1.20 - Issue #27: create_redirect/update_redirect/delete_redirect added
+ *         to the whitelist, wired directly onto the existing
+ *         rr_redirect_create/update/delete() pipeline in
+ *         class-rrseo-redirects.php (no reimplementation).
  *
  * @package RankRocket_SEO
  */
@@ -69,11 +73,21 @@ if ( ! defined( 'RR_ACTION_SETTING_WHITELIST' ) ) {
 	);
 }
 
-// The Bite 2 action whitelist. Anything else is rejected at validation.
+// The Bite 2 action whitelist, extended in issue #27 with
+// create_redirect/update_redirect/delete_redirect. Anything else is
+// rejected at validation.
 if ( ! defined( 'RR_ACTION_TYPES' ) ) {
 	define(
 		'RR_ACTION_TYPES',
-		array( 'update_setting', 'regenerate_llms_txt', 'update_meta_draft', 'toggle_indexing' )
+		array(
+			'update_setting',
+			'regenerate_llms_txt',
+			'update_meta_draft',
+			'toggle_indexing',
+			'create_redirect',
+			'update_redirect',
+			'delete_redirect',
+		)
 	);
 }
 
@@ -109,6 +123,12 @@ function rr_action_validate( $action_type, $target_id, array $payload ) {
 			);
 		case 'update_meta_draft':
 			return rr_action_validate_update_meta_draft( $target_id, $payload );
+		case 'create_redirect':
+			return rr_action_validate_create_redirect( $target_id, $payload );
+		case 'update_redirect':
+			return rr_action_validate_update_redirect( $target_id, $payload );
+		case 'delete_redirect':
+			return rr_action_validate_delete_redirect( $target_id, $payload );
 		case 'toggle_indexing':
 		default:
 			return rr_action_validate_toggle_indexing( $target_id, $payload );
@@ -267,6 +287,77 @@ function rr_action_validate_toggle_indexing( $target_id, array $payload ) {
 	);
 }
 
+/**
+ * Validates a create_redirect action (issue #27). Delegates entirely to
+ * rr_validate_redirect_fields() (includes/class-rrseo-redirects.php) --
+ * the actual create happens in the apply layer via rr_redirect_create(),
+ * which re-validates; the redundant validation pass here is what produces
+ * the errors/warnings for POST /actions/dry-run.
+ *
+ * @param mixed $target_id Unused -- create has no target_id, fields come
+ *                          entirely from payload.
+ * @param array $payload   Redirect fields: source, target, status_code,
+ *                          match_type, enabled.
+ * @return array{errors: string[], warnings: string[], normalized: array}
+ */
+function rr_action_validate_create_redirect( $target_id, array $payload ) {
+	unset( $target_id );
+	return rr_validate_redirect_fields( $payload );
+}
+
+/**
+ * Validates an update_redirect action (issue #27): target_id is the
+ * redirect's id, payload is the fields to change (merged onto the
+ * existing stored redirect before validation, same as
+ * rr_redirect_update()'s own merge).
+ *
+ * @param mixed $target_id Redirect id (string).
+ * @param array $payload   Fields to change.
+ * @return array{errors: string[], warnings: string[], normalized: array}
+ */
+function rr_action_validate_update_redirect( $target_id, array $payload ) {
+	$id       = is_string( $target_id ) ? $target_id : '';
+	$existing = ( '' !== $id ) ? rr_redirect_get( $id ) : null;
+
+	if ( null === $existing ) {
+		return array(
+			'errors'     => array( "target_id: redirect '{$id}' not found" ),
+			'warnings'   => array(),
+			'normalized' => array(),
+		);
+	}
+
+	$merged = array_merge( $existing, $payload );
+	return rr_validate_redirect_fields( $merged, $id );
+}
+
+/**
+ * Validates a delete_redirect action (issue #27): target_id is the
+ * redirect's id; the payload is unused.
+ *
+ * @param mixed $target_id Redirect id (string).
+ * @param array $payload   Unused.
+ * @return array{errors: string[], warnings: string[], normalized: array}
+ */
+function rr_action_validate_delete_redirect( $target_id, array $payload ) {
+	unset( $payload );
+	$id = is_string( $target_id ) ? $target_id : '';
+
+	if ( '' === $id || null === rr_redirect_get( $id ) ) {
+		return array(
+			'errors'     => array( "target_id: redirect '{$id}' not found" ),
+			'warnings'   => array(),
+			'normalized' => array(),
+		);
+	}
+
+	return array(
+		'errors'     => array(),
+		'warnings'   => array(),
+		'normalized' => array(),
+	);
+}
+
 
 // ── Apply layer ───────────────────────────────────────────────────────────────
 
@@ -348,6 +439,56 @@ function rr_action_apply( $action_type, $target_id, array $normalized, $dry_run 
 				'post_id'          => $post_id,
 				'touched_options'  => array(),
 				'purge_endpoints'  => array( 'status' ),
+			);
+
+		case 'create_redirect':
+			$result   = rr_redirect_create( $normalized, $dry_run );
+			$redirect = isset( $result['redirect'] ) ? $result['redirect'] : null;
+			return array(
+				'before'           => null,
+				'after'            => $redirect,
+				'rollback_payload' => ( $dry_run || ! $redirect ) ? null : array( 'redirect_id' => $redirect['id'] ),
+				'reversible'       => ! $dry_run && null !== $redirect,
+				'reason'           => '',
+				'post_id'          => null,
+				'touched_options'  => array( RR_REDIRECTS_KEY ),
+				'purge_endpoints'  => array( 'status', 'redirects' ),
+			);
+
+		case 'update_redirect':
+			$id     = (string) $target_id;
+			$before = rr_redirect_get( $id );
+			$result = rr_redirect_update( $id, $normalized, $dry_run );
+			$after  = isset( $result['redirect'] ) ? $result['redirect'] : $before;
+			return array(
+				'before'           => $before,
+				'after'            => $after,
+				'rollback_payload' => array(
+					'redirect_id' => $id,
+					'old_fields'  => $before,
+				),
+				'reversible'       => true,
+				'reason'           => '',
+				'post_id'          => null,
+				'touched_options'  => array( RR_REDIRECTS_KEY ),
+				'purge_endpoints'  => array( 'status', 'redirects' ),
+			);
+
+		case 'delete_redirect':
+			$id     = (string) $target_id;
+			$before = rr_redirect_get( $id );
+			if ( ! $dry_run ) {
+				rr_redirect_delete( $id );
+			}
+			return array(
+				'before'           => $before,
+				'after'            => null,
+				'rollback_payload' => array( 'redirect' => $before ),
+				'reversible'       => true,
+				'reason'           => '',
+				'post_id'          => null,
+				'touched_options'  => array( RR_REDIRECTS_KEY ),
+				'purge_endpoints'  => array( 'status', 'redirects' ),
 			);
 
 		case 'toggle_indexing':
@@ -545,6 +686,36 @@ function rr_action_rollback_drift( array $envelope ) {
 				$drift[] = "robots: current value '{$current}' no longer matches the action's recorded result '{$envelope['after']}'";
 			}
 			break;
+
+		case 'create_redirect':
+			$id      = isset( $envelope['after']['id'] ) ? (string) $envelope['after']['id'] : '';
+			$current = ( '' !== $id ) ? rr_redirect_get( $id ) : null;
+			if ( null === $current ) {
+				$drift[] = "redirect '{$id}': no longer exists (already deleted since this action ran?)";
+			}
+			break;
+
+		case 'update_redirect':
+			$id      = (string) $envelope['target_id'];
+			$current = rr_redirect_get( $id );
+			$after   = is_array( $envelope['after'] ) ? $envelope['after'] : array();
+			foreach ( array( 'source', 'target', 'match_type', 'status_code', 'enabled' ) as $field ) {
+				$current_val = ( null !== $current && array_key_exists( $field, $current ) ) ? $current[ $field ] : null;
+				$after_val   = array_key_exists( $field, $after ) ? $after[ $field ] : null;
+				if ( $current_val !== $after_val ) {
+					$drift[] = "redirect '{$id}': current '{$field}' no longer matches the action's recorded result";
+					break;
+				}
+			}
+			break;
+
+		case 'delete_redirect':
+			$id      = (string) $envelope['target_id'];
+			$current = rr_redirect_get( $id );
+			if ( null !== $current ) {
+				$drift[] = "redirect '{$id}': exists again (recreated since this action ran?)";
+			}
+			break;
 	}
 
 	return $drift;
@@ -608,6 +779,54 @@ function rr_action_rollback_apply( array $envelope, $dry_run ) {
 				'post_id'         => $post_id,
 				'touched_options' => array(),
 				'purge_endpoints' => array( 'status' ),
+			);
+
+		case 'create_redirect':
+			// Rollback of a create = delete the redirect it created.
+			$id     = isset( $payload['redirect_id'] ) ? (string) $payload['redirect_id'] : '';
+			$before = ( '' !== $id ) ? rr_redirect_get( $id ) : null;
+			if ( ! $dry_run && '' !== $id ) {
+				rr_redirect_delete( $id );
+			}
+			return array(
+				'before'          => $before,
+				'after'           => null,
+				'post_id'         => null,
+				'touched_options' => array( RR_REDIRECTS_KEY ),
+				'purge_endpoints' => array( 'status', 'redirects' ),
+			);
+
+		case 'update_redirect':
+			$id     = isset( $payload['redirect_id'] ) ? (string) $payload['redirect_id'] : '';
+			$old    = isset( $payload['old_fields'] ) && is_array( $payload['old_fields'] ) ? $payload['old_fields'] : array();
+			$before = ( '' !== $id ) ? rr_redirect_get( $id ) : null;
+			if ( ! $dry_run && '' !== $id && ! empty( $old ) ) {
+				rr_redirect_update( $id, $old );
+			}
+			return array(
+				'before'          => $before,
+				'after'           => $old,
+				'post_id'         => null,
+				'touched_options' => array( RR_REDIRECTS_KEY ),
+				'purge_endpoints' => array( 'status', 'redirects' ),
+			);
+
+		case 'delete_redirect':
+			// Rollback of a delete = recreate it from the stored snapshot.
+			// The regenerated id is not guaranteed to exactly match the
+			// original (rr_redirect_create() re-derives it from source),
+			// though in the common case -- nothing else claimed that slug
+			// in between -- it comes out the same.
+			$original = isset( $payload['redirect'] ) && is_array( $payload['redirect'] ) ? $payload['redirect'] : array();
+			if ( ! $dry_run && ! empty( $original ) ) {
+				rr_redirect_create( $original );
+			}
+			return array(
+				'before'          => null,
+				'after'           => $original,
+				'post_id'         => null,
+				'touched_options' => array( RR_REDIRECTS_KEY ),
+				'purge_endpoints' => array( 'status', 'redirects' ),
 			);
 
 		case 'toggle_indexing':

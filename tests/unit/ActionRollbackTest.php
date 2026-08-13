@@ -253,4 +253,85 @@ class ActionRollbackTest extends TestCase {
         $this->assertSame( 'state_drift', $result['status'] );
         $this->assertStringContainsString( 'title', $result['drift'][0] );
     }
+
+    // ── create_redirect / update_redirect / delete_redirect (issue #27) ────────
+
+    public function test_rollback_create_redirect_deletes_it(): void {
+        $envelope = $this->execute( 'create_redirect', null, array( 'source' => '/old-page', 'target' => '/new-page' ) );
+        $id       = $envelope['after']['id'];
+        $this->assertNotNull( rr_redirect_get( $id ) );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'completed', $result['status'] );
+        $this->assertNull( rr_redirect_get( $id ) );
+    }
+
+    public function test_rollback_update_redirect_restores_old_target(): void {
+        rr_redirect_create( array( 'source' => '/old-page', 'target' => '/original-target' ) );
+        $envelope = $this->execute( 'update_redirect', 'old-page', array( 'target' => '/changed-target' ) );
+
+        $this->assertSame( '/changed-target', rr_redirect_get( 'old-page' )['target'] );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'completed', $result['status'] );
+        $this->assertSame( '/original-target', rr_redirect_get( 'old-page' )['target'] );
+    }
+
+    public function test_rollback_delete_redirect_recreates_it(): void {
+        rr_redirect_create( array( 'source' => '/old-page', 'target' => '/new-page' ) );
+        $envelope = $this->execute( 'delete_redirect', 'old-page', array() );
+
+        $this->assertNull( rr_redirect_get( 'old-page' ) );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'completed', $result['status'] );
+        $restored = rr_redirect_get( 'old-page' );
+        $this->assertNotNull( $restored );
+        $this->assertSame( '/new-page', $restored['target'] );
+    }
+
+    public function test_create_redirect_drift_when_already_deleted(): void {
+        $envelope = $this->execute( 'create_redirect', null, array( 'source' => '/old-page', 'target' => '/new-page' ) );
+        rr_redirect_delete( $envelope['after']['id'] );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'state_drift', $result['status'] );
+    }
+
+    public function test_update_redirect_drift_when_changed_since(): void {
+        rr_redirect_create( array( 'source' => '/old-page', 'target' => '/v1' ) );
+        $envelope = $this->execute( 'update_redirect', 'old-page', array( 'target' => '/v2' ) );
+
+        // Someone else changes it again after the action.
+        rr_redirect_update( 'old-page', array( 'target' => '/v3' ) );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'state_drift', $result['status'] );
+    }
+
+    public function test_delete_redirect_drift_when_recreated_since(): void {
+        rr_redirect_create( array( 'source' => '/old-page', 'target' => '/new-page' ) );
+        $envelope = $this->execute( 'delete_redirect', 'old-page', array() );
+
+        // Someone else recreated the same slug in the meantime.
+        rr_redirect_create( array( 'source' => '/old-page', 'target' => '/someone-elses-target' ) );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'state_drift', $result['status'] );
+    }
+
+    public function test_rollback_create_redirect_dry_run_does_not_delete(): void {
+        $envelope = $this->execute( 'create_redirect', null, array( 'source' => '/old-page', 'target' => '/new-page' ) );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], true, false, 'req-rb' );
+
+        $this->assertSame( 'simulated', $result['status'] );
+        $this->assertNotNull( rr_redirect_get( $envelope['after']['id'] ) );
+    }
 }

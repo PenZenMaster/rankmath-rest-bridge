@@ -428,7 +428,7 @@ Common WordPress `wp_head` priorities for targeting:
 
 ---
 
-### Redirects (v3.9.0)
+### Redirects (v3.9.0 Stage 1, v3.13.0 Stage 2)
 
 #### `GET /redirects` — list all redirects
 #### `GET /redirects/{id}` — fetch a single redirect
@@ -451,25 +451,66 @@ Fields:
 
 | Field | Required | Notes |
 |---|---|---|
-| `source` | yes | Must start with `/`. Trailing slash is normalized away. |
-| `target` | yes | Must start with `/` — **relative paths only** (see Stage 1 scope below). |
+| `source` | yes | `exact`/`prefix`: must start with `/`, trailing slash normalized away. `regex`: an undelimited PCRE pattern, max 200 chars — see below. |
+| `target` | yes | A relative path (`/...`), or an absolute `http(s)://` URL whose host is on the `rrseo_redirect_allowed_hosts` allowlist (empty by default — see Cross-domain targets below). |
 | `status_code` | no | `301` \| `302` \| `307` \| `308`. Default `301`. |
-| `match_type` | no | `exact` \| `prefix`. Default `exact`. |
+| `match_type` | no | `exact` \| `prefix` \| `regex`. Default `exact`. |
 | `enabled` | no | Boolean. Default `true`. |
 | `dry_run` | no | On create/update/bulk: validate and return the would-be result without writing. |
 
 `match_type: prefix` matches the source path and everything under it
-(`/old-services` matches `/old-services/plumbing`). When more than one
-enabled prefix rule matches a request, the **longest matching `source`
-wins** — the same tie-break an HTTP router would use. Exact-type rules
-always win over prefix-type rules for the same request.
+(`/old-services` matches `/old-services/plumbing`). `match_type: regex`
+matches the pattern against the request path (no delimiters in `source` —
+the plugin adds them). Match precedence when multiple rules could apply:
+**exact wins outright**; among **prefix** rules, the **longest matching
+`source` wins**; **regex** rules are only considered when no exact or
+prefix rule matched.
+
+**Regex safety (v3.13.0)** — `source` is capped at 200 characters and
+rejected if it contains a nested-quantifier shape (e.g. `(x+)+`) that
+risks catastrophic backtracking, or isn't valid PCRE syntax. This is a
+length cap plus a common-case heuristic, **not a full regex static
+analyzer** — write regex redirect rules with the same care you'd give any
+admin-authenticated PCRE input. Regex rules do not currently support
+backreferences in `target` (e.g. `$1`) — `target` is always a fixed path.
+
+**Cross-domain targets (v3.13.0)** — absolute targets are rejected by
+default. To allow specific external hosts, add them via a filter (no new
+option — matches how other allowlists in this plugin, e.g.
+`rrseo_allowed_post_types`, work):
+
+```php
+add_filter( 'rrseo_redirect_allowed_hosts', function ( $hosts ) {
+    $hosts[] = 'partner-site.example';
+    return $hosts;
+} );
+```
+
+**Hit-count telemetry (v3.13.0)** — every redirect response includes
+`hit_count` (int) and `last_hit` (ISO-ish `mysql` timestamp or `null`).
+Both are read-only (not settable via the write endpoints) and
+write-throttled: at most one options-table write per rule per 60 seconds
+(`RR_REDIRECT_HIT_THROTTLE_SECONDS`), regardless of how often the rule is
+actually hit — a popular redirect won't cause a write storm. This means
+`GET /redirects` can show a `hit_count` up to ~60 seconds stale under
+sustained traffic; that's a deliberate trade-off, not a bug.
+
+**Typed-action engine integration (v3.13.0)** — `create_redirect`,
+`update_redirect`, and `delete_redirect` are available as `action_type`
+values on `POST /actions/dry-run` / `POST /actions/execute` /
+`POST /actions/{action_id}/rollback` (see Typed Actions below). They wire
+directly onto the same pipeline these REST endpoints use, so behavior
+(validation, matching, precedence) is identical either way.
 
 Validation rejects a create/update if:
-- `source` or `target` is missing or doesn't start with `/`
-- `source === target` (a direct redirect loop — **single-hop check only**;
-  a longer chain across separate rules, e.g. A → B → A, is not yet caught)
+- `source` or `target` is missing or malformed for the resolved `match_type`
+- `source`/`target` forms a redirect loop — **directly, or by chaining
+  through other exact-type rules** (A → B → A, or longer, up to 10 hops).
+  Only exact-type rules are followed as chain hops; a loop through a
+  prefix or regex rule is not caught.
 - `source` targets a WordPress core path: `/wp-admin`, `/wp-login.php`,
-  `/wp-json`, `/xmlrpc.php`
+  `/wp-json`, `/xmlrpc.php` (checked as a literal-match safety net for
+  regex sources too)
 - `source` collides with another already-enabled redirect's `source`
 
 Rules are applied on the front end via an early `template_redirect` hook
@@ -477,15 +518,11 @@ Rules are applied on the front end via an early `template_redirect` hook
 canonical-redirect handling. REST API and cron requests are never
 redirected.
 
-**Stage 1 scope — not yet supported:**
-- `match_type: regex`
-- Absolute/cross-domain `target` URLs (e.g. `https://other-site.com/...`)
-- `hit_count` / `last_hit` telemetry
-- Typed-action engine integration (no `create_redirect`/`update_redirect`/
-  `delete_redirect` action types yet — see the Typed Actions section below)
-
-These are tracked as follow-up work, not bugs — please don't file a
-duplicate issue for them.
+**Not yet supported** (tracked as follow-up work, not bugs — please don't
+file a duplicate issue for these):
+- Regex backreferences in `target`
+- Per-`@id` or per-property targeting
+- A site-wide `/redirects/audit` sweep
 
 ---
 
@@ -729,12 +766,14 @@ averaged into `overall`:
 
 ---
 
-### Typed Actions (v2.19.0 — v3.0 Bites 2+3)
+### Typed Actions (v2.19.0 — v3.0 Bites 2+3; redirects added v3.13.0)
 
 Whitelisted, auditable, reversible mutations for the external Audit Engine.
 All require `manage_options`. Whitelist: `update_setting` (9 typed WP core
 options), `regenerate_llms_txt`, `update_meta_draft` (writes `_rr_seo_draft_*`,
-never live meta), `toggle_indexing`. Anything else is rejected 422.
+never live meta), `toggle_indexing`, `create_redirect` / `update_redirect` /
+`delete_redirect` (target_id is the redirect id for update/delete; payload
+is the redirect fields — see Redirects above). Anything else is rejected 422.
 
 ```bash
 # Validate + simulate; never writes

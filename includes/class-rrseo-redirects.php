@@ -1,18 +1,18 @@
 <?php
 /**
- * Module/Script Name: RankRocket SEO -- Redirects (v3.9.0, issue #21 Stage 1)
+ * Module/Script Name: RankRocket SEO -- Redirects (v3.9.0 Stage 1, v3.13.0 Stage 2, issue #21/#27)
  * Path: includes/class-rrseo-redirects.php
  *
  * Description:
  * REST-managed 301/302/307/308 redirects so audit workflows can fix legacy
  * URL 404s (old sitemap paths, retired permalinks) without SFTP or a
- * third-party redirect plugin. Stage 1 scope: exact/prefix matching only,
- * relative targets only, single-hop loop rejection (source === target).
- * Regex matching, cross-domain targets, hit-count telemetry, and typed-
- * action/rollback integration are deferred to a follow-up issue. Rules are
- * stored in the rrseo_redirects option (no custom table, matching every
- * other option-backed module in this plugin) and applied on the front end
- * via an early template_redirect hook.
+ * third-party redirect plugin. Rules are stored in the rrseo_redirects
+ * option (no custom table, matching every other option-backed module in
+ * this plugin) and applied on the front end via an early template_redirect
+ * hook. Stage 2 adds regex matching (length + backtracking-safety capped),
+ * cross-domain targets (global host allowlist), hit_count/last_hit
+ * telemetry (write-throttled), multi-hop loop detection, and typed-action
+ * engine integration (see includes/class-rrseo-actions.php).
  *
  * Author(s):
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
@@ -21,8 +21,11 @@
  * Last Modified Date: 2026-08-13
  *
  * Comments:
- * v1.00 - Initial release. GET/POST /redirects, GET/POST/DELETE
+ * v1.00 - Initial release (Stage 1). GET/POST /redirects, GET/POST/DELETE
  *         /redirects/{id}, POST /redirects/bulk, POST /redirects/preview.
+ * v2.00 - Stage 2 (issue #27): regex match_type, cross-domain targets via
+ *         allowlist, hit_count/last_hit telemetry, multi-hop loop
+ *         detection. Typed-action wiring lives in class-rrseo-actions.php.
  *
  * @package RankRocket_SEO
  */
@@ -36,9 +39,8 @@ if ( ! defined( 'RR_REDIRECTS_KEY' ) ) {
 	define( 'RR_REDIRECTS_KEY', 'rrseo_redirects' );
 }
 
-// Stage 1 match types. 'regex' is deferred to a follow-up issue.
 if ( ! defined( 'RR_REDIRECT_MATCH_TYPES' ) ) {
-	define( 'RR_REDIRECT_MATCH_TYPES', array( 'exact', 'prefix' ) );
+	define( 'RR_REDIRECT_MATCH_TYPES', array( 'exact', 'prefix', 'regex' ) );
 }
 
 if ( ! defined( 'RR_REDIRECT_STATUS_CODES' ) ) {
@@ -51,6 +53,23 @@ if ( ! defined( 'RR_REDIRECT_BLOCKED_SOURCES' ) ) {
 		'RR_REDIRECT_BLOCKED_SOURCES',
 		array( '/wp-admin', '/wp-login.php', '/wp-json', '/xmlrpc.php' )
 	);
+}
+
+// Regex source patterns longer than this are rejected outright (issue #27).
+if ( ! defined( 'RR_REDIRECT_REGEX_MAX_LENGTH' ) ) {
+	define( 'RR_REDIRECT_REGEX_MAX_LENGTH', 200 );
+}
+
+// Maximum hops rr_redirect_detect_chain_loop() follows before treating an
+// unresolved chain as a loop.
+if ( ! defined( 'RR_REDIRECT_MAX_CHAIN_HOPS' ) ) {
+	define( 'RR_REDIRECT_MAX_CHAIN_HOPS', 10 );
+}
+
+// Minimum seconds between hit_count/last_hit writes for the same rule, to
+// avoid an options-table write on every single front-end hit.
+if ( ! defined( 'RR_REDIRECT_HIT_THROTTLE_SECONDS' ) ) {
+	define( 'RR_REDIRECT_HIT_THROTTLE_SECONDS', 60 );
 }
 
 
@@ -104,6 +123,161 @@ function rr_redirect_generate_id( $source, array $taken_ids ) {
 }
 
 
+// ── Regex safety (pure, unit-testable) ──────────────────────────────────────────
+
+/**
+ * Wraps a regex pattern (no delimiters) in a delimiter character not
+ * present in the pattern itself.
+ *
+ * @param string $pattern Undelimited PCRE pattern.
+ * @return string|false Delimited pattern, or false when neither fallback
+ *                       delimiter ('#', '~') is safe to use.
+ */
+function rr_redirect_regex_delimit( $pattern ) {
+	$delimiter = ( false === strpos( $pattern, '#' ) ) ? '#' : '~';
+	if ( false !== strpos( $pattern, $delimiter ) ) {
+		return false;
+	}
+	return $delimiter . $pattern . $delimiter;
+}
+
+/**
+ * Checks a regex source pattern for catastrophic-backtracking risk,
+ * length, and basic PCRE validity before it's accepted as a redirect rule.
+ * Does not guarantee safety against every possible ReDoS pattern -- a
+ * length cap plus a common nested-quantifier heuristic, not a full regex
+ * static analyzer.
+ *
+ * @param string $pattern Undelimited pattern (as stored in `source`).
+ * @return string[] Error messages; empty when the pattern passes.
+ */
+function rr_redirect_regex_is_safe( $pattern ) {
+	$errors = array();
+
+	if ( strlen( $pattern ) > RR_REDIRECT_REGEX_MAX_LENGTH ) {
+		$errors[] = 'pattern exceeds ' . RR_REDIRECT_REGEX_MAX_LENGTH . ' characters';
+		return $errors;
+	}
+
+	// Heuristic: a quantified group containing another quantifier, e.g.
+	// (a+)+ or (a*)*, is the classic catastrophic-backtracking shape.
+	if ( preg_match( '/\([^()]*[+*][^()]*\)[+*]/', $pattern ) ) {
+		$errors[] = 'pattern contains a nested repetition construct that risks catastrophic backtracking, e.g. (x+)+';
+		return $errors;
+	}
+
+	$delimited = rr_redirect_regex_delimit( $pattern );
+	if ( false === $delimited ) {
+		$errors[] = 'pattern cannot be safely delimited (contains both # and ~)';
+		return $errors;
+	}
+
+	// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- probing PCRE validity; a malformed pattern must not raise a warning here, it must return a validation error instead.
+	if ( false === @preg_match( $delimited, '' ) ) {
+		$errors[] = 'pattern is not valid PCRE syntax';
+	}
+
+	return $errors;
+}
+
+
+/**
+ * Tests whether a (previously validated-safe) regex pattern matches a
+ * literal string. Used as a safety net so a regex source can't accidentally
+ * match a WordPress core path -- a defensive probe, not part of the
+ * chain-loop walk (regex sources never participate in that).
+ *
+ * @param string $pattern     Undelimited, already-validated-safe pattern.
+ * @param string $literal     Literal string to test the pattern against.
+ * @return bool
+ */
+function rr_redirect_regex_matches_literal( $pattern, $literal ) {
+	$delimited = rr_redirect_regex_delimit( $pattern );
+	if ( false === $delimited ) {
+		return false;
+	}
+	// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- pattern already passed rr_redirect_regex_is_safe(); suppressing a warning on a defensive literal-string probe, not swallowing a real validation error.
+	return 1 === @preg_match( $delimited, $literal );
+}
+
+
+// ── Cross-domain target allowlist (pure/filter-bound, unit-testable) ───────────
+
+/**
+ * Checks whether an absolute (http/https) target URL's host is on the
+ * site-configured allowlist. Empty by default -- absolute targets are
+ * rejected unless a site owner explicitly opts hosts in via the
+ * rrseo_redirect_allowed_hosts filter (issue #27; matches how other
+ * allowlists in this plugin, e.g. rrseo_allowed_post_types, are
+ * filter-based rather than a new option).
+ *
+ * @param string $target Raw target value.
+ * @return bool
+ */
+function rr_redirect_is_allowed_absolute_target( $target ) {
+	$parts = wp_parse_url( $target );
+	if ( ! is_array( $parts ) || empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
+		return false;
+	}
+	if ( ! in_array( strtolower( $parts['scheme'] ), array( 'http', 'https' ), true ) ) {
+		return false;
+	}
+
+	$allowed = array_map( 'strtolower', (array) apply_filters( 'rrseo_redirect_allowed_hosts', array() ) );
+	return in_array( strtolower( $parts['host'] ), $allowed, true );
+}
+
+
+// ── Multi-hop loop detection (pure, unit-testable) ──────────────────────────────
+
+/**
+ * Detects whether source -> target would form a redirect loop, either
+ * directly (source === target) or by chaining through other exact-type
+ * rules' source/target pairs (A -> B -> A, or longer). Prefix and regex
+ * rules are not followed as chain hops -- only exact-type rules resolve
+ * deterministically enough to safely chain through.
+ *
+ * @param string      $source       Candidate source (leading-slash path).
+ * @param string      $target       Candidate target.
+ * @param array       $all_redirects Full redirect set (as from rr_redirect_list()).
+ * @param string|null $self_id      When validating an update, the id being
+ *                                  edited (excluded from the chain walk so
+ *                                  its own stale entry doesn't interfere).
+ * @return bool True when a loop is found, or the chain exceeds
+ *              RR_REDIRECT_MAX_CHAIN_HOPS without resolving.
+ */
+function rr_redirect_detect_chain_loop( $source, $target, array $all_redirects, $self_id = null ) {
+	$current = $target;
+	$seen    = array( $source => true );
+
+	for ( $hop = 0; $hop < RR_REDIRECT_MAX_CHAIN_HOPS; $hop++ ) {
+		if ( isset( $seen[ $current ] ) ) {
+			return true;
+		}
+		$seen[ $current ] = true;
+
+		$next = null;
+		foreach ( $all_redirects as $id => $rule ) {
+			if ( $id === $self_id ) {
+				continue;
+			}
+			$rule_match_type = isset( $rule['match_type'] ) ? $rule['match_type'] : 'exact';
+			if ( 'exact' === $rule_match_type && isset( $rule['source'], $rule['target'] ) && $rule['source'] === $current ) {
+				$next = $rule['target'];
+				break;
+			}
+		}
+
+		if ( null === $next ) {
+			return false;
+		}
+		$current = $next;
+	}
+
+	return true;
+}
+
+
 // ── Validation (pure, unit-testable) ──────────────────────────────────────────
 
 /**
@@ -119,50 +293,81 @@ function rr_redirect_generate_id( $source, array $taken_ids ) {
 function rr_validate_redirect_fields( array $fields, $existing_id = null ) {
 	$errors = array();
 
-	$source_raw = isset( $fields['source'] ) ? sanitize_text_field( (string) $fields['source'] ) : '';
-	if ( '' === $source_raw ) {
-		$errors[] = 'source is required';
-		$source   = '';
-	} elseif ( 0 !== strpos( $source_raw, '/' ) ) {
-		$errors[] = "source must start with '/': got '{$source_raw}'";
-		$source   = '';
-	} else {
-		// Trailing slash is normalized away so matching is consistent
-		// regardless of how the request URI arrives (same convention as
-		// the /llms.txt route matcher's rtrim( $uri, '/' )).
-		$source = ( '/' === $source_raw ) ? '/' : rtrim( $source_raw, '/' );
-	}
-
-	$target_raw = isset( $fields['target'] ) ? sanitize_text_field( (string) $fields['target'] ) : '';
-	if ( '' === $target_raw ) {
-		$errors[] = 'target is required';
-		$target   = '';
-	} elseif ( 0 !== strpos( $target_raw, '/' ) ) {
-		$errors[] = "target must start with '/' (absolute cross-domain targets are not supported yet): got '{$target_raw}'";
-		$target   = '';
-	} else {
-		$target = $target_raw;
-	}
-
-	if ( empty( $errors ) && $source === $target ) {
-		$errors[] = 'source and target must not be identical (redirect loop)';
-	}
-
-	if ( empty( $errors ) ) {
-		foreach ( RR_REDIRECT_BLOCKED_SOURCES as $blocked ) {
-			if ( $source === $blocked || 0 === strpos( $source, rtrim( $blocked, '/' ) . '/' ) ) {
-				$errors[] = "source '{$source}' targets a WordPress core path ('{$blocked}') and cannot be redirected";
-				break;
-			}
-		}
-	}
-
+	// match_type is resolved first: regex sources skip the leading-slash
+	// path-shape rule entirely and are validated as patterns instead.
 	$match_type = 'exact';
 	if ( array_key_exists( 'match_type', $fields ) && null !== $fields['match_type'] && '' !== $fields['match_type'] ) {
 		$match_type = sanitize_text_field( (string) $fields['match_type'] );
 	}
 	if ( ! in_array( $match_type, RR_REDIRECT_MATCH_TYPES, true ) ) {
 		$errors[] = 'match_type must be one of: ' . implode( ', ', RR_REDIRECT_MATCH_TYPES );
+	}
+	$is_regex = ( 'regex' === $match_type );
+
+	if ( $is_regex ) {
+		// Not sanitize_text_field(): it collapses whitespace, which would
+		// silently mangle otherwise-valid PCRE syntax.
+		$source_raw = isset( $fields['source'] ) ? trim( (string) $fields['source'] ) : '';
+		if ( '' === $source_raw ) {
+			$errors[] = 'source is required';
+			$source   = '';
+		} else {
+			$regex_errors = rr_redirect_regex_is_safe( $source_raw );
+			if ( ! empty( $regex_errors ) ) {
+				foreach ( $regex_errors as $regex_error ) {
+					$errors[] = "source: {$regex_error}";
+				}
+				$source = '';
+			} else {
+				$source = $source_raw;
+			}
+		}
+	} else {
+		$source_raw = isset( $fields['source'] ) ? sanitize_text_field( (string) $fields['source'] ) : '';
+		if ( '' === $source_raw ) {
+			$errors[] = 'source is required';
+			$source   = '';
+		} elseif ( 0 !== strpos( $source_raw, '/' ) ) {
+			$errors[] = "source must start with '/': got '{$source_raw}'";
+			$source   = '';
+		} else {
+			// Trailing slash is normalized away so matching is consistent
+			// regardless of how the request URI arrives (same convention as
+			// the /llms.txt route matcher's rtrim( $uri, '/' )).
+			$source = ( '/' === $source_raw ) ? '/' : rtrim( $source_raw, '/' );
+		}
+	}
+
+	$target_raw = isset( $fields['target'] ) ? sanitize_text_field( (string) $fields['target'] ) : '';
+	if ( '' === $target_raw ) {
+		$errors[] = 'target is required';
+		$target   = '';
+	} elseif ( 0 === strpos( $target_raw, '/' ) ) {
+		$target = $target_raw;
+	} elseif ( rr_redirect_is_allowed_absolute_target( $target_raw ) ) {
+		$target = $target_raw;
+	} else {
+		$errors[] = "target must start with '/', or be an absolute http(s) URL whose host is on the"
+			. " rrseo_redirect_allowed_hosts allowlist: got '{$target_raw}'";
+		$target   = '';
+	}
+
+	if ( empty( $errors ) && ! $is_regex ) {
+		if ( rr_redirect_detect_chain_loop( $source, $target, rr_redirect_list(), $existing_id ) ) {
+			$errors[] = 'source/target forms a redirect loop, either directly or by chaining through other rules';
+		}
+	}
+
+	if ( empty( $errors ) ) {
+		foreach ( RR_REDIRECT_BLOCKED_SOURCES as $blocked ) {
+			$blocks_this_path = $is_regex
+				? rr_redirect_regex_matches_literal( $source, $blocked )
+				: ( $source === $blocked || 0 === strpos( $source, rtrim( $blocked, '/' ) . '/' ) );
+			if ( $blocks_this_path ) {
+				$errors[] = "source '{$source}' targets a WordPress core path ('{$blocked}') and cannot be redirected";
+				break;
+			}
+		}
 	}
 
 	$status_code = 301;
@@ -217,17 +422,20 @@ function rr_validate_redirect_fields( array $fields, $existing_id = null ) {
 /**
  * Finds the redirect rule that matches a request path, if any.
  *
- * Exact-type rules win outright. Among prefix-type rules, the longest
- * matching source wins (standard longest-prefix-match tie-break). Disabled
- * rules are never matched.
+ * Precedence: exact-type rules win outright; among prefix-type rules, the
+ * longest matching source wins (standard longest-prefix-match tie-break);
+ * regex-type rules are only considered when no exact or prefix rule
+ * matched, first-registration-order wins among multiple regex matches.
+ * Disabled rules are never matched.
  *
  * @param string $request_path Leading-slash path, no query string.
  * @param array  $redirects    Full redirect set (as from rr_redirect_list()).
  * @return array|null The matched rule, or null.
  */
 function rr_redirect_match( $request_path, array $redirects ) {
-	$best     = null;
-	$best_len = -1;
+	$prefix_best     = null;
+	$prefix_best_len = -1;
+	$regex_best      = null;
 
 	foreach ( $redirects as $rule ) {
 		if ( empty( $rule['enabled'] ) || empty( $rule['source'] ) ) {
@@ -246,14 +454,23 @@ function rr_redirect_match( $request_path, array $redirects ) {
 
 		if ( 'prefix' === $match_type && 0 === strpos( $request_path, $source ) ) {
 			$len = strlen( $source );
-			if ( $len > $best_len ) {
-				$best     = $rule;
-				$best_len = $len;
+			if ( $len > $prefix_best_len ) {
+				$prefix_best     = $rule;
+				$prefix_best_len = $len;
 			}
+			continue;
+		}
+
+		if ( 'regex' === $match_type && null === $regex_best
+			&& rr_redirect_regex_matches_literal( $source, $request_path ) ) {
+			$regex_best = $rule;
 		}
 	}
 
-	return $best;
+	if ( null !== $prefix_best ) {
+		return $prefix_best;
+	}
+	return $regex_best;
 }
 
 /**
@@ -307,6 +524,8 @@ function rr_redirect_create( array $fields, $dry_run = false ) {
 		array( 'id' => $id ),
 		$normalized,
 		array(
+			'hit_count'  => 0,
+			'last_hit'   => null,
 			'created_at' => $now,
 			'updated_at' => $now,
 		)
@@ -492,6 +711,8 @@ function rr_redirect_bulk_create( array $items, $dry_run = false ) {
 			array( 'id' => $id ),
 			$normalized,
 			array(
+				'hit_count'  => 0,
+				'last_hit'   => null,
 				'created_at' => $now,
 				'updated_at' => $now,
 			)
@@ -548,9 +769,85 @@ function rr_redirect_preview( $url ) {
 }
 
 
+// ── Hit-count telemetry (issue #27) ─────────────────────────────────────────────
+
+/**
+ * Decides whether a hit should be recorded (write-throttled): skip when
+ * the rule's last recorded hit was under RR_REDIRECT_HIT_THROTTLE_SECONDS
+ * ago, to avoid an options-table write on every single front-end hit.
+ * Pure/unit-testable -- the actual read/write lives in
+ * rr_redirect_record_hit().
+ *
+ * @param string|null $last_hit        Stored last_hit timestamp ('mysql'
+ *                                     format via current_time()), or null.
+ * @param int         $now             Current Unix timestamp.
+ * @param int         $throttle_seconds Minimum seconds between writes.
+ * @return bool
+ */
+function rr_redirect_should_record_hit( $last_hit, $now, $throttle_seconds ) {
+	if ( empty( $last_hit ) ) {
+		return true;
+	}
+	$last_ts = strtotime( (string) $last_hit );
+	if ( false === $last_ts ) {
+		return true;
+	}
+	return ( $now - $last_ts ) >= $throttle_seconds;
+}
+
+/**
+ * Increments hit_count and updates last_hit for a matched rule, subject to
+ * the write-throttle in rr_redirect_should_record_hit(). Deliberately does
+ * NOT call rrseo_purge_rest_cache() -- purging the page-level REST cache on
+ * every single front-end visitor hit would defeat caching for a popular
+ * redirect; only rrseo_bust_option_cache() runs, which is cheap and keeps
+ * subsequent same-request/soon-after PHP-level reads correct. A brief
+ * staleness window on GET /redirects' hit_count is an accepted trade-off.
+ *
+ * @param string $id Redirect id.
+ */
+function rr_redirect_record_hit( $id ) {
+	$redirects = rr_redirect_list();
+	if ( ! isset( $redirects[ $id ] ) ) {
+		return;
+	}
+
+	$last_hit = isset( $redirects[ $id ]['last_hit'] ) ? $redirects[ $id ]['last_hit'] : null;
+	if ( ! rr_redirect_should_record_hit( $last_hit, time(), RR_REDIRECT_HIT_THROTTLE_SECONDS ) ) {
+		return;
+	}
+
+	$redirects[ $id ]['hit_count'] = ( isset( $redirects[ $id ]['hit_count'] ) ? (int) $redirects[ $id ]['hit_count'] : 0 ) + 1;
+	$redirects[ $id ]['last_hit']  = current_time( 'mysql' );
+	update_option( RR_REDIRECTS_KEY, $redirects );
+	rrseo_bust_option_cache( RR_REDIRECTS_KEY );
+}
+
+
 // ── Front-end application ─────────────────────────────────────────────────────
 
 add_action( 'template_redirect', 'rrseo_apply_redirects', 1 );
+
+// wp_safe_redirect() checks WordPress core's own allowed_redirect_hosts
+// filter and silently downgrades any host not on it to a same-site
+// redirect -- without this bridge, a cross-domain target already validated
+// against rrseo_redirect_allowed_hosts at write time would never actually
+// fire, since these are two separate allowlists by default.
+add_filter( 'allowed_redirect_hosts', 'rrseo_redirect_extend_allowed_hosts' );
+
+/**
+ * Merges this plugin's rrseo_redirect_allowed_hosts allowlist into
+ * WordPress core's allowed_redirect_hosts, so wp_safe_redirect() accepts
+ * hosts already validated at write time via
+ * rr_redirect_is_allowed_absolute_target().
+ *
+ * @param array $hosts Core's existing allowed host list.
+ * @return array
+ */
+function rrseo_redirect_extend_allowed_hosts( $hosts ) {
+	$ours = (array) apply_filters( 'rrseo_redirect_allowed_hosts', array() );
+	return array_values( array_unique( array_merge( (array) $hosts, $ours ) ) );
+}
 
 /**
  * Applies stored redirect rules on the front end. Runs at
@@ -577,7 +874,12 @@ function rrseo_apply_redirects() {
 		return;
 	}
 
-	wp_safe_redirect( home_url( $match['target'] ), $match['status_code'] );
+	if ( ! empty( $match['id'] ) ) {
+		rr_redirect_record_hit( $match['id'] );
+	}
+
+	$target = ( 0 === strpos( (string) $match['target'], '/' ) ) ? home_url( $match['target'] ) : $match['target'];
+	wp_safe_redirect( $target, $match['status_code'] );
 	exit;
 }
 

@@ -70,7 +70,8 @@ class RedirectsTest extends TestCase {
 
     public function test_identical_source_and_target_is_rejected(): void {
         $v = rr_validate_redirect_fields( array( 'source' => '/same', 'target' => '/same' ) );
-        $this->assertContains( 'source and target must not be identical (redirect loop)', $v['errors'] );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( 'redirect loop', $v['errors'][0] );
     }
 
     public function test_blocked_wp_core_sources_are_rejected(): void {
@@ -88,7 +89,7 @@ class RedirectsTest extends TestCase {
     }
 
     public function test_invalid_match_type_is_rejected(): void {
-        $v = rr_validate_redirect_fields( array( 'source' => '/a', 'target' => '/b', 'match_type' => 'regex' ) );
+        $v = rr_validate_redirect_fields( array( 'source' => '/a', 'target' => '/b', 'match_type' => 'wildcard' ) );
         $this->assertNotEmpty( $v['errors'] );
         $this->assertStringContainsString( 'match_type must be one of', $v['errors'][0] );
     }
@@ -402,5 +403,182 @@ class RedirectsTest extends TestCase {
 
         $this->assertTrue( $result['would_redirect'] );
         $this->assertSame( 'old-page', $result['matched_rule_id'] );
+    }
+
+    // ── Stage 2 (issue #27): regex match_type ──────────────────────────────────
+
+    public function test_regex_source_accepted_and_not_slash_normalized(): void {
+        $v = rr_validate_redirect_fields(
+            array( 'source' => '^/blog/[0-9]+/$', 'target' => '/blog/', 'match_type' => 'regex' )
+        );
+        $this->assertSame( array(), $v['errors'] );
+        $this->assertSame( '^/blog/[0-9]+/$', $v['normalized']['source'] );
+    }
+
+    public function test_regex_source_rejects_overlong_pattern(): void {
+        $v = rr_validate_redirect_fields(
+            array(
+                'source'     => str_repeat( 'a', RR_REDIRECT_REGEX_MAX_LENGTH + 1 ),
+                'target'     => '/b',
+                'match_type' => 'regex',
+            )
+        );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( 'exceeds', $v['errors'][0] );
+    }
+
+    public function test_regex_source_rejects_nested_quantifier(): void {
+        $v = rr_validate_redirect_fields(
+            array( 'source' => '(a+)+', 'target' => '/b', 'match_type' => 'regex' )
+        );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( 'catastrophic backtracking', $v['errors'][0] );
+    }
+
+    public function test_regex_source_rejects_invalid_pcre(): void {
+        $v = rr_validate_redirect_fields(
+            array( 'source' => '(unclosed', 'target' => '/b', 'match_type' => 'regex' )
+        );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( 'not valid PCRE', $v['errors'][0] );
+    }
+
+    public function test_regex_source_still_blocks_wp_core_paths(): void {
+        // Pattern matches the literal blocked string '/wp-admin' itself
+        // (not just subpaths), so the safety-net literal-match probe fires.
+        $v = rr_validate_redirect_fields(
+            array( 'source' => '^/wp-admin.*$', 'target' => '/elsewhere', 'match_type' => 'regex' )
+        );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( 'WordPress core path', $v['errors'][0] );
+    }
+
+    public function test_regex_match_hits(): void {
+        $rules = array(
+            'r1' => $this->make_rule( array( 'id' => 'r1', 'source' => '^/blog/[0-9]+/?$', 'target' => '/news', 'match_type' => 'regex' ) ),
+        );
+        $match = rr_redirect_match( '/blog/42', $rules );
+        $this->assertSame( 'r1', $match['id'] );
+    }
+
+    public function test_regex_no_match_returns_null(): void {
+        $rules = array(
+            'r1' => $this->make_rule( array( 'id' => 'r1', 'source' => '^/blog/[0-9]+/?$', 'target' => '/news', 'match_type' => 'regex' ) ),
+        );
+        $this->assertNull( rr_redirect_match( '/blog/not-a-number', $rules ) );
+    }
+
+    public function test_exact_and_prefix_both_beat_regex(): void {
+        $rules = array(
+            'regex_rule'  => $this->make_rule( array( 'id' => 'regex_rule', 'source' => '^/old/.*$', 'target' => '/r', 'match_type' => 'regex' ) ),
+            'prefix_rule' => $this->make_rule( array( 'id' => 'prefix_rule', 'source' => '/old', 'target' => '/p', 'match_type' => 'prefix' ) ),
+        );
+        $match = rr_redirect_match( '/old/page', $rules );
+        $this->assertSame( 'prefix_rule', $match['id'] );
+    }
+
+    // ── Stage 2: cross-domain targets ────────────────────────────────────────
+
+    public function test_absolute_target_rejected_by_default_empty_allowlist(): void {
+        $v = rr_validate_redirect_fields( array( 'source' => '/a', 'target' => 'https://other-site.example/x' ) );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( "target must start with '/'", $v['errors'][0] );
+    }
+
+    public function test_absolute_target_with_no_scheme_is_rejected(): void {
+        $this->assertFalse( rr_redirect_is_allowed_absolute_target( '//other-site.example/x' ) );
+    }
+
+    public function test_absolute_target_with_disallowed_scheme_is_rejected(): void {
+        $this->assertFalse( rr_redirect_is_allowed_absolute_target( 'ftp://other-site.example/x' ) );
+    }
+
+    // ── Stage 2: multi-hop loop detection ────────────────────────────────────
+
+    public function test_two_hop_chain_loop_is_rejected(): void {
+        $this->seed( $this->make_rule( array( 'id' => 'a', 'source' => '/a', 'target' => '/b' ) ) );
+        $v = rr_validate_redirect_fields( array( 'source' => '/b', 'target' => '/a' ) );
+        $this->assertNotEmpty( $v['errors'] );
+        $this->assertStringContainsString( 'redirect loop', $v['errors'][0] );
+    }
+
+    public function test_three_hop_chain_loop_is_rejected(): void {
+        $this->seed( $this->make_rule( array( 'id' => 'a', 'source' => '/a', 'target' => '/b' ) ) );
+        $this->seed( $this->make_rule( array( 'id' => 'b', 'source' => '/b', 'target' => '/c' ) ) );
+        $v = rr_validate_redirect_fields( array( 'source' => '/c', 'target' => '/a' ) );
+        $this->assertNotEmpty( $v['errors'] );
+    }
+
+    public function test_non_looping_chain_is_accepted(): void {
+        $this->seed( $this->make_rule( array( 'id' => 'a', 'source' => '/a', 'target' => '/b' ) ) );
+        $v = rr_validate_redirect_fields( array( 'source' => '/new-source', 'target' => '/a' ) );
+        $this->assertSame( array(), $v['errors'] );
+    }
+
+    public function test_chain_loop_check_excludes_self_on_update(): void {
+        $this->seed( $this->make_rule( array( 'id' => 'old-page', 'source' => '/old-page', 'target' => '/new-page' ) ) );
+        // Updating old-page's own target to something that (ignoring itself)
+        // doesn't loop must not be blocked by its own pre-update entry.
+        $v = rr_validate_redirect_fields(
+            array( 'source' => '/old-page', 'target' => '/somewhere-else' ),
+            'old-page'
+        );
+        $this->assertSame( array(), $v['errors'] );
+    }
+
+    public function test_regex_source_skips_chain_loop_check(): void {
+        // Chain-following only applies to exact-type rules; a regex rule
+        // pointing at its own pattern text is not a meaningful loop.
+        $v = rr_validate_redirect_fields(
+            array( 'source' => '^/x$', 'target' => '/x', 'match_type' => 'regex' )
+        );
+        $this->assertSame( array(), $v['errors'] );
+    }
+
+    // ── Stage 2: hit_count / last_hit telemetry ──────────────────────────────
+
+    public function test_create_initializes_hit_count_and_last_hit(): void {
+        $result = rr_redirect_create( array( 'source' => '/a', 'target' => '/b' ) );
+        $this->assertSame( 0, $result['redirect']['hit_count'] );
+        $this->assertNull( $result['redirect']['last_hit'] );
+    }
+
+    public function test_should_record_hit_true_when_never_hit(): void {
+        $this->assertTrue( rr_redirect_should_record_hit( null, time(), 60 ) );
+    }
+
+    public function test_should_record_hit_false_within_throttle_window(): void {
+        $now = time();
+        $recent = gmdate( 'Y-m-d H:i:s', $now - 10 );
+        $this->assertFalse( rr_redirect_should_record_hit( $recent, $now, 60 ) );
+    }
+
+    public function test_should_record_hit_true_after_throttle_window(): void {
+        $now = time();
+        $old = gmdate( 'Y-m-d H:i:s', $now - 120 );
+        $this->assertTrue( rr_redirect_should_record_hit( $old, $now, 60 ) );
+    }
+
+    public function test_record_hit_increments_count_and_sets_last_hit(): void {
+        $this->seed( $this->make_rule( array( 'hit_count' => 0, 'last_hit' => null ) ) );
+        rr_redirect_record_hit( 'old-page' );
+
+        $stored = rr_redirect_get( 'old-page' );
+        $this->assertSame( 1, $stored['hit_count'] );
+        $this->assertNotNull( $stored['last_hit'] );
+    }
+
+    public function test_record_hit_throttled_does_not_increment(): void {
+        $recent = gmdate( 'Y-m-d H:i:s', time() - 5 );
+        $this->seed( $this->make_rule( array( 'hit_count' => 3, 'last_hit' => $recent ) ) );
+
+        rr_redirect_record_hit( 'old-page' );
+
+        $this->assertSame( 3, rr_redirect_get( 'old-page' )['hit_count'] );
+    }
+
+    public function test_record_hit_on_unknown_id_is_a_noop(): void {
+        rr_redirect_record_hit( 'does-not-exist' );
+        $this->assertSame( array(), rr_redirect_list() );
     }
 }

@@ -241,4 +241,64 @@ class ActionEngineTest extends TestCase {
 		$this->assertCount( RR_ACTION_LOG_MAX, $log );
 		$this->assertSame( 'req-cap', $log[ RR_ACTION_LOG_MAX - 1 ]['request_id'] );
 	}
+
+	// ── create_redirect / update_redirect / delete_redirect (issue #27) ────────
+
+	public function test_create_redirect_is_whitelisted(): void {
+		$v = rr_action_validate( 'create_redirect', null, array( 'source' => '/a', 'target' => '/b' ) );
+		$this->assertSame( array(), $v['errors'] );
+	}
+
+	public function test_create_redirect_validation_delegates_to_redirect_field_validator(): void {
+		$v = rr_action_validate( 'create_redirect', null, array( 'source' => '/a', 'target' => '/a' ) );
+		$this->assertNotEmpty( $v['errors'] );
+		$this->assertStringContainsString( 'redirect loop', $v['errors'][0] );
+	}
+
+	public function test_execute_create_redirect_persists_via_redirect_pipeline(): void {
+		$envelope = rr_action_run( 'create_redirect', null, array( 'source' => '/old-page', 'target' => '/new-page' ), false, 'req-r1' );
+
+		$this->assertSame( 'completed', $envelope['status'] );
+		$this->assertSame( '/old-page', $envelope['after']['source'] );
+		$this->assertNotNull( rr_redirect_get( $envelope['after']['id'] ) );
+
+		$busted_keys = array_column( $GLOBALS['_test_cache_deletes'], 'key' );
+		$this->assertContains( RR_REDIRECTS_KEY, $busted_keys );
+	}
+
+	public function test_dry_run_create_redirect_does_not_persist(): void {
+		$envelope = rr_action_run( 'create_redirect', null, array( 'source' => '/old-page', 'target' => '/new-page' ), true, 'req-r2' );
+
+		$this->assertSame( 'simulated', $envelope['status'] );
+		$this->assertNull( rr_redirect_get( $envelope['after']['id'] ) );
+	}
+
+	public function test_update_redirect_not_found_rejected(): void {
+		$v = rr_action_validate( 'update_redirect', 'nope', array( 'target' => '/x' ) );
+		$this->assertNotEmpty( $v['errors'] );
+		$this->assertStringContainsString( 'not found', $v['errors'][0] );
+	}
+
+	public function test_execute_update_redirect_changes_target(): void {
+		rr_redirect_create( array( 'source' => '/old-page', 'target' => '/new-page' ) );
+
+		$envelope = rr_action_run( 'update_redirect', 'old-page', array( 'target' => '/brand-new' ), false, 'req-r3' );
+
+		$this->assertSame( 'completed', $envelope['status'] );
+		$this->assertSame( '/brand-new', rr_redirect_get( 'old-page' )['target'] );
+	}
+
+	public function test_execute_delete_redirect_removes_it(): void {
+		rr_redirect_create( array( 'source' => '/old-page', 'target' => '/new-page' ) );
+
+		$envelope = rr_action_run( 'delete_redirect', 'old-page', array(), false, 'req-r4' );
+
+		$this->assertSame( 'completed', $envelope['status'] );
+		$this->assertNull( rr_redirect_get( 'old-page' ) );
+	}
+
+	public function test_delete_redirect_not_found_rejected(): void {
+		$v = rr_action_validate( 'delete_redirect', 'nope', array() );
+		$this->assertNotEmpty( $v['errors'] );
+	}
 }

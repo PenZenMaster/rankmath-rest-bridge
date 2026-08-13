@@ -1,5 +1,53 @@
 # Changelog
 
+## v3.13.0
+
+Redirects Stage 2 (issue #27) -- the five items explicitly deferred when
+Stage 1 shipped (v3.9.0/v3.9.1).
+
+### Added
+
+- **`match_type: regex`** -- `source` is an undelimited PCRE pattern,
+  matched against the request path. Safety guard (not a full static
+  analyzer): 200-char length cap, rejects a common catastrophic-
+  backtracking shape (nested quantifiers like `(x+)+`), and validates
+  the pattern compiles. No backreference support in `target` yet --
+  `target` is always a fixed path.
+- **Cross-domain `target` URLs** -- absolute `http(s)://` targets are
+  accepted when their host is on the `rrseo_redirect_allowed_hosts`
+  filter allowlist (empty/rejecting by default). Bridged into WordPress
+  core's own `allowed_redirect_hosts` filter so `wp_safe_redirect()`
+  doesn't silently downgrade an already-validated cross-domain target
+  back to a same-site redirect.
+- **`hit_count` / `last_hit` telemetry** -- read-only fields on every
+  redirect. Write-throttled: at most one options-table write per rule
+  per 60 seconds (`RR_REDIRECT_HIT_THROTTLE_SECONDS`), regardless of
+  actual hit frequency, so a popular redirect doesn't cause a write
+  storm. `GET /redirects` can show `hit_count` up to ~60s stale under
+  sustained traffic -- a deliberate trade-off, not a bug. Deliberately
+  does not call `rrseo_purge_rest_cache()` on a hit-recording write
+  (unlike every other write in this plugin) for the same reason.
+- **Multi-hop redirect-loop detection** -- validation now walks the
+  chain a new source/target would form through other *exact-type* rules
+  (A -> B -> A, or longer, up to 10 hops), not just the direct
+  `source === target` case Stage 1 caught. Prefix and regex rules are
+  not followed as chain hops.
+- **Typed-action engine integration** -- `create_redirect`,
+  `update_redirect`, `delete_redirect` added to `RR_ACTION_TYPES`.
+  Wired directly onto the existing `rr_redirect_create/update/delete()`
+  pipeline (no reimplementation) -- full `dry-run`/`execute`/`rollback`
+  support, including drift detection against concurrent changes.
+- Redirects admin UI table gained a **Hits** column.
+
+### Notes
+
+- Match precedence with multiple types in play: exact wins outright;
+  among prefix rules, longest matching `source` wins; regex rules are
+  only considered when no exact or prefix rule matched.
+- 42 new unit tests (379 -> 417): regex validation/matching/precedence,
+  cross-domain allowlist parsing, chain-loop detection, hit-throttle
+  logic, and the three new action-engine validate/apply/rollback paths.
+
 ## v3.12.0
 
 FAQ schema, Stage 1 (issue #22).
