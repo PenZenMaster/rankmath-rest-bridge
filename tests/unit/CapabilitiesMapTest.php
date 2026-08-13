@@ -52,6 +52,8 @@ class CapabilitiesMapTest extends TestCase {
         $this->assertEquals( '3.5.0', $map['schema.write.graph']['since'] );
         $this->assertEquals( '3.6.0', $map['media.upload']['since'] );
         $this->assertEquals( '3.7.0', $map['elementor.set_data']['since'] );
+        $this->assertEquals( '3.9.0', $map['redirects.list']['since'] );
+        $this->assertEquals( '3.9.0', $map['redirects.write']['since'] );
     }
 
     public function test_recently_shipped_capabilities_are_available(): void {
@@ -59,6 +61,8 @@ class CapabilitiesMapTest extends TestCase {
         $this->assertTrue( $map['schema.write.graph']['available'] );
         $this->assertTrue( $map['media.upload']['available'] );
         $this->assertTrue( $map['elementor.set_data']['available'] );
+        $this->assertTrue( $map['redirects.list']['available'] );
+        $this->assertTrue( $map['redirects.write']['available'] );
     }
 
     public function test_expected_capability_keys_present(): void {
@@ -73,6 +77,8 @@ class CapabilitiesMapTest extends TestCase {
             'elementor.set_data',
             'llms.write',
             'snippets.set',
+            'redirects.list',
+            'redirects.write',
         ];
         foreach ( $expected as $key ) {
             $this->assertArrayHasKey( $key, $map, "Expected capability key '{$key}' to be present" );

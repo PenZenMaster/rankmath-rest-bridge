@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.8.1
+ * Version:      3.9.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.8.1' );
+define( 'RMB_VERSION', '3.9.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -298,6 +298,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-observe.php';
 
 // ── v3.0 Bite 2: typed action engine (dry-run/execute, whitelisted actions) ───
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-actions.php';
+
+// ── v3.9.0: REST-managed redirects (issue #21 Stage 1) ─────────────────────
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-redirects.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -2734,6 +2737,134 @@ add_action(
 							'default'  => 'all',
 						),
 					),
+				),
+			)
+		);
+
+		// ── Redirects (issue #21 Stage 1) ────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/redirects',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_redirects_list',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_redirects_create',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'source'      => array(
+							'required' => true,
+							'type'     => 'string',
+						),
+						'target'      => array(
+							'required' => true,
+							'type'     => 'string',
+						),
+						'status_code' => array(
+							'required' => false,
+							'type'     => 'integer',
+						),
+						'match_type'  => array(
+							'required' => false,
+							'type'     => 'string',
+						),
+						'enabled'     => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'dry_run'     => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+					),
+				),
+			)
+		);
+
+		// MUST be registered BEFORE the {id} wildcard (same gotcha as /snippets/bulk).
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/redirects/bulk',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_redirects_bulk_create',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'redirects' => array(
+						'required' => true,
+						'type'     => 'array',
+						'items'    => array( 'type' => 'object' ),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/redirects/preview',
+			array(
+				'methods'             => 'POST',
+				'callback'            => 'rmb_redirects_preview',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'url' => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/redirects/(?P<id>[a-zA-Z0-9_-]+)',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_redirects_get_single',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_redirects_update',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'source'      => array(
+							'required' => false,
+							'type'     => 'string',
+						),
+						'target'      => array(
+							'required' => false,
+							'type'     => 'string',
+						),
+						'status_code' => array(
+							'required' => false,
+							'type'     => 'integer',
+						),
+						'match_type'  => array(
+							'required' => false,
+							'type'     => 'string',
+						),
+						'enabled'     => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'dry_run'     => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+					),
+				),
+				array(
+					'methods'             => 'DELETE',
+					'callback'            => 'rmb_redirects_delete',
+					'permission_callback' => $admin_only,
 				),
 			)
 		);
@@ -5778,6 +5909,16 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'GET /aeo-geo/readiness',
 			'since'     => null,
+		),
+		'redirects.list'           => array(
+			'available' => true,
+			'route'     => 'GET /redirects',
+			'since'     => '3.9.0',
+		),
+		'redirects.write'          => array(
+			'available' => true,
+			'route'     => 'POST /redirects',
+			'since'     => '3.9.0',
 		),
 	);
 }

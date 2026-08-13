@@ -1,5 +1,49 @@
 # Changelog
 
+## v3.9.0
+
+REST-managed redirects (issue #21 Stage 1). Every RankRocket audit against a
+site migrated from another SEO plugin turns up legacy sitemap/permalink
+404s the new plugin doesn't own; this closes that loop programmatically
+instead of requiring SFTP `.htaccess` edits or a third-party redirect
+plugin per client site.
+
+### Added
+
+- **`GET/POST /redirects`, `GET/POST/DELETE /redirects/{id}`,
+  `POST /redirects/bulk`, `POST /redirects/preview`** -- full CRUD, atomic
+  batch create, and a dry-run-style preview endpoint that tests a URL
+  against stored rules without applying or persisting anything.
+- `match_type: exact | prefix`. Exact rules win outright; among prefix
+  rules the longest matching `source` wins (standard longest-prefix-match
+  tie-break). `regex` is deferred to a follow-up issue (ReDoS surface,
+  needs its own pattern-complexity guard).
+- `status_code: 301 | 302 | 307 | 308`, default `301`.
+- Validation rejects: missing/non-`/`-prefixed `source` or `target`,
+  `source === target` (redirect loop), and any `source` targeting a
+  WordPress core path (`/wp-admin`, `/wp-login.php`, `/wp-json`,
+  `/xmlrpc.php`). Loop detection is single-hop only in Stage 1 --
+  multi-hop chains (A -> B -> A across separate rules) are not yet
+  caught.
+- `target` accepts relative paths only; absolute cross-domain URLs are
+  deferred to a follow-up issue (open-redirect surface, needs an
+  allowlist design).
+- Rules are stored in the `rrseo_redirects` option -- no custom table,
+  matching every other option-backed module in this plugin. No
+  `hit_count`/`last_hit` telemetry in Stage 1 (would need write-rate-
+  limiting on every front-end hit; deferred).
+- Applied on the front end via `template_redirect` at priority `1`, ahead
+  of WordPress's own 404/canonical-redirect handling; REST and cron
+  requests are skipped.
+- New capabilities: `redirects.list`, `redirects.write` (`since: 3.9.0`).
+
+### Notes
+
+- Typed-action engine integration (`create_redirect`/`update_redirect`/
+  `delete_redirect` in `RR_ACTION_TYPES`, with rollback support) was
+  scoped out of Stage 1 -- issue #21 itself calls it a "nice-to-have";
+  tracked as follow-up work.
+
 ## v3.8.1
 
 Two post-close verification findings from v3.8.0 fixed (issues #16, #17)

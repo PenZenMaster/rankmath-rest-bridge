@@ -358,6 +358,67 @@ Common WordPress `wp_head` priorities for targeting:
 
 ---
 
+### Redirects (v3.9.0)
+
+#### `GET /redirects` — list all redirects
+#### `GET /redirects/{id}` — fetch a single redirect
+#### `POST /redirects` — create a redirect
+#### `POST /redirects/{id}` — update a redirect
+#### `POST /redirects/bulk` — atomic batch create (all-or-nothing validation)
+#### `DELETE /redirects/{id}` — delete a redirect
+#### `POST /redirects/preview` — test a URL against stored rules without applying anything
+
+Fixes legacy URL 404s (retired sitemap paths, old permalinks left behind by
+a prior SEO plugin migration) without SFTP `.htaccess` edits or a
+third-party redirect plugin.
+
+```bash
+curl -X POST "$BASE/redirects" -u "$CRED" -H "Content-Type: application/json" \
+  -d '{"source":"/page-sitemap.xml","target":"/sitemap_index.xml","status_code":301}'
+```
+
+Fields:
+
+| Field | Required | Notes |
+|---|---|---|
+| `source` | yes | Must start with `/`. Trailing slash is normalized away. |
+| `target` | yes | Must start with `/` — **relative paths only** (see Stage 1 scope below). |
+| `status_code` | no | `301` \| `302` \| `307` \| `308`. Default `301`. |
+| `match_type` | no | `exact` \| `prefix`. Default `exact`. |
+| `enabled` | no | Boolean. Default `true`. |
+| `dry_run` | no | On create/update: validate and return the would-be result without writing. |
+
+`match_type: prefix` matches the source path and everything under it
+(`/old-services` matches `/old-services/plumbing`). When more than one
+enabled prefix rule matches a request, the **longest matching `source`
+wins** — the same tie-break an HTTP router would use. Exact-type rules
+always win over prefix-type rules for the same request.
+
+Validation rejects a create/update if:
+- `source` or `target` is missing or doesn't start with `/`
+- `source === target` (a direct redirect loop — **single-hop check only**;
+  a longer chain across separate rules, e.g. A → B → A, is not yet caught)
+- `source` targets a WordPress core path: `/wp-admin`, `/wp-login.php`,
+  `/wp-json`, `/xmlrpc.php`
+- `source` collides with another already-enabled redirect's `source`
+
+Rules are applied on the front end via an early `template_redirect` hook
+(priority `1`), so they fire before WordPress resolves its own 404 or
+canonical-redirect handling. REST API and cron requests are never
+redirected.
+
+**Stage 1 scope — not yet supported:**
+- `match_type: regex`
+- Absolute/cross-domain `target` URLs (e.g. `https://other-site.com/...`)
+- `hit_count` / `last_hit` telemetry
+- Typed-action engine integration (no `create_redirect`/`update_redirect`/
+  `delete_redirect` action types yet — see the Typed Actions section below)
+
+These are tracked as follow-up work, not bugs — please don't file a
+duplicate issue for them.
+
+---
+
 ### llms.txt
 
 #### `GET /llms` / `POST /llms` — llms.txt configuration

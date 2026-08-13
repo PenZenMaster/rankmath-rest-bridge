@@ -488,6 +488,35 @@ if ( ! function_exists( 'wp_is_numeric_array' ) ) {
 }
 
 // ------------------------------------------------------------------
+// Redirects module stubs (issue #21 Stage 1)
+// ------------------------------------------------------------------
+
+// sanitize_title — lowercase, non-alphanumerics to hyphens, trimmed. Close
+// enough to WP core's behaviour for id-generation tests.
+if ( ! function_exists( 'sanitize_title' ) ) {
+    function sanitize_title( $title ) {
+        $title = strtolower( (string) $title );
+        $title = preg_replace( '/[^a-z0-9]+/', '-', $title );
+        return trim( $title, '-' );
+    }
+}
+
+// current_time — returns a fixed, deterministic timestamp for assertions.
+if ( ! function_exists( 'current_time' ) ) {
+    function current_time( $type = 'mysql', $gmt = 0 ) {
+        return '2026-08-13 00:00:00';
+    }
+}
+
+// wp_safe_redirect — records calls instead of sending real headers.
+if ( ! function_exists( 'wp_safe_redirect' ) ) {
+    function wp_safe_redirect( $location, $status = 302 ) {
+        $GLOBALS['_test_redirects'][] = [ 'location' => $location, 'status' => $status ];
+        return true;
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';
