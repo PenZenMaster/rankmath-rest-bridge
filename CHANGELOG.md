@@ -1,5 +1,55 @@
 # Changelog
 
+## v3.11.0
+
+Schema hygiene: `strip_third_party` field on `POST /schema/{post_id}`
+(issue #23).
+
+### Added
+
+- Optional `strip_third_party` array field on `POST /schema/{post_id}`:
+  a list of schema.org `@type` names to strip from third-party (non-
+  plugin) JSON-LD found in this post's `<head>`. Send it alongside or
+  independently of a `schema` write. Omitted -> stored list unchanged;
+  `[]` -> clears it.
+- Real-world motivation: an Elementor widget (or theme) emitting a
+  stray/duplicate schema block -- e.g. a `Product` schema with a
+  mismatched `aggregateRating` competing with the plugin's own
+  registered `LocalBusiness` on the same page -- previously required
+  client-side Elementor editing to remove.
+- Implementation: a `wp_head` output-buffer scrub, hooked at priority
+  `1` (open) and `PHP_INT_MAX` (close, scrub, re-emit) so it brackets
+  every other `wp_head` callback including this plugin's own schema
+  emitter at priority `5`. Only engages the buffer on posts that
+  actually have a `strip_third_party` list configured -- zero overhead
+  on every other page.
+- This plugin's own schema `<script>` block is always protected: it's
+  now bracketed by `<!-- rrseo-schema-graph -->` / `<!-- /rrseo-schema-graph -->`
+  HTML comment markers, and the scrub logic never touches content
+  between them regardless of `@type` overlap with the strip list.
+- New capability: `schema.strip_third_party`.
+
+### Notes
+
+- **Whole-block removal only** (Stage 1 scope, per the issue's own
+  scoping): if a third-party block's JSON is a `@graph` mixing a
+  strip-listed type with a type that should be kept, the entire
+  `<script>` block is removed rather than surgically edited out.
+- This is the scoped-down "simpler variant" from the issue -- a field
+  on the existing endpoint, not a separate `/schema-hygiene` resource
+  with its own report/audit/bulk surface. The issue's own real-world
+  example (a `Product` schema with populated `aggregateRating`) reads
+  like dynamically-rendered widget output, not literal HTML text stored
+  in `_elementor_data` -- so the output-buffer approach was chosen over
+  parsing Elementor's stored widget tree, which would not have caught
+  that case.
+- 18 new unit tests (337 -> 355): `rr_validate_schema_strip_third_party()`,
+  `rr_schema_hygiene_extract_json_types()`, and
+  `rr_schema_hygiene_strip_html()`. The `wp_head` buffer hooks
+  themselves require a live WP environment and aren't unit-tested
+  directly, matching this codebase's convention for hook-registered
+  handlers.
+
 ## v3.10.0
 
 `GET /observe/agentic-browsing/{post_id}` (issue #24).

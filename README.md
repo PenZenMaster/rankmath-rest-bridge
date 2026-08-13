@@ -167,6 +167,30 @@ The `wp_head` emitter (priority 5) outputs whatever is stored verbatim in
 one `<script type="application/ld+json">` tag — no separate rendering path
 for single-node vs. graph.
 
+**`strip_third_party` field (v3.11.0+, issue #23)** — optional array of
+schema.org `@type` names to strip from *third-party* JSON-LD found in this
+post's `<head>` (Elementor widgets, theme output, other plugins), for when
+a stray or duplicate schema block competes with this plugin's own
+registered schema:
+
+```bash
+curl -X POST "$BASE/schema/123" -u "$CRED" -H "Content-Type: application/json" \
+  -d '{"schema": {"@type": "LocalBusiness", "name": "..."}, "strip_third_party": ["Product"]}'
+```
+
+- Can be sent alongside a `schema` write, or on its own (with an
+  unchanged `schema` value) to update just the strip list.
+- Omitted -> stored list unchanged. `[]` -> clears it.
+- Implemented as a `wp_head` output-buffer scrub — this plugin's own
+  schema block is always protected, regardless of `@type` overlap with
+  the strip list.
+- **Whole-block removal only.** If a third-party `<script>` contains a
+  `@graph` mixing a strip-listed type with a type you want to keep, the
+  entire block is removed, not just the matching node.
+- Not yet supported: `@id`-scoped stripping, per-property stripping
+  (e.g. "keep the block but drop its `aggregateRating`"), and stripping
+  outside `wp_head` (some themes/builders may emit JSON-LD elsewhere).
+
 ---
 
 ### Media

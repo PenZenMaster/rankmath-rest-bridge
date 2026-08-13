@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.10.0
+ * Version:      3.11.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.10.0' );
+define( 'RMB_VERSION', '3.11.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -67,6 +67,15 @@ define(
 // Schema + audit log meta keys.
 define( 'RR_SCHEMA_META_KEY', '_rrseo_schema_graph' );
 define( 'RR_CHANGE_LOG_KEY', '_rrseo_change_log' );
+
+// Per-post list of schema.org @type names to strip from third-party (non-
+// plugin) JSON-LD found in <head> — issue #23 schema hygiene.
+define( 'RR_SCHEMA_STRIP_KEY', '_rrseo_schema_strip_third_party' );
+
+// HTML comment markers bracketing this plugin's own schema <script> block
+// so rr_schema_hygiene_strip_html() never strips its own output.
+define( 'RR_SCHEMA_HYGIENE_MARKER_START', '<!-- rrseo-schema-graph -->' );
+define( 'RR_SCHEMA_HYGIENE_MARKER_END', '<!-- /rrseo-schema-graph -->' );
 
 // Validation allowlists.
 define( 'RR_ALLOWED_POST_TYPES', array( 'post', 'page', 'product' ) );
@@ -301,6 +310,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-actions.php';
 
 // ── v3.9.0: REST-managed redirects (issue #21 Stage 1) ─────────────────────
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-redirects.php';
+
+// ── Schema hygiene: strip third-party JSON-LD (issue #23) ──────────────────
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-schema-hygiene.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -1261,9 +1273,14 @@ add_action(
 		if ( ! $schema || ! is_array( $schema ) ) {
 			return;
 		}
+		// Markers let rr_schema_hygiene_strip_html() (issue #23) tell this
+		// plugin's own schema block apart from third-party JSON-LD in the
+		// same <head> so it never strips its own output.
+		echo RR_SCHEMA_HYGIENE_MARKER_START . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- constant, not user input.
 		echo '<script type="application/ld+json">' . "\n";
 		echo wp_json_encode( $schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT );
 		echo "\n</script>\n";
+		echo RR_SCHEMA_HYGIENE_MARKER_END . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- constant, not user input.
 	},
 	5
 );
@@ -1592,6 +1609,39 @@ function rr_validate_display_on( string $value ): bool {
 	}
 
 	return false;
+}
+
+/**
+ * Validates and normalizes the optional strip_third_party field on
+ * POST /schema/{post_id} (issue #23): an array of schema.org @type names
+ * to strip from non-plugin JSON-LD found in this post's <head>.
+ *
+ * @param mixed $value Raw request value.
+ * @return array{errors: string[], normalized: string[]}
+ */
+function rr_validate_schema_strip_third_party( $value ) {
+	if ( ! is_array( $value ) ) {
+		return array(
+			'errors'     => array( 'strip_third_party must be an array of schema.org @type names' ),
+			'normalized' => array(),
+		);
+	}
+
+	$normalized = array();
+	foreach ( $value as $type ) {
+		if ( ! is_string( $type ) || '' === trim( $type ) ) {
+			return array(
+				'errors'     => array( 'strip_third_party entries must be non-empty strings' ),
+				'normalized' => array(),
+			);
+		}
+		$normalized[] = sanitize_text_field( $type );
+	}
+
+	return array(
+		'errors'     => array(),
+		'normalized' => array_values( array_unique( $normalized ) ),
+	);
 }
 
 /**
@@ -2349,11 +2399,16 @@ add_action(
 					'callback'            => 'rmb_schema_set',
 					'permission_callback' => $admin_only,
 					'args'                => array(
-						'schema'  => array(
+						'schema'            => array(
 							'required' => true,
 							'type'     => array( 'object', 'array' ),
 						),
-						'dry_run' => array(
+						'strip_third_party' => array(
+							'required' => false,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'string' ),
+						),
+						'dry_run'           => array(
 							'required' => false,
 							'type'     => 'boolean',
 							'default'  => false,
@@ -3823,6 +3878,26 @@ function rmb_schema_set( WP_REST_Request $request ) {
 		);
 	}
 
+	// Optional issue #23 field: schema.org @type names to strip from
+	// third-party JSON-LD on this post. Omitted -> leave the stored list
+	// unchanged; [] -> clear it; independent of the schema write above.
+	$strip_third_party_raw = $request->get_param( 'strip_third_party' );
+	$strip_third_party     = null;
+	if ( null !== $strip_third_party_raw ) {
+		$strip_validation = rr_validate_schema_strip_third_party( $strip_third_party_raw );
+		if ( ! empty( $strip_validation['errors'] ) ) {
+			return new WP_Error(
+				'validation_failed',
+				'strip_third_party validation failed',
+				array(
+					'status' => 422,
+					'errors' => $strip_validation['errors'],
+				)
+			);
+		}
+		$strip_third_party = $strip_validation['normalized'];
+	}
+
 	$clean_schema  = $validation['schema'];
 	$before_schema = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
 	$before        = $before_schema ? $before_schema : null;
@@ -3830,6 +3905,15 @@ function rmb_schema_set( WP_REST_Request $request ) {
 
 	if ( ! $dry_run ) {
 		update_post_meta( $post_id, RR_SCHEMA_META_KEY, $clean_schema );
+
+		if ( null !== $strip_third_party ) {
+			if ( empty( $strip_third_party ) ) {
+				delete_post_meta( $post_id, RR_SCHEMA_STRIP_KEY );
+			} else {
+				update_post_meta( $post_id, RR_SCHEMA_STRIP_KEY, $strip_third_party );
+			}
+		}
+
 		rr_audit_log(
 			$post_id,
 			'/schema',
@@ -3846,13 +3930,21 @@ function rmb_schema_set( WP_REST_Request $request ) {
 		);
 	}
 
+	if ( null !== $strip_third_party ) {
+		$strip_response = $strip_third_party;
+	} else {
+		$stored_strip   = get_post_meta( $post_id, RR_SCHEMA_STRIP_KEY, true );
+		$strip_response = is_array( $stored_strip ) ? $stored_strip : array();
+	}
+
 	return rest_ensure_response(
 		array(
-			'post_id'  => $post_id,
-			'dry_run'  => $dry_run,
-			'valid'    => true,
-			'warnings' => $validation['warnings'],
-			'schema'   => $clean_schema,
+			'post_id'           => $post_id,
+			'dry_run'           => $dry_run,
+			'valid'             => true,
+			'warnings'          => $validation['warnings'],
+			'schema'            => $clean_schema,
+			'strip_third_party' => $strip_response,
 		)
 	);
 }
@@ -5951,6 +6043,11 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'GET /observe/agentic-browsing/{post_id}',
 			'since'     => '3.10.0',
+		),
+		'schema.strip_third_party' => array(
+			'available' => true,
+			'route'     => 'POST /schema/{post_id} (strip_third_party)',
+			'since'     => '3.11.0',
 		),
 	);
 }
