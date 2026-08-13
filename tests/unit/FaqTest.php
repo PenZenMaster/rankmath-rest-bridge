@@ -229,7 +229,7 @@ class FaqTest extends TestCase {
 
     public function test_faq_set_dry_run_does_not_persist(): void {
         $this->make_post( 8 );
-        $result = rr_faq_set( 8, array( array( 'question' => 'OK?', 'answer' => 'Yes.' ) ), true );
+        $result = rr_faq_set( 8, array( array( 'question' => 'OK?', 'answer' => 'Yes.' ) ), array(), true );
 
         $this->assertSame( 'simulated', $result['status'] );
         $this->assertNull( rr_faq_get( 8 ) );
@@ -260,5 +260,103 @@ class FaqTest extends TestCase {
         $this->make_post( 11 );
         $result = rr_faq_delete( 11 );
         $this->assertSame( 'not_found', $result['status'] );
+    }
+
+    // ── Stage 2 (issue #26): rr_validate_faq_display() ──────────────────────────
+
+    public function test_validate_faq_display_defaults(): void {
+        $v = rr_validate_faq_display( array() );
+        $this->assertSame( array(), $v['errors'] );
+        $this->assertSame( 'after_content', $v['normalized']['position'] );
+        $this->assertSame( 'Frequently Asked Questions', $v['normalized']['heading'] );
+    }
+
+    public function test_validate_faq_display_accepts_valid_position(): void {
+        foreach ( array( 'after_content', 'before_content', 'disabled' ) as $position ) {
+            $v = rr_validate_faq_display( array( 'position' => $position ) );
+            $this->assertSame( array(), $v['errors'] );
+            $this->assertSame( $position, $v['normalized']['position'] );
+        }
+    }
+
+    public function test_validate_faq_display_rejects_invalid_position(): void {
+        $v = rr_validate_faq_display( array( 'position' => 'sidebar' ) );
+        $this->assertNotEmpty( $v['errors'] );
+    }
+
+    public function test_validate_faq_display_accepts_custom_heading(): void {
+        $v = rr_validate_faq_display( array( 'heading' => 'Common Questions' ) );
+        $this->assertSame( 'Common Questions', $v['normalized']['heading'] );
+    }
+
+    // ── Stage 2: rr_faq_render_html() ────────────────────────────────────────────
+
+    public function test_render_html_empty_for_no_items(): void {
+        $this->assertSame( '', rr_faq_render_html( 'FAQ', array() ) );
+    }
+
+    public function test_render_html_includes_heading_and_items(): void {
+        $html = rr_faq_render_html(
+            'Frequently Asked Questions',
+            array( array( 'question' => 'What credit score?', 'answer' => '580 minimum.' ) )
+        );
+        $this->assertStringContainsString( 'Frequently Asked Questions', $html );
+        $this->assertStringContainsString( 'What credit score?', $html );
+        $this->assertStringContainsString( '580 minimum.', $html );
+        $this->assertStringContainsString( 'rrseo-faq', $html );
+    }
+
+    public function test_render_html_escapes_heading_and_question(): void {
+        $html = rr_faq_render_html(
+            '<script>alert(1)</script>',
+            array( array( 'question' => '<b>Bold?</b>', 'answer' => 'Safe.' ) )
+        );
+        $this->assertStringNotContainsString( '<script>', $html );
+        $this->assertStringNotContainsString( '<b>Bold?</b>', $html );
+    }
+
+    public function test_render_html_answer_emitted_verbatim(): void {
+        // Answer is already wp_kses_post()-sanitized at write time; the
+        // renderer must not double-escape allowed inline HTML like <a>.
+        $html = rr_faq_render_html(
+            'FAQ',
+            array( array( 'question' => 'OK?', 'answer' => 'See <a href="/x">here</a>.' ) )
+        );
+        $this->assertStringContainsString( '<a href="/x">here</a>', $html );
+    }
+
+    // ── Stage 2: rr_faq_set() display config persistence ────────────────────────
+
+    public function test_faq_set_stores_display_config(): void {
+        $this->make_post( 20 );
+        rr_faq_set( 20, array( array( 'question' => 'OK?', 'answer' => 'Yes.' ) ), array( 'position' => 'before_content', 'heading' => 'Common Questions' ) );
+
+        $display = $GLOBALS['_test_post_meta'][20][ RR_FAQ_DISPLAY_KEY ];
+        $this->assertSame( 'before_content', $display['position'] );
+        $this->assertSame( 'Common Questions', $display['heading'] );
+    }
+
+    public function test_faq_set_invalid_display_rejects_without_writing_schema(): void {
+        $this->make_post( 21 );
+        $result = rr_faq_set( 21, array( array( 'question' => 'OK?', 'answer' => 'Yes.' ) ), array( 'position' => 'invalid' ) );
+
+        $this->assertSame( 'invalid', $result['status'] );
+        $this->assertNull( rr_faq_get( 21 ) );
+    }
+
+    public function test_faq_set_dry_run_does_not_persist_display_config(): void {
+        $this->make_post( 22 );
+        rr_faq_set( 22, array( array( 'question' => 'OK?', 'answer' => 'Yes.' ) ), array( 'position' => 'before_content' ), true );
+
+        $this->assertArrayNotHasKey( RR_FAQ_DISPLAY_KEY, $GLOBALS['_test_post_meta'][22] ?? array() );
+    }
+
+    public function test_faq_delete_removes_display_config(): void {
+        $this->make_post( 23 );
+        rr_faq_set( 23, array( array( 'question' => 'OK?', 'answer' => 'Yes.' ) ), array( 'position' => 'before_content' ) );
+
+        rr_faq_delete( 23 );
+
+        $this->assertArrayNotHasKey( RR_FAQ_DISPLAY_KEY, $GLOBALS['_test_post_meta'][23] );
     }
 }

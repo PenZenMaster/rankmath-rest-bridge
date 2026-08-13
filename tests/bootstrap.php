@@ -119,6 +119,12 @@ if ( ! function_exists( 'esc_attr' ) ) {
     }
 }
 
+if ( ! function_exists( 'esc_html' ) ) {
+    function esc_html( $text ) {
+        return htmlspecialchars( (string) $text, ENT_QUOTES );
+    }
+}
+
 // is_singular / get_queried_object_id — configured per test via $GLOBALS.
 if ( ! function_exists( 'is_singular' ) ) {
     function is_singular( $post_types = '' ) {

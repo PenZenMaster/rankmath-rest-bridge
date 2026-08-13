@@ -193,18 +193,20 @@ curl -X POST "$BASE/schema/123" -u "$CRED" -H "Content-Type: application/json" \
 
 ---
 
-### FAQ (v3.12.0, Stage 1)
+### FAQ (v3.12.0 Stage 1, v3.14.0 Stage 2)
 
-#### `GET /faq/{post_id}` — read the currently-stored FAQ items
-#### `POST /faq/{post_id}` — merge an FAQPage node onto the post's schema graph
-#### `DELETE /faq/{post_id}` — remove the FAQPage node
+#### `GET /faq/{post_id}` — read the currently-stored FAQ items + display config
+#### `POST /faq/{post_id}` — merge an FAQPage node onto the post's schema graph, and (optionally) emit matching visible content
+#### `DELETE /faq/{post_id}` — remove the FAQPage node, its visible content, and its display config
 
 ```bash
 curl -X POST "$BASE/faq/123" -u "$CRED" -H "Content-Type: application/json" -d '{
   "items": [
     {"question": "What credit score do I need for an FHA loan?", "answer": "580 minimum with 3.5% down, or 500 with 10% down."},
     {"question": "How long does pre-approval take?", "answer": "Typically a few minutes to begin, with a decision in 24-48 hours."}
-  ]
+  ],
+  "position": "after_content",
+  "heading": "Frequently Asked Questions"
 }'
 ```
 
@@ -220,6 +222,8 @@ Fields:
 | Field | Required | Notes |
 |---|---|---|
 | `items` | yes | Array of `{question, answer}`. Non-empty required, else `422`. |
+| `position` | no | `after_content` (default) \| `before_content` \| `disabled` (schema only, no visible HTML). |
+| `heading` | no | Rendered as `<h2>`. Default `"Frequently Asked Questions"`. |
 | `dry_run` | no | Validate and return the would-be result without writing. |
 
 `answer` accepts inline HTML, sanitized via `wp_kses_post`. `question` is
@@ -227,11 +231,25 @@ plain text (`sanitize_text_field`). A missing trailing `?` or exceeding
 500 chars (question) / 2000 chars (answer) are non-blocking `warnings`,
 not rejections.
 
-**Stage 1 scope — not yet supported:**
-- No visible Q&A HTML emission. This endpoint writes schema only — pair
-  it with your own on-page FAQ content (Elementor, Gutenberg, theme
-  template) that matches the same question/answer text, or Google may
-  flag a content-schema mismatch and withhold the rich result.
+**Visible content emission (v3.14.0)** — unless `position: disabled`, the
+same Q&A content is rendered into a `<section class="rrseo-faq">` block
+(with `rrseo-faq-heading`/`rrseo-faq-item`/`rrseo-faq-question`/
+`rrseo-faq-answer` classes for styling) and appended or prepended to the
+post's content via a `the_content` filter at priority 20 — safely past
+Elementor's own content-replacement filter (priority 9), so this works
+correctly on Elementor-built pages too. Schema and visible content are
+always generated from the same stored items, so they can't drift out of
+sync.
+
+**Backward compatible with Stage 1 data** — an FAQ created before v3.14.0
+(schema only, no `position`/`heading` ever sent) stays schema-only after
+upgrading. Visible emission only activates once a display config is
+explicitly written — POST the same `items` again (with or without an
+explicit `position`) to opt in.
+
+**Not yet supported:**
+- Regex/backreference-free plain fixed content only — no shortcode or
+  dynamic placeholder support in `heading`.
 - No `/faq/bulk` batch endpoint yet.
 
 ---

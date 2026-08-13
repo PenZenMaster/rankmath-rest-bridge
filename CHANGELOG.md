@@ -1,5 +1,58 @@
 # Changelog
 
+## v3.14.0
+
+FAQ Stage 2 (issue #26): visible Q&A content emission.
+
+### Added
+
+- `POST /faq/{post_id}` gained `position` (`after_content` default /
+  `before_content` / `disabled`) and `heading` fields.
+- Unless `position: disabled`, the same stored `items` are rendered into
+  a `<section class="rrseo-faq">` block (`rrseo-faq-heading`/
+  `rrseo-faq-item`/`rrseo-faq-question`/`rrseo-faq-answer` classes) and
+  appended or prepended to the post's content via a `the_content` filter
+  at priority 20.
+- Priority 20 is **confirmed clear of Elementor's own content-replacement
+  filter** (`Frontend::THE_CONTENT_FILTER_PRIORITY = 9`, verified
+  directly from Elementor's public source while scoping this issue,
+  rather than assumed). Elementor's `remove_content_filters()` only
+  strips three hardcoded WordPress core filters afterward (`wpautop`,
+  `shortcode_unautop`, `wptexturize`) -- never third-party plugin
+  filters -- so this works correctly on Elementor-built pages, receiving
+  Elementor's already-rendered output as input.
+- Schema and visible content are always generated from the same stored
+  `items`, so they cannot drift out of sync (the exact failure mode --
+  Google flagging a content/schema mismatch -- the original issue #22
+  was raised to prevent).
+- New `_rrseo_faq_display` post meta key (`{position, heading}`),
+  deliberately separate from the `_rrseo_schema_graph` meta the FAQPage
+  node itself lives in -- same separation-of-concerns pattern as issue
+  #23's `strip_third_party` config.
+- Guarded to the real front-end Loop (`is_singular()` +
+  `in_the_loop()` + `is_main_query()`, skipping feeds) so it never fires
+  on widgets, secondary queries, or this plugin's own
+  `class-rrseo-observe.php` diagnostic endpoints (which call
+  `apply_filters('the_content', ...)` directly, outside a real Loop
+  pass) -- the observe module's diagnostics see the page as it exists
+  without this plugin's own FAQ injection layered on top.
+
+### Notes
+
+- **Backward compatible with Stage 1 data.** An FAQ created before
+  v3.14.0 -- schema only, no `position`/`heading` ever sent -- stays
+  schema-only after upgrading. Visible emission only activates once a
+  display config is explicitly written (re-`POST` the same `items`,
+  with or without an explicit `position`, to opt in). This was a
+  deliberate choice to avoid a surprise front-end content change on
+  existing sites the moment this version ships.
+- 12 new unit tests (417 -> 429): `rr_validate_faq_display()`,
+  `rr_faq_render_html()` (including verbatim-answer / escaped-heading-
+  and-question behavior), and `rr_faq_set()`/`rr_faq_delete()`'s display-
+  config persistence. The `the_content` filter callback itself is a thin
+  WP-bound wrapper and isn't unit-tested directly, matching this
+  codebase's convention for hook-registered handlers.
+
 ## v3.13.0
 
 Redirects Stage 2 (issue #27) -- the five items explicitly deferred when

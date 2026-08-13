@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.13.0
+ * Version:      3.14.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.13.0' );
+define( 'RMB_VERSION', '3.14.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2421,7 +2421,7 @@ add_action(
 			)
 		);
 
-		// ── FAQ schema (issue #22 Stage 1) ───────────────────────────────────────
+		// ── FAQ schema + content (issue #22, Stage 2 v3.14.0) ────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
 			'/faq/(?P<post_id>\d+)',
@@ -2436,12 +2436,21 @@ add_action(
 					'callback'            => 'rmb_faq_set',
 					'permission_callback' => $admin_only,
 					'args'                => array(
-						'items'   => array(
+						'items'    => array(
 							'required' => true,
 							'type'     => 'array',
 							'items'    => array( 'type' => 'object' ),
 						),
-						'dry_run' => array(
+						'position' => array(
+							'required' => false,
+							'type'     => 'string',
+							'enum'     => array( 'after_content', 'before_content', 'disabled' ),
+						),
+						'heading'  => array(
+							'required' => false,
+							'type'     => 'string',
+						),
+						'dry_run'  => array(
 							'required' => false,
 							'type'     => 'boolean',
 							'default'  => false,

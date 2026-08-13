@@ -1,6 +1,6 @@
 <?php
 /**
- * Module/Script Name: RankRocket SEO -- FAQ Schema (issue #22 Stage 1)
+ * Module/Script Name: RankRocket SEO -- FAQ Schema + Content (issue #22)
  * Path: includes/class-rrseo-faq.php
  *
  * Description:
@@ -8,11 +8,15 @@
  * removes) an FAQPage node onto the post's existing _rrseo_schema_graph
  * meta without disturbing other nodes already registered there (e.g.
  * LocalBusiness, Service) -- rmb_schema_set() itself has no such merge; it
- * always replaces the whole stored value wholesale. Stage 1 scope: schema
- * only. Visible Q&A HTML emission (the after_content/before_content
- * positioning from the original issue) is deferred to a later stage --
- * this plugin has no the_content filter precedent to build on yet, and it
- * was judged lower-risk to ship the schema half alone first.
+ * always replaces the whole stored value wholesale. Stage 2 adds the
+ * visible Q&A HTML emission the original issue also asked for: a
+ * the_content filter (priority 20 -- confirmed clear of Elementor's own
+ * the_content replacement at priority 9, see class-rrseo-actions.php-
+ * adjacent research in issue #26) appends or prepends a rendered FAQ
+ * block matching the stored schema, so Google never sees a content/schema
+ * mismatch. Existing Stage-1-only FAQ entries (no display config ever
+ * written) stay schema-only after upgrading -- visible emission only
+ * activates once a display config is explicitly written.
  *
  * Author(s):
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
@@ -21,7 +25,9 @@
  * Last Modified Date: 2026-08-13
  *
  * Comments:
- * v1.00 - Initial release.
+ * v1.00 - Initial release (Stage 1): schema only.
+ * v2.00 - Stage 2 (issue #26): position/heading fields, the_content
+ *         emitter, rr_faq_render_html().
  *
  * @package RankRocket_SEO
  */
@@ -35,6 +41,22 @@ if ( ! defined( 'RR_FAQ_QUESTION_MAX' ) ) {
 }
 if ( ! defined( 'RR_FAQ_ANSWER_MAX' ) ) {
 	define( 'RR_FAQ_ANSWER_MAX', 2000 );
+}
+
+// Post meta key for visible-content display config ({position, heading}),
+// deliberately separate from the schema graph itself -- same pattern as
+// issue #23's strip_third_party config living apart from the schema it
+// affects.
+if ( ! defined( 'RR_FAQ_DISPLAY_KEY' ) ) {
+	define( 'RR_FAQ_DISPLAY_KEY', '_rrseo_faq_display' );
+}
+
+if ( ! defined( 'RR_FAQ_POSITIONS' ) ) {
+	define( 'RR_FAQ_POSITIONS', array( 'after_content', 'before_content', 'disabled' ) );
+}
+
+if ( ! defined( 'RR_FAQ_DEFAULT_HEADING' ) ) {
+	define( 'RR_FAQ_DEFAULT_HEADING', 'Frequently Asked Questions' );
 }
 
 
@@ -258,6 +280,76 @@ function rr_faq_extract_items( $faq_node ): array {
 }
 
 
+/**
+ * Validates and normalizes the optional position/heading display fields
+ * for POST /faq/{post_id} (issue #26).
+ *
+ * @param array $fields Raw input: position, heading.
+ * @return array{errors: string[], normalized: array}
+ */
+function rr_validate_faq_display( array $fields ): array {
+	$errors = array();
+
+	$position = 'after_content';
+	if ( array_key_exists( 'position', $fields ) && null !== $fields['position'] && '' !== $fields['position'] ) {
+		$position = sanitize_text_field( (string) $fields['position'] );
+	}
+	if ( ! in_array( $position, RR_FAQ_POSITIONS, true ) ) {
+		$errors[] = 'position must be one of: ' . implode( ', ', RR_FAQ_POSITIONS );
+	}
+
+	$heading = RR_FAQ_DEFAULT_HEADING;
+	if ( array_key_exists( 'heading', $fields ) && null !== $fields['heading'] && '' !== $fields['heading'] ) {
+		$heading = sanitize_text_field( (string) $fields['heading'] );
+	}
+
+	if ( ! empty( $errors ) ) {
+		return array(
+			'errors'     => $errors,
+			'normalized' => array(),
+		);
+	}
+
+	return array(
+		'errors'     => array(),
+		'normalized' => array(
+			'position' => $position,
+			'heading'  => $heading,
+		),
+	);
+}
+
+/**
+ * Renders the visible Q&A HTML block for a set of FAQ items. Pure --
+ * takes already-validated items (answer already wp_kses_post()-sanitized
+ * at write time in rr_validate_faq_items(), so it's echoed verbatim here,
+ * matching how this plugin's other pre-sanitized stored content -- schema,
+ * snippets -- is emitted without re-escaping).
+ *
+ * @param string $heading Section heading text (escaped here).
+ * @param array  $items   Items from rr_faq_extract_items() /
+ *                        rr_validate_faq_items()'s normalized output.
+ * @return string Empty string when $items is empty.
+ */
+function rr_faq_render_html( string $heading, array $items ): string {
+	if ( empty( $items ) ) {
+		return '';
+	}
+
+	$html  = '<section class="rrseo-faq">';
+	$html .= '<h2 class="rrseo-faq-heading">' . esc_html( $heading ) . '</h2>';
+	foreach ( $items as $item ) {
+		$html .= '<div class="rrseo-faq-item">';
+		$html .= '<h3 class="rrseo-faq-question">' . esc_html( $item['question'] ) . '</h3>';
+		$html .= '<div class="rrseo-faq-answer">' . $item['answer'] . '</div>';
+		$html .= '</div>';
+	}
+	$html .= '</section>';
+
+	return $html;
+}
+
+
 // ── Pipeline (WordPress-bound: reads/writes post meta) ──────────────────────────
 
 /**
@@ -279,17 +371,19 @@ function rr_faq_get( int $post_id ) {
 
 /**
  * Validates and (unless dry-run) merges an FAQPage node onto the post's
- * existing schema graph. Replaces any previously-stored FAQPage node;
- * every other node (LocalBusiness, Service, ...) is left untouched.
+ * existing schema graph, plus its visible-content display config.
+ * Replaces any previously-stored FAQPage node; every other node
+ * (LocalBusiness, Service, ...) is left untouched.
  *
  * @param int   $post_id     Post ID.
  * @param mixed $items_raw   Raw items[] payload.
+ * @param array $display_raw Raw position/heading fields (issue #26).
  * @param bool  $dry_run     True to validate and return the would-be
  *                            result without writing.
  * @return array{status: string, errors?: string[], warnings?: string[],
- *               items?: array, node?: array}
+ *               items?: array, node?: array, display?: array}
  */
-function rr_faq_set( int $post_id, $items_raw, $dry_run = false ): array {
+function rr_faq_set( int $post_id, $items_raw, array $display_raw = array(), $dry_run = false ): array {
 	$validation = rr_validate_faq_items( $items_raw );
 	if ( ! empty( $validation['errors'] ) ) {
 		return array(
@@ -298,12 +392,22 @@ function rr_faq_set( int $post_id, $items_raw, $dry_run = false ): array {
 		);
 	}
 
+	$display_validation = rr_validate_faq_display( $display_raw );
+	if ( ! empty( $display_validation['errors'] ) ) {
+		return array(
+			'status' => 'invalid',
+			'errors' => $display_validation['errors'],
+		);
+	}
+	$display = $display_validation['normalized'];
+
 	$node           = rr_faq_build_node( (string) get_permalink( $post_id ), $validation['normalized'] );
 	$existing_graph = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
 	$merged_graph   = rr_schema_merge_node( $existing_graph, $node, 'FAQPage' );
 
 	if ( ! $dry_run ) {
 		update_post_meta( $post_id, RR_SCHEMA_META_KEY, $merged_graph );
+		update_post_meta( $post_id, RR_FAQ_DISPLAY_KEY, $display );
 	}
 
 	return array(
@@ -311,11 +415,13 @@ function rr_faq_set( int $post_id, $items_raw, $dry_run = false ): array {
 		'warnings' => $validation['warnings'],
 		'items'    => $validation['normalized'],
 		'node'     => $node,
+		'display'  => $display,
 	);
 }
 
 /**
- * Removes the FAQPage node from the post's schema graph, if present.
+ * Removes the FAQPage node from the post's schema graph (and its display
+ * config), if present.
  *
  * @param int $post_id Post ID.
  * @return array{status: string}
@@ -333,8 +439,73 @@ function rr_faq_delete( int $post_id ): array {
 	} else {
 		update_post_meta( $post_id, RR_SCHEMA_META_KEY, $remaining );
 	}
+	delete_post_meta( $post_id, RR_FAQ_DISPLAY_KEY );
 
 	return array( 'status' => 'deleted' );
+}
+
+
+// ── Front-end content emission (issue #26) ──────────────────────────────────────
+
+// Priority 20: Elementor's own the_content replacement runs at priority 9
+// (Frontend::THE_CONTENT_FILTER_PRIORITY, confirmed from Elementor's source
+// while scoping issue #26) and only strips three hardcoded WordPress core
+// filters afterward (wpautop, shortcode_unautop, wptexturize) -- never
+// third-party plugin filters. Priority 20 always receives Elementor's
+// already-rendered output as $content on Elementor pages, and behaves
+// normally (raw post_content) on non-Elementor pages.
+add_filter( 'the_content', 'rrseo_faq_append_to_content', 20 );
+
+/**
+ * Appends (or prepends) the rendered FAQ block to a singular post's
+ * content, per its stored display config. Guarded to the main singular
+ * Loop so it never fires on widgets, secondary queries, or feeds -- and,
+ * deliberately, not on the direct apply_filters('the_content', ...) calls
+ * class-rrseo-observe.php's diagnostic endpoints make (those aren't a
+ * real Loop pass, so in_the_loop() is false there), so this plugin's own
+ * appended content never pollutes its own observation tooling.
+ *
+ * Backward compatible with Stage-1-only FAQ entries: a post with a stored
+ * FAQPage node but no display config (RR_FAQ_DISPLAY_KEY never written)
+ * stays schema-only -- visible emission only activates once a display
+ * config is explicitly written via POST /faq/{post_id}.
+ *
+ * @param string $content Post content so far (possibly already
+ *                        transformed by earlier the_content filters).
+ * @return string
+ */
+function rrseo_faq_append_to_content( $content ) {
+	if ( is_feed() || ! is_singular() || ! in_the_loop() || ! is_main_query() ) {
+		return $content;
+	}
+
+	$post_id = get_the_ID();
+	if ( ! $post_id ) {
+		return $content;
+	}
+
+	$display = get_post_meta( $post_id, RR_FAQ_DISPLAY_KEY, true );
+	if ( ! is_array( $display ) || empty( $display ) ) {
+		return $content;
+	}
+
+	$position = isset( $display['position'] ) ? $display['position'] : 'after_content';
+	if ( 'disabled' === $position ) {
+		return $content;
+	}
+
+	$items = rr_faq_extract_items( rr_faq_get( $post_id ) );
+	if ( empty( $items ) ) {
+		return $content;
+	}
+
+	$heading  = ! empty( $display['heading'] ) ? $display['heading'] : RR_FAQ_DEFAULT_HEADING;
+	$faq_html = rr_faq_render_html( $heading, $items );
+
+	if ( 'before_content' === $position ) {
+		return $faq_html . $content;
+	}
+	return $content . $faq_html;
 }
 
 
@@ -352,17 +523,22 @@ function rmb_faq_get( WP_REST_Request $request ) {
 		return new WP_Error( 'invalid_post', 'Post not found', array( 'status' => 404 ) );
 	}
 
+	$display = get_post_meta( $post_id, RR_FAQ_DISPLAY_KEY, true );
+
 	return rest_ensure_response(
 		array(
-			'post_id' => $post_id,
-			'items'   => rr_faq_extract_items( rr_faq_get( $post_id ) ),
+			'post_id'  => $post_id,
+			'items'    => rr_faq_extract_items( rr_faq_get( $post_id ) ),
+			'position' => ( is_array( $display ) && isset( $display['position'] ) ) ? $display['position'] : null,
+			'heading'  => ( is_array( $display ) && isset( $display['heading'] ) ) ? $display['heading'] : null,
 		)
 	);
 }
 
 /**
  * Handles POST /faq/{post_id} -- validates and merges an FAQPage node onto
- * the post's schema graph.
+ * the post's schema graph, plus its visible-content display config
+ * (issue #26).
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response|WP_Error
@@ -373,8 +549,12 @@ function rmb_faq_set( WP_REST_Request $request ) {
 		return new WP_Error( 'invalid_post', 'Post not found', array( 'status' => 404 ) );
 	}
 
-	$dry_run = (bool) $request->get_param( 'dry_run' );
-	$result  = rr_faq_set( $post_id, $request->get_param( 'items' ), $dry_run );
+	$dry_run     = (bool) $request->get_param( 'dry_run' );
+	$display_raw = array(
+		'position' => $request->get_param( 'position' ),
+		'heading'  => $request->get_param( 'heading' ),
+	);
+	$result      = rr_faq_set( $post_id, $request->get_param( 'items' ), $display_raw, $dry_run );
 
 	if ( 'invalid' === $result['status'] ) {
 		return new WP_Error(
@@ -408,6 +588,8 @@ function rmb_faq_set( WP_REST_Request $request ) {
 			'success'  => true,
 			'warnings' => $result['warnings'],
 			'items'    => $result['items'],
+			'position' => $result['display']['position'],
+			'heading'  => $result['display']['heading'],
 		)
 	);
 }
