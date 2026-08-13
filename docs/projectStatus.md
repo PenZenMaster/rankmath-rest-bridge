@@ -1,11 +1,74 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-08-13
-**Current Version:** 3.12.0
+**Current Version:** 3.14.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 2b3a921 -- chore: release v3.12.0 zip
+**Last Commit:** 3a36d95 -- chore: release v3.14.0 zip
 **Git Status:** clean
+
+---
+
+## 2026-08-13 Session (continued) -- Redirects Stage 2 (#27) + FAQ Stage 2 (#26): v3.13.0 -> v3.14.0
+
+### Session Summary
+Direct continuation of the same day's earlier #20-#25 cycle. Opened by
+fixing a gap the prior checkpoint flagged: issue #21 was still open on
+GitHub despite its Stage 1 shipping earlier -- closed it properly and
+split the deferred scope into a fresh #27, matching the #22 -> #26
+pattern already used once that day. User then asked to scope #27 and
+#26 together and implement both. Both were fully understood from code
+built earlier in the session, so no research forks were needed this
+time -- scoping happened directly, including one piece of real
+first-time research (reading Elementor's actual GitHub source to
+resolve #26's blocking design question) that avoided a live deploy to
+a client site.
+
+### Accomplishments
+- **#21 closed, #27 filed** -- housekeeping fix; #21's Stage 1
+  (v3.9.0/v3.9.1) had shipped but the parent issue was never formally
+  closed. #27 carries the five deferred items with full context from
+  the actual Stage 1 implementation, not a bare re-file of the original
+  proposal.
+- **v3.13.0 SHIPPED + CLOSED #27** -- all five Redirects Stage 2 items:
+  `match_type: regex` (200-char cap, nested-quantifier rejection, PCRE
+  validity check -- a heuristic guard, not a full static analyzer);
+  cross-domain targets via a global `rrseo_redirect_allowed_hosts`
+  filter allowlist, **bridged into WordPress core's own
+  `allowed_redirect_hosts` filter** (found during implementation that
+  `wp_safe_redirect()` has a separate allowlist and would have silently
+  downgraded an already-validated external target back to same-site
+  without this); write-throttled `hit_count`/`last_hit` telemetry
+  (skip-if-recent, 60s, deliberately skips the REST-cache purge to
+  avoid cache-thrashing a popular redirect); multi-hop loop detection
+  (chains through exact-type rules, up to 10 hops, superseding Stage
+  1's `source === target`-only check); typed-action engine integration
+  (`create_redirect`/`update_redirect`/`delete_redirect` wired directly
+  onto the existing pipeline, full dry-run/execute/rollback support).
+  Match precedence: exact > longest-prefix > first-regex. 42 new tests
+  (379 -> 417).
+- **v3.14.0 SHIPPED + CLOSED #26** -- FAQ Stage 2 visible content
+  emission. Resolved the blocking design question from scoping by
+  reading Elementor's actual source directly: Elementor hooks
+  `the_content` at priority 9 and only strips 3 hardcoded WP core
+  filters afterward, never third-party ones -- so a filter at priority
+  20 was confirmed safe with zero live testing needed. `POST
+  /faq/{post_id}` gained `position`/`heading` fields; visible HTML
+  renders from the same stored items as the schema, so they can't drift
+  apart. Backward compatible -- FAQ entries created before v3.14.0 stay
+  schema-only after upgrading; visible emission only activates once a
+  display config is explicitly written (deliberate, to avoid a surprise
+  front-end change on existing sites). New `_rrseo_faq_display` meta
+  key, separate from the schema graph (matches #23's
+  `strip_third_party` separation pattern). 12 new tests (417 -> 429).
+- Suite grew 379 -> 429 tests (50 new) this half; phpcs clean on every
+  commit; both release zips verified before push.
+
+### Next
+Deploy v3.14.0 to a live site -- no site updated past v3.8.1 all session,
+outside of read-only diagnostic checks. No #26/#27 follow-up pending;
+both fully delivered. #18/#19 remain low-priority, unchanged for
+multiple sessions.
 
 ---
 
