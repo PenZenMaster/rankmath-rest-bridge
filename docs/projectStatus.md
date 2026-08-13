@@ -892,7 +892,17 @@ preview/validation/audit stack, hardened replace-all endpoint. Three commits, v2
 ### Ready to Start
 - [x] ~~composer install / composer run qa~~ — done 2026-07-06; bootstrap drift
       repaired; phpcs clean, 153 tests / 324 assertions green
-- [ ] Verify llms.txt raw-content upload support (old backlog item)
+- [x] ~~Verify llms.txt raw-content upload support~~ — verified 2026-08-13.
+      Carried unverified since 2026-04-29 with no concrete spec anywhere in
+      the repo defining what "raw content" meant beyond the phrase itself.
+      Confirmed already covered by two fields that shipped later as the
+      llms.txt config feature matured: `intro` (`POST /llms`) is
+      sanitized once at write time (`sanitize_textarea_field`) and then
+      emitted **verbatim** in `rr_render_llms_txt()`
+      (`includes/class-rrseo-llms.php:634`) — free-form multi-line raw
+      text, no truncation or reformatting; `custom_sections` covers
+      arbitrary structured `{heading, items}` text blocks. Both documented
+      in README's llms.txt section. No code change needed.
 - [x] ~~I18n pass~~ — done 2026-07-06 for the admin surface (Text Domain header,
       deactivation dialog). REST error strings deliberately untranslated.
 
