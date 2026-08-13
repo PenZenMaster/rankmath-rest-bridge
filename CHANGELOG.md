@@ -1,5 +1,38 @@
 # Changelog
 
+## v3.9.2
+
+Fixed `POST /redirects/bulk` and `POST /snippets/bulk` ignoring
+`dry_run: true` and persisting writes anyway (issue #25).
+
+### Fixed
+
+- **`POST /redirects/bulk` never read `dry_run` at all** -- the REST
+  route didn't register the arg, and `rr_redirect_bulk_create()` had no
+  `$dry_run` parameter, so every call persisted regardless of what the
+  caller sent.
+- **`POST /snippets/bulk` had the same gap** -- pre-existing since the
+  endpoint shipped (v2.15.0), same root cause as the `/meta/bulk-update`
+  dry-run bug fixed in v2.17.7: the write path wasn't gated behind
+  `! $dry_run`.
+- Both endpoints now register `dry_run` (boolean, default `false`) and
+  skip `update_option()` / cache-bust / REST-cache-purge when set,
+  returning the would-be created entities with `"dry_run": true` in the
+  response instead. Validation (including per-item errors and duplicate-
+  source/duplicate-id detection) still runs in full on a dry run.
+
+### Impact
+
+- Previously, a dry-run bulk call silently created the entities anyway.
+  A follow-up live call on the same payload then failed validation with
+  a false "already used"/duplicate-id error, since the dry-run had
+  already taken the id or source. This broke the standard
+  dry-run-then-live workflow the README documents for every other
+  dry-run-capable endpoint.
+- No data corruption -- the "leaked" state from a dry run was
+  functionally what the caller would have written on a real live call,
+  just created a call earlier than intended.
+
 ## v3.9.1
 
 Redirects admin UI (issue #21 Stage 1 follow-up).

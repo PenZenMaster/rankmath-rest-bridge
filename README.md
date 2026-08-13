@@ -306,6 +306,9 @@ Elementor isn't active on the site).
 #### `POST /snippets/bulk` — atomic batch create (all-or-nothing validation)
 #### `DELETE /snippets/{slug}` — delete a snippet
 
+Optional `dry_run: true` on `POST /snippets/bulk` validates the whole batch
+and returns the would-be created snippets without writing (v3.9.2+).
+
 **`priority` field (v3.2.0+)** — optional integer `0`–`10000` on all snippet
 write endpoints; maps to WordPress hook priority for the snippet's location
 hook. Omitted = current defaults (`wp_head:20`, `wp_body_open:10`,
@@ -386,7 +389,7 @@ Fields:
 | `status_code` | no | `301` \| `302` \| `307` \| `308`. Default `301`. |
 | `match_type` | no | `exact` \| `prefix`. Default `exact`. |
 | `enabled` | no | Boolean. Default `true`. |
-| `dry_run` | no | On create/update: validate and return the would-be result without writing. |
+| `dry_run` | no | On create/update/bulk: validate and return the would-be result without writing. |
 
 `match_type: prefix` matches the source path and everything under it
 (`/old-services` matches `/old-services/plumbing`). When more than one

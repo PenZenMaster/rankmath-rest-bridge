@@ -416,12 +416,15 @@ function rr_redirect_delete( $id ) {
  * Atomically creates multiple redirects: validates every item first
  * (including duplicate-source detection within the same batch), and only
  * writes if every item passes. Mirrors rmb_snippets_bulk_create()'s
- * per-item error shape ({index, error}).
+ * per-item error shape ({index, error}). Honors $dry_run: validates and
+ * returns the would-be created redirects without persisting (issue #25).
  *
- * @param array $items Raw redirect field-sets.
+ * @param array $items   Raw redirect field-sets.
+ * @param bool  $dry_run True to validate and return the would-be result
+ *                       without writing.
  * @return array{status: string, errors?: array, redirects?: array}
  */
-function rr_redirect_bulk_create( array $items ) {
+function rr_redirect_bulk_create( array $items, $dry_run = false ) {
 	if ( empty( $items ) ) {
 		return array(
 			'status' => 'invalid',
@@ -499,6 +502,13 @@ function rr_redirect_bulk_create( array $items ) {
 		return array(
 			'status' => 'invalid',
 			'errors' => $errors,
+		);
+	}
+
+	if ( $dry_run ) {
+		return array(
+			'status'    => 'simulated',
+			'redirects' => array_values( $prepared ),
 		);
 	}
 
@@ -711,6 +721,8 @@ function rmb_redirects_delete( WP_REST_Request $request ) {
 
 /**
  * Handles POST /redirects/bulk -- atomically creates multiple redirects.
+ * Honors dry_run:true -- validates and returns the would-be created
+ * redirects without persisting (issue #25).
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response|WP_Error
@@ -720,8 +732,9 @@ function rmb_redirects_bulk_create( WP_REST_Request $request ) {
 	if ( ! is_array( $incoming ) || empty( $incoming ) ) {
 		return new WP_Error( 'missing_redirects', 'redirects must be a non-empty array.', array( 'status' => 400 ) );
 	}
+	$dry_run = (bool) $request->get_param( 'dry_run' );
 
-	$result = rr_redirect_bulk_create( $incoming );
+	$result = rr_redirect_bulk_create( $incoming, $dry_run );
 
 	if ( 'invalid' === $result['status'] ) {
 		return new WP_Error(
@@ -737,6 +750,7 @@ function rmb_redirects_bulk_create( WP_REST_Request $request ) {
 	return rest_ensure_response(
 		array(
 			'success'   => true,
+			'dry_run'   => $dry_run,
 			'count'     => count( $result['redirects'] ),
 			'redirects' => $result['redirects'],
 		)

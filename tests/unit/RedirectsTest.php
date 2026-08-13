@@ -334,6 +334,33 @@ class RedirectsTest extends TestCase {
         $this->assertSame( 'invalid', $result['status'] );
     }
 
+    public function test_bulk_create_dry_run_does_not_persist(): void {
+        $result = rr_redirect_bulk_create(
+            array(
+                array( 'source' => '/a', 'target' => '/aa' ),
+                array( 'source' => '/b', 'target' => '/bb' ),
+            ),
+            true
+        );
+
+        $this->assertSame( 'simulated', $result['status'] );
+        $this->assertCount( 2, $result['redirects'] );
+        $this->assertSame( array(), rr_redirect_list() );
+    }
+
+    public function test_bulk_create_dry_run_still_reports_validation_errors(): void {
+        $result = rr_redirect_bulk_create(
+            array(
+                array( 'source' => '/a', 'target' => '/aa' ),
+                array( 'source' => '/bad-no-target' ),
+            ),
+            true
+        );
+
+        $this->assertSame( 'invalid', $result['status'] );
+        $this->assertSame( array(), rr_redirect_list() );
+    }
+
     public function test_bulk_create_enforces_batch_max(): void {
         $items = array();
         for ( $i = 0; $i < rrseo_batch_max() + 1; $i++ ) {

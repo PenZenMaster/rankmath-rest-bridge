@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.9.1
+ * Version:      3.9.2
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.9.1' );
+define( 'RMB_VERSION', '3.9.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2800,6 +2800,11 @@ add_action(
 						'type'     => 'array',
 						'items'    => array( 'type' => 'object' ),
 					),
+					'dry_run'   => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
 				),
 			)
 		);
@@ -2954,6 +2959,11 @@ add_action(
 						'required' => true,
 						'type'     => 'array',
 						'items'    => array( 'type' => 'object' ),
+					),
+					'dry_run'  => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
 					),
 				),
 			)
@@ -5424,13 +5434,16 @@ function rmb_snippets_update( WP_REST_Request $request ) {
  * Handles POST /snippets/bulk — atomically creates multiple snippets in one request.
  *
  * Validates all snippets before writing; returns 422 with per-item errors if any
- * fail. No snippets are saved unless every item passes validation.
+ * fail. No snippets are saved unless every item passes validation. Honors
+ * dry_run:true — validates and returns the would-be created snippets without
+ * persisting (issue #25).
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response|WP_Error
  */
 function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 	$incoming = $request->get_param( 'snippets' );
+	$dry_run  = (bool) $request->get_param( 'dry_run' );
 	if ( ! is_array( $incoming ) || empty( $incoming ) ) {
 		return new WP_Error( 'missing_snippets', 'snippets must be a non-empty array.', array( 'status' => 400 ) );
 	}
@@ -5550,13 +5563,16 @@ function rmb_snippets_bulk_create( WP_REST_Request $request ) {
 		);
 	}
 
-	update_option( RMB_SNIPPETS_KEY, array_merge( $existing, $prepared ) );
-	rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
-	rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
+	if ( ! $dry_run ) {
+		update_option( RMB_SNIPPETS_KEY, array_merge( $existing, $prepared ) );
+		rrseo_bust_option_cache( RMB_SNIPPETS_KEY );
+		rrseo_purge_rest_cache( array( 'status', 'snippets' ) );
+	}
 
 	return rest_ensure_response(
 		array(
 			'success'  => true,
+			'dry_run'  => $dry_run,
 			'count'    => count( $prepared ),
 			'snippets' => array_values( $prepared ),
 		)
