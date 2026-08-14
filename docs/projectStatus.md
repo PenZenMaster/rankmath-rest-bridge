@@ -1,11 +1,81 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-08-13
+**Last Updated:** 2026-08-14
 **Current Version:** 3.14.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** a601b0a -- chore: release v3.14.1 zip
+**Last Commit:** 8526e5e -- chore: remove old release zips (v3.3.0-v3.14.0)
 **Git Status:** clean
+
+---
+
+## 2026-08-14 Session -- Deployment Confirmation, Cleanup, MCP Investigation
+
+### Session Summary
+Short session. Confirmed a second live v3.14.1 deployment
+(tristate-hvac.com, smoke-tested PASS), cleaned up 17 stale release zips
+from `releases/`, then spent most of the session investigating and
+building a sibling project: an MCP (Model Context Protocol) server
+wrapping this plugin's REST API. The investigation itself is the
+notable finding -- it disproved the assumption that `workflow-portal`
+already drives this plugin programmatically (it doesn't; credentials are
+hand-pasted into an external Perplexity.ai session per run). That gap
+became the justification for building `rankrocket-mcp` as a new,
+separate repo. No source files in this plugin repo changed.
+
+### Accomplishments
+- **tristate-hvac.com confirmed live on v3.14.1**, smoke-tested PASS
+  (2026-08-14) -- second live deployment site, alongside
+  trevoraspiranti.com (2026-08-13).
+- **Old release zips removed** (commit `8526e5e`) -- 17 stale zips
+  (v3.3.0-v3.14.0) deleted from `releases/`; current v3.14.1 zip kept.
+  Recoverable from git history.
+- **MCP integration investigated and scoped** -- two parallel research
+  passes (this plugin's full REST API surface: 51 routes, auth model,
+  typed action engine, `/capabilities`; and `workflow-portal`'s actual
+  integration pattern) confirmed there is currently zero programmatic
+  integration between `workflow-portal` and this plugin. Full findings
+  preserved in the new repo, not here (see Backlog Movement below).
+- **`rankrocket-mcp` built and shipped (Phase 1)** -- new standalone repo
+  at `E:\projects\rankrocket-mcp`, pushed to
+  `github.com/PenZenMaster/rankrocket-mcp` (private). Three read-only MCP
+  tools (`rankrocket_status`, `rankrocket_content_audit`,
+  `rankrocket_action_dry_run`) built and build-verified against this
+  plugin's actual route definitions; not yet live-tested against a real
+  site. Ported this repo's `.claude/CLAUDE.md` playbook pattern over
+  (`RRMCP start/checkpoint/shutdown`) so both repos share a consistent
+  workflow.
+- **[P3] RankMath Reference Purge backlog item reviewed** -- found not
+  fully scoped: its own stated prerequisite (confirm no live client
+  depends on the `rank_math_*` fallback) is unmet per the 2026-08-06
+  telemetry note already in this doc (Higgins still `rankmath_active:
+  true`), and the "optionally rename identifiers" scope question is
+  still open. No code change; just a scoping finding, now carried into
+  Next 3 Priorities in `STARTUP_CONTEXT.md`.
+
+### Technical Changes
+- `releases/v3.3.0/` through `releases/v3.14.0/` -- zip files deleted
+  (commit `8526e5e`), no other files touched in this repo.
+
+### Known Issues / Blockers
+- None new. #18 and #19 remain open, low-impact, optional (unchanged).
+- P3 RankMath Reference Purge blocked on re-verifying `rankmath_active`
+  across all 4 live sites (see Accomplishments above) -- not a code
+  blocker, a scoping blocker.
+
+### Next
+Re-check `rankmath_active` status across tristate-hvac, trevoraspiranti,
+Higgins, and Kilday Baxter before P3 RankMath Reference Purge can be
+picked up. #18/#19 remain low-priority, pick up only if nothing else is
+queued. No urgent items.
+
+### Backlog Movement
+- No plugin backlog items added, closed, or reprioritized this session
+  beyond the P3 scoping note above. The MCP investigation and build
+  happened entirely in the new `rankrocket-mcp` repo and does not modify
+  this plugin's backlog -- full investigation detail (complete REST API
+  route inventory, workflow-portal findings, design rationale) lives in
+  that repo's `docs/investigation-mcp-rationale.md`, not duplicated here.
 
 ---
 
