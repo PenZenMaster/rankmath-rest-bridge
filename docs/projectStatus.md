@@ -1,11 +1,67 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-08-14
+**Last Updated:** 2026-09-02
 **Current Version:** 3.14.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 8526e5e -- chore: remove old release zips (v3.3.0-v3.14.0)
+**Last Commit:** 58ec0b8 -- chore(checkpoint): 2026-08-14_0940
 **Git Status:** clean
+
+---
+
+## 2026-09-02 Session -- New Site Onboarding + Domain Redirect (endlessenergyfitness.com)
+
+### Session Summary
+Short session, no plugin source touched. User migrated a new client site,
+`endlessenergyfitness.com`, from non-www to `www` canonical and asked
+whether a redirect was needed. Work happened entirely outside this repo:
+onboarded the site into the RankRocket MCP site registry (on the remote
+MCP host, `mcp.fullmetaljacket.com`) and set up + verified a domain-level
+301 redirect via cPanel. Full detail in
+`docs/archive/checkpoints/CheckPoint-2026-09-02_0930.md`.
+
+### Accomplishments
+- **`endlessenergyfitness.com` onboarded to the RankRocket MCP registry**
+  on the remote MCP host -- confirmed working via `rankrocket_status`
+  (plugin v3.14.1, RankMath active, Elementor + Elementor Pro active).
+  Caught and fixed a JSON syntax error (missing closing brace) in the
+  registry file that had taken the whole MCP server down.
+- **Domain-level 301 (non-www -> www) verified working** for
+  `endlessenergyfitness.com` via cPanel Domain Redirects. Confirmed by
+  source read that this plugin's own redirect engine is path-only and
+  cannot do domain-level redirects (correctly routed the user to cPanel
+  instead). Live-verified via `curl` with cache-busting: every real URL
+  tested gets a single 301 hop with full path preserved to the matching
+  `www` URL, no loops.
+- **Non-blocking finding**: the new cPanel `.htaccess` rule currently
+  only fires at the raw server level for the domain root and static
+  files; WordPress-routed pages are redirected by WordPress's own
+  pre-existing `redirect_canonical()` instead (likely an `.htaccess`
+  rule-ordering artifact from cPanel appending after the WordPress
+  block). Functionally correct today; true defense-in-depth would need
+  the block moved above `# BEGIN WordPress`.
+
+### Technical Changes
+- None in this repo. All changes were external: remote MCP server's
+  `sites.json`, and `endlessenergyfitness.com`'s cPanel Domain Redirects
+  config.
+
+### Known Issues / Blockers
+- cPanel redirect rule ordering on `endlessenergyfitness.com` (see
+  Accomplishments) -- not urgent, no user-facing impact.
+- Pre-existing items unchanged: #18, #19 (low-impact, optional); P3
+  RankMath Reference Purge still blocked on re-checking `rankmath_active`
+  across the original 4 live sites.
+
+### Next
+Carryover from prior session (unchanged): re-check `rankmath_active`
+across tristate-hvac, trevoraspiranti, Higgins, Kilday Baxter before P3
+RankMath Reference Purge can be picked up. #18/#19 remain low-priority.
+New, low-priority: consider hardening the `endlessenergyfitness.com`
+cPanel redirect ordering if defense-in-depth is wanted.
+
+### Backlog Movement
+- No plugin backlog items added, closed, or reprioritized.
 
 ---
 
