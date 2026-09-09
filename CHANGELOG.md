@@ -1,5 +1,35 @@
 # Changelog
 
+## v3.15.0
+
+New `create_page` typed action -- lets an audit workflow create a draft
+WordPress page for human review via the existing typed action engine
+(`POST /actions/dry-run` / `/actions/execute` / `/actions/{id}/rollback`,
+no new REST route needed).
+
+### Added
+
+- `create_page` action type (`includes/class-rrseo-actions.php`,
+  `RR_ACTION_TYPES`), modeled directly on the existing `create_redirect`
+  type: same dry-run/execute/rollback envelope shape.
+- New `includes/class-rrseo-pages.php`: `rr_validate_page_fields()` and
+  `rr_page_create()`. Required `title`; optional `content`, `parent`,
+  `slug`, `template`. `status` is hard-clamped to `draft`/`pending` at
+  validation -- this action can never publish a page directly, regardless
+  of what a caller requests.
+- Rollback of a `create_page` action trashes the created page
+  (`wp_trash_post()`) rather than hard-deleting it, so a human can still
+  restore it from the WordPress trash if the rollback itself was a mistake.
+
+### Notes
+
+- Built for workflow-portal's "Location Page Builder" workflow card
+  conversion away from a raw Perplexity-launch prompt -- see that repo's
+  `docs/projectStatus.md` for the full cross-repo context.
+- No REST route or capabilities-map change was needed: `create_redirect`
+  and friends already proved the generic `/actions/*` endpoints are
+  action-type-agnostic.
+
 ## v3.14.1
 
 White-label backlog cleanup -- resolved a years-old, never-fully-verified

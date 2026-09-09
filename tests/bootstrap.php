@@ -537,6 +537,59 @@ if ( ! function_exists( 'wp_kses_post' ) ) {
 }
 
 // ------------------------------------------------------------------
+// Page-creation stubs (create_page action type)
+// ------------------------------------------------------------------
+
+// wp_insert_post — minimal stub: assigns an auto-incrementing ID and stores
+// a WP_Post into $GLOBALS['_test_posts']. No taxonomy/meta handling — tests
+// needing those stub post_meta/get_post directly, same as elsewhere here.
+if ( ! function_exists( 'wp_insert_post' ) ) {
+    function wp_insert_post( array $postarr, $wp_error = false ) {
+        $id = 0;
+        foreach ( array_keys( $GLOBALS['_test_posts'] ?? array() ) as $existing_id ) {
+            $id = max( $id, (int) $existing_id );
+        }
+        ++$id;
+
+        $post               = new WP_Post();
+        $post->ID           = $id;
+        $post->post_type    = $postarr['post_type'] ?? 'post';
+        $post->post_status  = $postarr['post_status'] ?? 'draft';
+        $post->post_title   = $postarr['post_title'] ?? '';
+        $post->post_content = $postarr['post_content'] ?? '';
+        $post->post_parent  = (int) ( $postarr['post_parent'] ?? 0 );
+
+        $GLOBALS['_test_posts'][ $id ] = $post;
+        return $id;
+    }
+}
+
+// wp_trash_post — moves a stubbed post to the trash status; returns the
+// post object on success, false when the post does not exist (mirrors core's
+// false-on-missing-post return, not core's full trash metadata handling).
+if ( ! function_exists( 'wp_trash_post' ) ) {
+    function wp_trash_post( $post_id ) {
+        $post = $GLOBALS['_test_posts'][ $post_id ] ?? null;
+        if ( null === $post ) {
+            return false;
+        }
+        $post->post_status = 'trash';
+        return $post;
+    }
+}
+
+// get_edit_post_link — deterministic wp-admin edit URL, same pattern as the
+// existing get_permalink() stub.
+if ( ! function_exists( 'get_edit_post_link' ) ) {
+    function get_edit_post_link( $id = 0 ) {
+        if ( is_object( $id ) ) {
+            $id = $id->ID ?? 0;
+        }
+        return 'https://example.test/wp-admin/post.php?post=' . (int) $id . '&action=edit';
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';

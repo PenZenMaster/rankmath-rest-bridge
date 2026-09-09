@@ -273,6 +273,48 @@ class ActionEngineTest extends TestCase {
 		$this->assertNull( rr_redirect_get( $envelope['after']['id'] ) );
 	}
 
+	// ── create_page ──────────────────────────────────────────────────────────
+
+	public function test_create_page_is_whitelisted(): void {
+		$v = rr_action_validate( 'create_page', null, array( 'title' => 'New City Page' ) );
+		$this->assertSame( array(), $v['errors'] );
+	}
+
+	public function test_create_page_requires_title(): void {
+		$v = rr_action_validate( 'create_page', null, array() );
+		$this->assertNotEmpty( $v['errors'] );
+		$this->assertStringContainsString( 'title', $v['errors'][0] );
+	}
+
+	public function test_create_page_rejects_publish_status(): void {
+		$v = rr_action_validate( 'create_page', null, array( 'title' => 'X', 'status' => 'publish' ) );
+		$this->assertNotEmpty( $v['errors'] );
+		$this->assertStringContainsString( 'status', $v['errors'][0] );
+	}
+
+	public function test_execute_create_page_persists_via_wp_insert_post(): void {
+		$envelope = rr_action_run( 'create_page', null, array( 'title' => 'Austin Landscaping', 'content' => '<p>Hi</p>' ), false, 'req-p1' );
+
+		$this->assertSame( 'completed', $envelope['status'] );
+		$this->assertSame( 'Austin Landscaping', $envelope['after']['title'] );
+		$this->assertSame( 'draft', $envelope['after']['status'] );
+
+		$post = get_post( $envelope['after']['id'] );
+		$this->assertNotNull( $post );
+		$this->assertSame( 'page', $post->post_type );
+		$this->assertSame( 'draft', $post->post_status );
+	}
+
+	public function test_dry_run_create_page_does_not_persist(): void {
+		$before_count = count( $GLOBALS['_test_posts'] );
+
+		$envelope = rr_action_run( 'create_page', null, array( 'title' => 'Austin Landscaping' ), true, 'req-p2' );
+
+		$this->assertSame( 'simulated', $envelope['status'] );
+		$this->assertNull( $envelope['after']['id'] );
+		$this->assertCount( $before_count, $GLOBALS['_test_posts'] );
+	}
+
 	public function test_update_redirect_not_found_rejected(): void {
 		$v = rr_action_validate( 'update_redirect', 'nope', array( 'target' => '/x' ) );
 		$this->assertNotEmpty( $v['errors'] );

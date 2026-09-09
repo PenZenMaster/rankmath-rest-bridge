@@ -267,6 +267,37 @@ class ActionRollbackTest extends TestCase {
         $this->assertNull( rr_redirect_get( $id ) );
     }
 
+    // ── create_page ────────────────────────────────────────────────────────
+
+    public function test_rollback_create_page_trashes_it(): void {
+        $envelope = $this->execute( 'create_page', null, array( 'title' => 'Austin Landscaping' ) );
+        $post_id  = $envelope['after']['id'];
+        $this->assertSame( 'draft', get_post( $post_id )->post_status );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'completed', $result['status'] );
+        $this->assertSame( 'trash', get_post( $post_id )->post_status );
+    }
+
+    public function test_create_page_drift_when_already_trashed(): void {
+        $envelope = $this->execute( 'create_page', null, array( 'title' => 'Austin Landscaping' ) );
+        wp_trash_post( $envelope['after']['id'] );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], false, false, 'req-rb' );
+
+        $this->assertSame( 'state_drift', $result['status'] );
+    }
+
+    public function test_rollback_create_page_dry_run_does_not_trash(): void {
+        $envelope = $this->execute( 'create_page', null, array( 'title' => 'Austin Landscaping' ) );
+
+        $result = rr_action_rollback_run( $envelope['action_id'], true, false, 'req-rb' );
+
+        $this->assertSame( 'simulated', $result['status'] );
+        $this->assertSame( 'draft', get_post( $envelope['after']['id'] )->post_status );
+    }
+
     public function test_rollback_update_redirect_restores_old_target(): void {
         rr_redirect_create( array( 'source' => '/old-page', 'target' => '/original-target' ) );
         $envelope = $this->execute( 'update_redirect', 'old-page', array( 'target' => '/changed-target' ) );

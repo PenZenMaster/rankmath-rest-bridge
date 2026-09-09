@@ -16,7 +16,7 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-09
- * Last Modified Date: 2026-08-13
+ * Last Modified Date: 2026-09-09
  *
  * Comments:
  * v1.00 - Initial release. POST /actions/dry-run + /actions/execute with the
@@ -30,6 +30,11 @@
  *         to the whitelist, wired directly onto the existing
  *         rr_redirect_create/update/delete() pipeline in
  *         class-rrseo-redirects.php (no reimplementation).
+ * v1.30 - create_page added to the whitelist (workflow-portal Location Page
+ *         Builder conversion), wired onto rr_page_create() in the new
+ *         class-rrseo-pages.php. Rollback trashes the created page rather
+ *         than hard-deleting it. Status is hard-clamped to draft/pending at
+ *         validation -- this action can never publish a page directly.
  *
  * @package RankRocket_SEO
  */
@@ -87,6 +92,7 @@ if ( ! defined( 'RR_ACTION_TYPES' ) ) {
 			'create_redirect',
 			'update_redirect',
 			'delete_redirect',
+			'create_page',
 		)
 	);
 }
@@ -129,6 +135,8 @@ function rr_action_validate( $action_type, $target_id, array $payload ) {
 			return rr_action_validate_update_redirect( $target_id, $payload );
 		case 'delete_redirect':
 			return rr_action_validate_delete_redirect( $target_id, $payload );
+		case 'create_page':
+			return rr_action_validate_create_page( $target_id, $payload );
 		case 'toggle_indexing':
 		default:
 			return rr_action_validate_toggle_indexing( $target_id, $payload );
@@ -303,6 +311,24 @@ function rr_action_validate_toggle_indexing( $target_id, array $payload ) {
 function rr_action_validate_create_redirect( $target_id, array $payload ) {
 	unset( $target_id );
 	return rr_validate_redirect_fields( $payload );
+}
+
+/**
+ * Validates a create_page action. Delegates entirely to
+ * rr_validate_page_fields() (includes/class-rrseo-pages.php) -- the actual
+ * create happens in the apply layer via rr_page_create(), which
+ * re-validates; the redundant validation pass here is what produces the
+ * errors/warnings for POST /actions/dry-run.
+ *
+ * @param mixed $target_id Unused -- create has no target_id, fields come
+ *                          entirely from payload.
+ * @param array $payload   Page fields: title, content, status, parent,
+ *                          slug, template.
+ * @return array{errors: string[], warnings: string[], normalized: array}
+ */
+function rr_action_validate_create_page( $target_id, array $payload ) {
+	unset( $target_id );
+	return rr_validate_page_fields( $payload );
 }
 
 /**
@@ -489,6 +515,20 @@ function rr_action_apply( $action_type, $target_id, array $normalized, $dry_run 
 				'post_id'          => null,
 				'touched_options'  => array( RR_REDIRECTS_KEY ),
 				'purge_endpoints'  => array( 'status', 'redirects' ),
+			);
+
+		case 'create_page':
+			$result = rr_page_create( $normalized, $dry_run );
+			$post   = isset( $result['post'] ) ? $result['post'] : null;
+			return array(
+				'before'           => null,
+				'after'            => $post,
+				'rollback_payload' => ( $dry_run || ! $post ) ? null : array( 'post_id' => $post['id'] ),
+				'reversible'       => ! $dry_run && null !== $post,
+				'reason'           => '',
+				'post_id'          => ( $post && ! $dry_run ) ? $post['id'] : null,
+				'touched_options'  => array(),
+				'purge_endpoints'  => array( 'status' ),
 			);
 
 		case 'toggle_indexing':
@@ -716,6 +756,14 @@ function rr_action_rollback_drift( array $envelope ) {
 				$drift[] = "redirect '{$id}': exists again (recreated since this action ran?)";
 			}
 			break;
+
+		case 'create_page':
+			$post_id = isset( $envelope['after']['id'] ) ? absint( $envelope['after']['id'] ) : 0;
+			$current = ( $post_id > 0 ) ? get_post( $post_id ) : null;
+			if ( null === $current || 'trash' === $current->post_status ) {
+				$drift[] = "page '{$post_id}': already trashed or deleted since this action ran";
+			}
+			break;
 	}
 
 	return $drift;
@@ -827,6 +875,22 @@ function rr_action_rollback_apply( array $envelope, $dry_run ) {
 				'post_id'         => null,
 				'touched_options' => array( RR_REDIRECTS_KEY ),
 				'purge_endpoints' => array( 'status', 'redirects' ),
+			);
+
+		case 'create_page':
+			// Rollback of a create = trash the page it created (not a hard
+			// delete -- a human can still restore it from the WP trash).
+			$post_id = isset( $payload['post_id'] ) ? absint( $payload['post_id'] ) : 0;
+			$before  = ( $post_id > 0 ) ? get_post( $post_id ) : null;
+			if ( ! $dry_run && $post_id > 0 ) {
+				wp_trash_post( $post_id );
+			}
+			return array(
+				'before'          => $before,
+				'after'           => null,
+				'post_id'         => $post_id,
+				'touched_options' => array(),
+				'purge_endpoints' => array( 'status' ),
 			);
 
 		case 'toggle_indexing':
