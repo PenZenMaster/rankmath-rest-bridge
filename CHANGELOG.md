@@ -1,5 +1,39 @@
 # Changelog
 
+## v3.16.0
+
+New `GET /elementor/{post_id}` read endpoint -- lets a caller fetch a post's
+currently stored Elementor layout, closing the gap where nothing could read
+an existing page's layout back.
+
+### Added
+
+- `rr_get_elementor_data_for_post()` (pure helper) and `rmb_elementor_get_data()`
+  (REST callback), same split as `rr_validate_elementor_data()` /
+  `rmb_elementor_set_data()`. Returns `elementor_data`, `edit_mode`,
+  `template_type`, `page_settings`, decoded from the same
+  `_elementor_data`/`_elementor_edit_mode`/`_elementor_template_type`/
+  `_elementor_page_settings` postmeta `POST /elementor/set-data` writes.
+- New route `GET /elementor/{post_id}`, admin-gated, modeled on the existing
+  `GET /observe/agentic-browsing/{post_id}` pattern.
+- New capability: `elementor.get_data`.
+- Malformed stored JSON returns `elementor_data: null` rather than an error
+  -- treated the same as "nothing stored" rather than surfaced as a failure.
+- 5 new unit tests (437 -> 442).
+
+### Notes
+
+- `POST /elementor/set-data`'s own "preview" mode is a dry-run for *writing*
+  (`dry_run: true` on the set-data payload), not a reader of existing data --
+  its own doc comment says so. This was a genuine gap: no endpoint could
+  answer "what does this post's Elementor layout currently look like."
+- Built for workflow-portal's "Location Page Builder" workflow: newly
+  created pages were plain-content WP pages with no Elementor layout at all
+  (no hero image, no site-matching template), because the workflow's write
+  tool (`rankrocket_pages_write`) has no Elementor concept, and there was no
+  way to read a sibling page's layout to adapt even if it did. See that
+  repo's `docs/projectStatus.md` for the full cross-repo context.
+
 ## v3.15.0
 
 New `create_page` typed action -- lets an audit workflow create a draft

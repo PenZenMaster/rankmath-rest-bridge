@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.15.0
+ * Version:      3.16.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.15.0' );
+define( 'RMB_VERSION', '3.16.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2593,6 +2593,17 @@ add_action(
 			)
 		);
 
+		// ── Elementor get-data (v3.16.0) ─────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/elementor/(?P<post_id>\d+)',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_elementor_get_data',
+				'permission_callback' => $admin_only,
+			)
+		);
+
 		// ── Elementor set-data ───────────────────────────────────────────────────
 		register_rest_route(
 			'rankrocket-seo/v1',
@@ -4625,6 +4636,74 @@ function rmb_elementor_set_data( WP_REST_Request $request ) {
 	);
 }
 
+/**
+ * Reads a post's stored Elementor layout meta.
+ *
+ * Pure data-access helper behind rmb_elementor_get_data() - kept separate so
+ * it can be unit tested without a WP_REST_Request/rest_ensure_response stub,
+ * the same split rr_validate_elementor_data() uses relative to
+ * rmb_elementor_set_data(). Malformed stored JSON is treated the same as
+ * "nothing stored" (elementor_data: null) rather than surfaced as an error -
+ * a caller adapting a sibling page's layout should fall back to building
+ * from scratch, not fail outright, if a stray write left invalid JSON.
+ *
+ * @param int $post_id The post to read.
+ * @return array{found:bool,elementor_data:?array,edit_mode:string,template_type:string,page_settings:array}
+ */
+function rr_get_elementor_data_for_post( int $post_id ): array {
+	if ( ! get_post( $post_id ) ) {
+		return array( 'found' => false );
+	}
+
+	$raw            = get_post_meta( $post_id, RR_ELEMENTOR_DATA_META_KEY, true );
+	$elementor_data = null;
+	if ( is_string( $raw ) && '' !== $raw ) {
+		$decoded = json_decode( $raw, true );
+		if ( is_array( $decoded ) ) {
+			$elementor_data = $decoded;
+		}
+	}
+
+	$page_settings = get_post_meta( $post_id, RR_ELEMENTOR_PAGE_SETTINGS_META_KEY, true );
+
+	return array(
+		'found'          => true,
+		'elementor_data' => $elementor_data,
+		'edit_mode'      => (string) get_post_meta( $post_id, RR_ELEMENTOR_EDIT_MODE_META_KEY, true ),
+		'template_type'  => (string) get_post_meta( $post_id, RR_ELEMENTOR_TEMPLATE_TYPE_META_KEY, true ),
+		'page_settings'  => is_array( $page_settings ) ? $page_settings : array(),
+	);
+}
+
+/**
+ * REST callback for GET /elementor/{post_id}.
+ *
+ * Thin wrapper around rr_get_elementor_data_for_post() - translates its
+ * result into the REST 404/response envelope, same division of labor as
+ * rmb_elementor_set_data() around rr_validate_elementor_data().
+ *
+ * @param WP_REST_Request $request The incoming request.
+ * @return WP_REST_Response|WP_Error
+ */
+function rmb_elementor_get_data( WP_REST_Request $request ) {
+	$post_id = intval( $request->get_param( 'post_id' ) );
+	$result  = rr_get_elementor_data_for_post( $post_id );
+
+	if ( ! $result['found'] ) {
+		return new WP_Error( 'invalid_post', 'Post not found', array( 'status' => 404 ) );
+	}
+
+	return rest_ensure_response(
+		array(
+			'post_id'        => $post_id,
+			'elementor_data' => $result['elementor_data'],
+			'edit_mode'      => $result['edit_mode'],
+			'template_type'  => $result['template_type'],
+			'page_settings'  => $result['page_settings'],
+		)
+	);
+}
+
 
 // ── robots.txt Handler ────────────────────────────────────────────────────────
 
@@ -6038,6 +6117,11 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'POST /media',
 			'since'     => '3.6.0',
+		),
+		'elementor.get_data'       => array(
+			'available' => true,
+			'route'     => 'GET /elementor/{post_id}',
+			'since'     => '3.16.0',
 		),
 		'elementor.set_data'       => array(
 			'available' => true,
