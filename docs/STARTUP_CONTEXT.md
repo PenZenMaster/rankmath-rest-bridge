@@ -4,7 +4,7 @@
 **Branch:** main
 **Version:** 3.16.0 (shipped, zip on CDN; live sites still on 3.14.1 as of
 last check -- see Current State)
-**Last Commit:** 94ae5e0 -- chore: release v3.16.0 zip
+**Last Commit:** 48bfba0 -- chore(checkpoint): 2026-09-11_1052
 
 ---
 
@@ -60,7 +60,7 @@ defense-in-depth only, not a live bug.
 ## Current State
 
 **Git:**
-- Branch `main`, in sync with `origin/main` at `94ae5e0`.
+- Branch `main`, in sync with `origin/main` at `48bfba0`.
 - Working tree clean.
 
 **Open GitHub issues (3):**
