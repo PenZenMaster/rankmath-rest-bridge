@@ -1,99 +1,94 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-11
 **Branch:** main
-**Version:** 3.14.1 (shipped, zip on CDN; live on trevoraspiranti.com,
-tristate-hvac.com, **and** endlessenergyfitness.com per its own `/status`)
-**Last Commit:** 58ec0b8 -- chore(checkpoint): 2026-08-14_0940
+**Version:** 3.16.0 (shipped, zip on CDN; live sites still on 3.14.1 as of
+last check -- see Current State)
+**Last Commit:** 94ae5e0 -- chore: release v3.16.0 zip
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **`endlessenergyfitness.com` onboarded to the RankRocket MCP site
-   registry (2026-09-02)** -- registered on the remote MCP host
-   (`mcp.fullmetaljacket.com`, not this repo or local machine). Fixed a
-   JSON syntax error (missing closing brace) that had taken the whole MCP
-   server down mid-session. Verified live via `rankrocket_status`:
-   plugin v3.14.1, RankMath active, Elementor + Elementor Pro active.
+1. **Doc backfill for v3.15.0/v3.16.0 + issue #28 surfaced (2026-09-11)**
+   -- `RRSEO start` caught that this file, `projectStatus.md`, and the
+   checkpoint archive had all drifted two releases behind actual repo
+   state. Backfilled both releases and discovered issue #28 (stale-cache
+   bug, filed 2026-08-15) had never been tracked in this repo's docs at
+   all. See `CheckPoint-2026-09-11_1052.md`.
 
-2. **Domain-level 301 (non-www -> www) set up and verified for
-   endlessenergyfitness.com (2026-09-02)** -- confirmed via source read
-   that this plugin's own redirect engine (`class-rrseo-redirects.php`)
-   is path-only and architecturally cannot do domain-level redirects;
-   routed the user to cPanel's Domain Redirects tool instead. Live
-   `curl`-verified afterward: every real URL redirects in a single 301
-   hop with full path preserved, no loops. Minor non-blocking finding:
-   cPanel's rule currently only fires raw for the domain root/static
-   files -- WordPress's own `redirect_canonical()` is covering everything
-   else correctly in the meantime (see checkpoint for detail).
+2. **v3.16.0 SHIPPED** -- new `GET /elementor/{post_id}` read endpoint;
+   closes the gap where nothing could read back a post's existing
+   Elementor layout (only the write-side `dry_run` existed before). Built
+   for workflow-portal's Location Page Builder workflow. 442 tests total.
 
-3. **tristate-hvac.com deployed and smoke-tested PASS (2026-08-14)** --
-   second live v3.14.1 deployment (after trevoraspiranti.com on
-   2026-08-13). No plugin-side issues found.
+3. **v3.15.0 SHIPPED** -- new `create_page` typed action (draft-only,
+   hard-clamped `status`; rollback trashes rather than hard-deletes) via
+   the existing `/actions/*` engine, no new REST route needed.
 
 ---
 
 ## Next 3 Priorities
 
-1. **#18** -- `/capabilities` `since: null` backfill (low impact,
+1. **#28 (NEW, top priority)** -- `GET /get/{id}` returns stale SEO meta
+   immediately after a `POST /update` write, live on `tristate-hvac.com`.
+   Root cause already well-narrowed by the reporter: the site runs
+   LiteSpeed + Varnish in front of WP, and `rmb_update_meta()` only busts
+   WordPress's own object cache -- never the edge-cache purge logic
+   `rmb_cache_purge()` (`POST /cache/purge`) already has. Likely fix:
+   have write handlers call that same purge routine (or purge just the
+   affected URL) on every write. Not yet scoped as a version bump.
+2. **#18** -- `/capabilities` `since: null` backfill (low impact,
    optional; use `git log -S` archaeology, not the issue's own
    confirmed-wrong version-guess table).
-2. **#19** -- `entity_clarity` README docs gap (low impact, docs-only).
-3. **[P3] RankMath Reference Purge is NOT fully scoped -- needs a
-   go/no-go check before it can be picked up.** (`docs/projectStatus.md`)
-   The item's own stated prerequisite -- "confirm no active clients rely
-   on the `rank_math_*` read-path fallback" -- is unmet: as of the last
-   check (2026-08-06), Higgins Overhead Door's `/status` still reported
-   `rankmath_active: true`, and Higgins hasn't been touched since. Before
-   this item can be scoped for real, someone needs to re-check
-   `rankmath_active` across all 4 original live sites (tristate-hvac,
-   trevoraspiranti, Higgins, Kilday Baxter) and resolve the open
-   "optionally rename internal identifiers" scope question. (Note:
-   endlessenergyfitness.com is a 5th site, onboarded 2026-09-02, not part
-   of this original prerequisite check.)
+3. **#19** -- `entity_clarity` README docs gap (low impact, docs-only).
 
-*(Optional, low priority)* Harden `endlessenergyfitness.com`'s cPanel
-domain-redirect: the `.htaccess` rule cPanel added currently sits after
-the `# BEGIN WordPress` block, so it only fires raw for the domain root
-and static files rather than all paths. WordPress's own canonical
-redirect is covering the gap correctly today, so this is defense-in-depth
-only, not a live bug.
+**[P3, still deferred] RankMath Reference Purge is NOT fully scoped** --
+go/no-go prerequisite ("confirm no active clients rely on the
+`rank_math_*` read-path fallback") unmet as of last check (2026-08-06,
+Higgins still `rankmath_active: true`, untouched since). Needs a re-check
+across all 4 original live sites (tristate-hvac, trevoraspiranti, Higgins,
+Kilday Baxter) before it can be picked up.
+
+*(Optional, low priority, carried over)* Harden
+`endlessenergyfitness.com`'s cPanel domain-redirect ordering -- WordPress's
+own canonical redirect covers the gap correctly today, so this is
+defense-in-depth only, not a live bug.
 
 ---
 
 ## Current State
 
 **Git:**
-- Branch `main`, in sync with `origin/main` at `58ec0b8`.
+- Branch `main`, in sync with `origin/main` at `94ae5e0`.
 - Working tree clean.
 
-**Open GitHub issues (2):**
+**Open GitHub issues (3):**
+- **#28** -- `GET /get/{id}` stale-cache bug on write (see Next 3
+  Priorities above) -- newly surfaced into this repo's docs, not new on
+  GitHub (filed 2026-08-15)
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
 
 **Live deployment status:**
-- `trevoraspiranti.com` -- v3.14.1 confirmed live (2026-08-13)
-- `tristate-hvac.com` -- v3.14.1 deployed, smoke-tested PASS (2026-08-14)
+- `trevoraspiranti.com` -- v3.14.1 confirmed live (2026-08-13); not yet
+  updated to v3.15.0/v3.16.0
+- `tristate-hvac.com` -- v3.14.1 deployed, smoke-tested PASS (2026-08-14);
+  also the site #28 was reproduced against; not yet updated to
+  v3.15.0/v3.16.0
 - `endlessenergyfitness.com` -- v3.14.1 confirmed live via `/status`
-  (2026-09-02); newly onboarded to the MCP registry this session; domain
-  redirect (non-www -> www) verified working
+  (2026-09-02); domain redirect (non-www -> www) verified working
 - Kilday Baxter (kildaybaxter.com), Higgins (higginsoverheaddoor.com) --
-  still on v3.8.1 as of last check (2026-08-06); not touched this session
+  still on v3.8.1 as of last check (2026-08-06); not touched recently
 
 **Files of note:**
-- No plugin source files changed this session -- only docs/checkpoint
-  updates. All actual work happened on the remote MCP host
-  (`mcp.fullmetaljacket.com`, site registry) and on
-  `endlessenergyfitness.com`'s cPanel hosting (domain redirect).
-- The RankRocket MCP server itself runs on `mcp.fullmetaljacket.com`, a
-  separate host from this Windows machine and from the
-  `E:\projects\rankrocket-mcp` source repo -- a local
-  `C:\Users\georg\.rankrocket-mcp\sites.json` edit made early in this
-  session was a dead end (inert; wrong file) once that was discovered.
+- No plugin source files changed this session -- docs-only backfill
+  (this file, `projectStatus.md`, new checkpoint). Plugin source itself
+  last changed in `5cc3816`/`f4293e5` (v3.15.0/v3.16.0), prior session.
 
 **Blockers:**
-- None.
+- None for docs work. #28 blocks confident read-after-write verification
+  on LiteSpeed/Varnish-fronted sites until fixed.
 
 ---
 

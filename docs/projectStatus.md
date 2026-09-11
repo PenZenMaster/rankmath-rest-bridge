@@ -1,11 +1,58 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-09-02
-**Current Version:** 3.14.1
+**Last Updated:** 2026-09-11
+**Current Version:** 3.16.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 58ec0b8 -- chore(checkpoint): 2026-08-14_0940
+**Last Commit:** 94ae5e0 -- chore: release v3.16.0 zip
 **Git Status:** clean
+
+---
+
+## 2026-09-11 Session -- Doc Backfill (v3.15.0/v3.16.0) + Issue #28 Surfaced
+
+### Session Summary
+Pure documentation catch-up session, no plugin code changed. `RRSEO start`
+found `STARTUP_CONTEXT.md`/`projectStatus.md`/the checkpoint archive all
+stopped at `3ffa29a` (v3.14.1), two commits behind the actual repo state
+(v3.16.0, HEAD `94ae5e0`) -- `5cc3816` (v3.15.0, `create_page` typed
+action) and `f4293e5` (v3.16.0, `GET /elementor/{post_id}` read endpoint)
+had shipped with no checkpoint written for either. While reconciling the
+backlog against GitHub, found a third gap: issue **#28** (`GET /get/{id}`
+stale-cache bug, filed 2026-08-15) had never been tracked in this repo's
+docs at all. Full detail in
+`docs/archive/checkpoints/CheckPoint-2026-09-11_1052.md`.
+
+### Accomplishments
+- **Backfilled v3.15.0 + v3.16.0 into the doc trail** -- see checkpoint
+  for full technical detail on both releases (`create_page` typed action;
+  `GET /elementor/{post_id}` read endpoint, 442 tests total).
+- **Surfaced issue #28** (`GET /get/{id}` returns stale SEO meta
+  immediately after `POST /update`, on `tristate-hvac.com`) into the
+  tracked Next/Known-Issues list -- root cause already well-narrowed by
+  the reporter's own follow-up comment: `tristate-hvac.com` runs
+  LiteSpeed + Varnish in front of WP, and `rmb_update_meta()` only busts
+  WordPress's own object cache, never the edge caches that `rmb_cache_purge()`
+  already knows how to purge.
+
+### Technical Changes
+- Docs only: this file, `STARTUP_CONTEXT.md`, and the new checkpoint file.
+  No plugin source touched.
+
+### Known Issues / Blockers
+- **#28** (new to tracked backlog) -- likely fix: have write handlers
+  (starting with `rmb_update_meta()`) call the same LiteSpeed/Varnish
+  purge routine `rmb_cache_purge()` uses, or purge just the affected URL,
+  on every write. Not yet scoped as a version-bump task.
+- #18, #19 unchanged (low-impact, optional).
+- P3 RankMath Reference Purge still unscoped (unchanged).
+
+### Next
+Scope + fix #28 first (correctness bug, now top priority over #18/#19).
+Then #18/#19 as before, then the P3 go/no-go re-check.
+
+### Backlog Movement
+- Added: #28 now tracked in this repo's docs (previously GitHub-only).
 
 ---
 
