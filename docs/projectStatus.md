@@ -1,11 +1,41 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-09-30
-**Current Version:** 3.16.0
+**Current Version:** 3.20.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 98b73fd -- docs: fix self-referential commit hash in STARTUP_CONTEXT.md
-**Git Status:** docs changes pending commit (checkpoint)
+**Last Commit:** e4f4b5e -- chore: release v3.20.0 zip
+**Git Status:** checkpoint docs pending commit
+
+---
+
+## 2026-09-30 Session (continued) -- #28/#31/#29/#30/#37 Fixed: v3.16.1 -> v3.20.0
+
+### Session Summary
+Worked the five open plugin issues in order and pushed all five releases to
+`origin/main` (v3.20.0 zip built by the pre-push hook, `e4f4b5e`). Code, docs
+and tests are complete; none verified on a live site and live sites are not
+yet updated. Detail in `docs/archive/checkpoints/CheckPoint-2026-09-30_2339.md`.
+
+### Accomplishments
+- **v3.16.1 (#28)** purge cached `GET /get/{id}` on SEO meta writes.
+- **v3.17.0 (#31)** local lookup misses are unverified, not 404s.
+- **v3.18.0 (#29)** source-aware heading observation (`source`, `scope`).
+- **v3.19.0 (#30)** graph-aware schema audit, snippet and public evidence.
+- **v3.20.0 (#37)** `set_post_status` typed action.
+- Tests 442 -> 528, lint clean.
+
+### Known Issues / Blockers
+- Behavior changes for consumers (see CHANGELOG v3.17.0/v3.18.0/v3.19.0).
+- #28 root cause hypothesis-based; only LiteSpeed per-URL purge.
+- Only the v3.20.0 zip exists (v3.16.1-v3.19.0 have none).
+
+### Next
+Deploy 3.20.0 to tristate-hvac.com, verify, close #28/#29/#30/#31/#37, then
+#18/#19 and the P3 RankMath re-check.
+
+### Backlog Movement
+- Completed (unverified live): #28, #29, #30, #31, #37.
 
 ---
 

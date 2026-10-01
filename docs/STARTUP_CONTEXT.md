@@ -2,51 +2,47 @@
 
 **Last Updated:** 2026-09-30
 **Branch:** main
-**Version:** 3.16.0 (shipped, zip on CDN; live sites still on 3.14.1 as of
-last check -- see Current State)
-**Last Commit:** 98b73fd -- docs: fix self-referential commit hash in STARTUP_CONTEXT.md
+**Version:** 3.20.0 (pushed, zip on CDN; live sites NOT updated -- still on
+3.14.1 / 3.8.1, see Current State)
+**Last Commit:** e4f4b5e -- chore: release v3.20.0 zip
 (checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Issue scan + AUD triage (2026-09-30)** -- found #29-#37 untracked in
-   docs. Moved AUD-01..AUD-05 (#32-#36, seo-site-audit consumer issues) to
-   `workflow-portal` #50-#54 and closed the originals as not planned.
-   PLG-01..PLG-04 (#29, #30, #31, #37) stay here. See
+1. **Five issues fixed and pushed, v3.16.1 -> v3.20.0 (2026-09-30)** --
+   #28 (purge cached `GET /get/{id}` on SEO meta writes), #31 (local lookup
+   misses are unverified, not 404s), #29 (source-aware heading observation),
+   #30 (graph-aware schema audit with snippet + public evidence), #37
+   (`set_post_status` typed action). Tests 442 -> 528. Code/docs/tests done;
+   NOT verified on any live site. See `CheckPoint-2026-09-30_2339.md`.
+
+2. **Issue scan + AUD triage (2026-09-30)** -- moved AUD-01..AUD-05
+   (#32-#36, seo-site-audit consumer issues) to `workflow-portal` #50-#54
+   and closed the originals as not planned. See
    `CheckPoint-2026-09-30_1750.md`.
 
-2. **Doc backfill for v3.15.0/v3.16.0 + issue #28 surfaced (2026-09-11)**
-   -- `RRSEO start` caught that this file, `projectStatus.md`, and the
-   checkpoint archive had all drifted two releases behind actual repo
-   state. Backfilled both releases and discovered issue #28 (stale-cache
-   bug, filed 2026-08-15) had never been tracked in this repo's docs at
-   all. See `CheckPoint-2026-09-11_1052.md`.
-
-3. **v3.16.0 SHIPPED** -- new `GET /elementor/{post_id}` read endpoint;
-   closes the gap where nothing could read back a post's existing
-   Elementor layout (only the write-side `dry_run` existed before). Built
-   for workflow-portal's Location Page Builder workflow. 442 tests total.
+3. **Doc backfill for v3.15.0/v3.16.0 + issue #28 surfaced (2026-09-11)**
+   -- see `CheckPoint-2026-09-11_1052.md`.
 
 ---
 
 ## Next 3 Priorities
 
-1. **#28 (top priority)** -- `GET /get/{id}` returns stale SEO meta
-   immediately after a `POST /update` write, live on `tristate-hvac.com`.
-   Root cause already well-narrowed by the reporter: the site runs
-   LiteSpeed + Varnish in front of WP, and `rmb_update_meta()` only busts
-   WordPress's own object cache -- never the edge-cache purge logic
-   `rmb_cache_purge()` (`POST /cache/purge`) already has. Likely fix:
-   have write handlers call that same purge routine (or purge just the
-   affected URL) on every write. Not yet scoped as a version bump.
-2. **PLG-01..PLG-04 (#29, #30, #31, #37)** -- filed 2026-10-01, not yet
-   read in full or scoped. Order them against #28.
-3. **#18/#19** -- `/capabilities` `since: null` backfill (low impact,
-   optional; use `git log -S` archaeology, not the issue's own
-   confirmed-wrong version-guess table).
-   `entity_clarity` README docs gap (#19) is docs-only.
+1. **Deploy + verify 3.20.0** -- `POST /self-update` on tristate-hvac.com
+   first (wait 2-3 min for CDN). Verify #28 read-after-write (the #28 fix is
+   hypothesis-based: LiteSpeed REST caching; only LiteSpeed per-URL purge, not
+   Varnish), then #29 (`source=document` on homepage 2604), #30
+   (`inspect_public`), #31 (`/contact` not a verified 404), #37 on a staging
+   fixture page (never production page 3646).
+2. **Close #28, #29, #30, #31, #37** after live verification; comment on
+   #29-#31 that the consumer-side AUD-01 is now workflow-portal#50.
+   Downstream consumers (workflow-portal seo-site-audit, rankrocket-mcp)
+   must adapt to: `status_code` null for local misses, `no_h1_in_fragment`,
+   broader schema coverage.
+3. **#18 / #19** (low impact: `/capabilities` `since: null` backfill via
+   `git log -S`; `entity_clarity` README docs), then the P3 re-check below.
 
 **[P3, still deferred] RankMath Reference Purge is NOT fully scoped** --
 go/no-go prerequisite ("confirm no active clients rely on the
@@ -65,37 +61,35 @@ defense-in-depth only, not a live bug.
 ## Current State
 
 **Git:**
-- Branch `main`, base `98b73fd`; docs changes pending checkpoint commit.
+- Branch `main`, `e4f4b5e` pushed, in sync with `origin/main`; checkpoint docs pending commit.
 
 **Open GitHub issues (7):**
-- **#29, #30, #31, #37** -- PLG-01..PLG-04 (heading source-awareness, graph-aware
-  schema audits, local URL lookup vs HTTP 404, reversible publish/draft
-  action). AUD-01..AUD-05 were moved to workflow-portal #50-#54.
-- **#28** -- `GET /get/{id}` stale-cache bug on write (see Next 3
-  Priorities above) -- newly surfaced into this repo's docs, not new on
-  GitHub (filed 2026-08-15)
+- **#28, #29, #30, #31, #37** -- fixed in v3.16.1/v3.17.0/v3.18.0/v3.19.0/
+  v3.20.0, pushed, awaiting live verification then close.
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
+- AUD-01..AUD-05 live in workflow-portal #50-#54.
 
 **Live deployment status:**
 - `trevoraspiranti.com` -- v3.14.1 confirmed live (2026-08-13); not yet
-  updated to v3.15.0/v3.16.0
+  updated to v3.15.0-v3.20.0
 - `tristate-hvac.com` -- v3.14.1 deployed, smoke-tested PASS (2026-08-14);
   also the site #28 was reproduced against; not yet updated to
-  v3.15.0/v3.16.0
+  v3.15.0-v3.20.0
 - `endlessenergyfitness.com` -- v3.14.1 confirmed live via `/status`
   (2026-09-02); domain redirect (non-www -> www) verified working
 - Kilday Baxter (kildaybaxter.com), Higgins (higginsoverheaddoor.com) --
   still on v3.8.1 as of last check (2026-08-06); not touched recently
 
 **Files of note:**
-- No plugin source files changed this session -- docs-only backfill
-  (this file, `projectStatus.md`, new checkpoint). Plugin source itself
-  last changed in `5cc3816`/`f4293e5` (v3.15.0/v3.16.0), prior session.
+- Plugin source changed this session: `rankmath-rest-bridge.php`,
+  `includes/class-rrseo-{observe,aeo-geo,llms,actions}.php`. Only the
+  `releases/v3.20.0/` zip exists for this batch (v3.16.1-v3.19.0 have none).
+- The release hook commits the zip after the push starts, so a second
+  `git push` is needed to publish the zip commit.
 
 **Blockers:**
-- None for docs work. #28 blocks confident read-after-write verification
-  on LiteSpeed/Varnish-fronted sites until fixed.
+- None. Live verification of the five fixes is the gate before closing.
 
 ---
 
@@ -175,3 +169,11 @@ defense-in-depth only, not a live bug.
     host you're actually editing before assuming a change took effect. A
     malformed registry file (e.g. a JSON syntax error) takes down every
     site's tools, not just the one being added/edited.
+
+13. **Observation endpoints now declare their evidence** -- heading
+    observation has `scope`/`source`/`complete` (`source=auto` fetches the
+    post's own permalink via `wp_safe_remote_get`, which blocks private IPs),
+    link observation never reports a measured status (the plugin makes no
+    external HTTP), and schema audit reports per-source evidence with
+    `summary.complete`. Treat "none found" as "none in the inspected sources"
+    unless `complete` is true.
