@@ -411,11 +411,19 @@ function rr_extract_business_facts_from_schema( int $post_id ): array {
 		return array();
 	}
 
+	// Find the business entity anywhere in the stored schema (single object,
+	// array, @graph or nested), not only at the root.
 	$usable_types = array( 'LocalBusiness', 'Organization', 'ProfessionalService', 'Store', 'MedicalBusiness' );
-	$type         = $schema['@type'] ?? '';
-	if ( ! in_array( $type, $usable_types, true ) ) {
+	$business     = rr_schema_find_node( $schema, $usable_types );
+	if ( null === $business ) {
 		return array();
 	}
+	$schema = $business;
+
+	// First usable type on the matched node (its @type may be an array).
+	$node_types = array_map( 'rr_schema_normalize_type', array_filter( (array) $schema['@type'], 'is_string' ) );
+	$matched    = array_values( array_intersect( $node_types, $usable_types ) );
+	$type       = $matched[0];
 
 	$facts = array();
 	if ( ! empty( $schema['name'] ) ) {

@@ -1,5 +1,59 @@
 # Changelog
 
+## v3.19.0
+
+Fix for issue #30 -- schema audits reported 0/75 pages with schema on a site
+whose homepage and service pages emit JSON-LD, because the audit only read the
+root-level `@type` of the stored schema meta.
+
+### Added
+
+- `rr_schema_inventory()`: one recursive walker for a single object, a bare
+  array, an `@graph` envelope, array-valued `@type` (with `schema:` /
+  `https://schema.org/` prefixes normalized) and typed entities nested in
+  property values. `@id`-only nodes are references: never a type, never a
+  definition, never a duplicate. Depth-bounded.
+- `rr_schema_extract_jsonld_blocks()`: JSON-LD blocks from HTML, with invalid
+  blocks reported individually while valid blocks stay in the inventory.
+- `rr_snippet_applies_to_post()`: static mirror of snippet emission (status,
+  content, location, `display_on` targeting, anonymous-visitor scope) so a
+  page-scoped, inactive or non-matching snippet is not counted as coverage.
+- Per-URL fields on `GET /aeo-geo/schema-audit`: `schema_sources`,
+  `duplicate_entity_ids`, `invalid_jsonld_blocks`, `public_schema`
+  (`not_inspected` | `inspected` | `unavailable`), `public_schema_error`.
+- Opt-in `inspect_public`, `public_offset`, `public_limit` (max 25) fetch the
+  public HTML of a bounded window of URLs through the same-host helper added
+  in v3.18.0. A failed fetch is `unavailable` and cannot erase stored or
+  snippet evidence.
+- Summary fields `sources_inspected`, `public_inspected_count`,
+  `public_requested_count`, `complete`, and a response `note` that says when
+  public HTML was not inspected.
+
+### Changed (compatibility transition)
+
+- `has_schema` / `schema_types` / `summary.types` now include applicable
+  snippet JSON-LD and nested entities, not only a root `@type` in stored
+  schema. Reported coverage can rise on sites that were under-counted.
+- `rr_observe_extract_schema_types()` (used by `GET /observe/schema-graph`
+  and `GET /observe/agentic-browsing`) uses the shared walker, so nested
+  types are included.
+- `rr_extract_business_facts_from_schema()` finds the business entity inside
+  a graph or array (and with array-valued `@type`) instead of requiring a
+  root-level scalar `@type`; entity signals' `homepage_schema_types` include
+  graph and applicable-snippet schema.
+- Canonical-preview `has_schema` / `schema_types` follow the same semantics.
+
+### Notes
+
+- 27 new tests (478 -> 505).
+- `without_schema` still means "no schema in the inspected sources". It is not
+  proof that a public page emits none unless `summary.complete` is true.
+  Schema produced by a theme or another plugin is only visible with
+  `inspect_public`. The producer of the reporter's pre-existing homepage block
+  was not traced.
+- Readiness uses stored + snippet evidence (no public fetch), so its schema
+  score is a floor on hosts that emit schema from elsewhere.
+
 ## v3.18.0
 
 Fix for issue #29 -- `GET /observe/heading-hierarchy/{post_id}` reported

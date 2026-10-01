@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.18.0
+ * Version:      3.19.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.18.0' );
+define( 'RMB_VERSION', '3.19.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3221,6 +3221,23 @@ add_action(
 				'methods'             => 'GET',
 				'callback'            => 'rmb_aeo_geo_schema_audit',
 				'permission_callback' => $admin_only,
+				'args'                => array(
+					'inspect_public' => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
+					'public_offset'  => array(
+						'required' => false,
+						'type'     => 'integer',
+						'default'  => 0,
+					),
+					'public_limit'   => array(
+						'required' => false,
+						'type'     => 'integer',
+						'default'  => 20,
+					),
+				),
 			)
 		);
 

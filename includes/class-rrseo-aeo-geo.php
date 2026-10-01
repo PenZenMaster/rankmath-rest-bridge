@@ -14,12 +14,15 @@
  *
  * Created Date: 2026-05-01
  *
- * Last Modified Date: 2026-05-01
+ * Last Modified Date: 2026-09-30
  *
  * Comments:
  * v1.00 - Initial: five REST endpoints — /canonical-urls/preview,
  *         /aeo-geo/readiness, /aeo-geo/entity, /aeo-geo/schema-audit,
  *         /aeo-geo/source-sync.
+ * v1.01 - Graph-aware schema inventory (issue #30): shared walker for single
+ *         objects, arrays, @graph and nested entities; applicable snippet
+ *         JSON-LD and optional public-frontend evidence; per-source reporting.
  *
  * @package RankRocket_SEO
  */
@@ -66,6 +69,9 @@ define(
 function rr_aeo_compute_canonical_preview( array $args = array() ): array {
 	$canonical = rr_get_canonical_url_set( $args );
 	$urls_out  = array();
+	$snippets  = get_option( RMB_SNIPPETS_KEY, array() );
+	$snippets  = is_array( $snippets ) ? $snippets : array();
+	$emit_on   = (bool) get_option( 'rrseo_emit_snippets', true );
 
 	foreach ( $canonical['urls'] as $entry ) {
 		$post_id = (int) $entry['post_id'];
@@ -78,13 +84,13 @@ function rr_aeo_compute_canonical_preview( array $args = array() ): array {
 		// canonical['urls'] can match an exclude_pattern.
 		$in_llms = true;
 
-		// Schema membership.
-		$schema       = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
-		$has_schema   = is_array( $schema ) && ! empty( $schema['@type'] );
+		// Schema membership: stored schema plus applicable snippet JSON-LD.
 		$schema_types = array();
-		if ( $has_schema ) {
-			$schema_types = is_array( $schema['@type'] ) ? $schema['@type'] : array( $schema['@type'] );
+		$ctx          = rr_schema_post_context( $post_id, (string) $entry['post_type'], (string) $entry['url'] );
+		foreach ( rr_schema_collect_post_sources( $post_id, $ctx, $snippets, $emit_on ) as $src ) {
+			$schema_types = array_values( array_unique( array_merge( $schema_types, $src['types'] ) ) );
 		}
+		$has_schema = ! empty( $schema_types );
 
 		$urls_out[] = array_merge(
 			$entry,
@@ -138,11 +144,12 @@ function rr_aeo_compute_entity_signals(): array {
 	$homepage_id           = (int) get_option( 'page_on_front', 0 );
 	$homepage_schema_types = array();
 	if ( $homepage_id > 0 ) {
-		$hp_schema = get_post_meta( $homepage_id, RR_SCHEMA_META_KEY, true );
-		if ( is_array( $hp_schema ) && ! empty( $hp_schema['@type'] ) ) {
-			$homepage_schema_types = is_array( $hp_schema['@type'] )
-				? $hp_schema['@type']
-				: array( $hp_schema['@type'] );
+		$hp_ctx   = rr_schema_post_context( $homepage_id, 'page', (string) get_permalink( $homepage_id ) );
+		$hp_snips = get_option( RMB_SNIPPETS_KEY, array() );
+		$hp_snips = is_array( $hp_snips ) ? $hp_snips : array();
+		$hp_emit  = (bool) get_option( 'rrseo_emit_snippets', true );
+		foreach ( rr_schema_collect_post_sources( $homepage_id, $hp_ctx, $hp_snips, $hp_emit ) as $src ) {
+			$homepage_schema_types = array_values( array_unique( array_merge( $homepage_schema_types, $src['types'] ) ) );
 		}
 	}
 
@@ -177,6 +184,297 @@ function rr_aeo_compute_entity_signals(): array {
 	);
 }
 
+// ── Schema inventory (issue #30) ─────────────────────────────────────────────
+
+// Max recursion depth when walking JSON-LD; deeper structures are ignored.
+define( 'RR_SCHEMA_WALK_MAX_DEPTH', 12 );
+
+// Max URLs fetched from the public frontend in one schema-audit request.
+define( 'RR_AEO_PUBLIC_INSPECT_MAX', 25 );
+
+/**
+ * Normalizes a JSON-LD @type value: strips schema.org namespace prefixes.
+ *
+ * @param string $type Raw @type string.
+ * @return string
+ */
+function rr_schema_normalize_type( string $type ): string {
+	return (string) preg_replace( '#^(https?://schema\.org/|schema:)#i', '', trim( $type ) );
+}
+
+/**
+ * Walks any supported JSON-LD shape and inventories its entities.
+ *
+ * Handles a single object, a bare array of objects, an @graph envelope,
+ * array-valued @type, and typed entities nested inside property values (for
+ * example a Service whose mainEntityOfPage is a WebPage). A node that carries
+ * only an @id is a reference, not a definition, so it never counts as a type
+ * and never counts toward duplicate-entity detection.
+ *
+ * @param mixed $data Decoded JSON-LD (or stored schema meta).
+ * @return array{
+ *   types: string[],
+ *   entities: array<int, array{types: string[], id: string, path: string, node: array}>,
+ *   references: string[],
+ *   duplicate_ids: string[]
+ * }
+ */
+function rr_schema_inventory( $data ): array {
+	$entities   = array();
+	$references = array();
+	$walk       = function ( $node, string $path, int $depth ) use ( &$walk, &$entities, &$references ) {
+		if ( ! is_array( $node ) || $depth > RR_SCHEMA_WALK_MAX_DEPTH ) {
+			return;
+		}
+		if ( wp_is_numeric_array( $node ) ) {
+			foreach ( $node as $i => $child ) {
+				$walk( $child, $path . '[' . $i . ']', $depth + 1 );
+			}
+			return;
+		}
+
+		$id    = isset( $node['@id'] ) && is_string( $node['@id'] ) ? $node['@id'] : '';
+		$types = array();
+		if ( isset( $node['@type'] ) ) {
+			foreach ( (array) $node['@type'] as $t ) {
+				if ( is_string( $t ) && '' !== trim( $t ) ) {
+					$types[] = rr_schema_normalize_type( $t );
+				}
+			}
+		}
+
+		if ( ! empty( $types ) ) {
+			$entities[] = array(
+				'types' => array_values( array_unique( $types ) ),
+				'id'    => $id,
+				'path'  => $path,
+				'node'  => $node,
+			);
+		} elseif ( '' !== $id && array( '@id' ) === array_keys( $node ) ) {
+			$references[] = $id;
+			return;
+		}
+
+		foreach ( $node as $key => $value ) {
+			if ( is_string( $key ) && '@' === substr( $key, 0, 1 ) && '@graph' !== $key ) {
+				continue;
+			}
+			$walk( $value, $path . '.' . $key, $depth + 1 );
+		}
+	};
+	$walk( $data, '$', 0 );
+
+	$types  = array();
+	$id_cnt = array();
+	foreach ( $entities as $e ) {
+		foreach ( $e['types'] as $t ) {
+			$types[ $t ] = true;
+		}
+		if ( '' !== $e['id'] ) {
+			$id_cnt[ $e['id'] ] = ( $id_cnt[ $e['id'] ] ?? 0 ) + 1;
+		}
+	}
+
+	return array(
+		'types'         => array_keys( $types ),
+		'entities'      => $entities,
+		'references'    => array_values( array_unique( $references ) ),
+		'duplicate_ids' => array_keys( array_filter( $id_cnt, fn( $n ) => $n > 1 ) ),
+	);
+}
+
+/**
+ * Extracts JSON-LD blocks from HTML, reporting invalid blocks individually.
+ *
+ * @param string $html HTML containing <script type="application/ld+json"> blocks.
+ * @return array<int, array{valid: bool, data: mixed, error: string|null}>
+ */
+function rr_schema_extract_jsonld_blocks( string $html ): array {
+	$blocks = array();
+	if ( ! preg_match_all( '/<script\b[^>]*\btype\s*=\s*["\']application\/ld\+json["\'][^>]*>(.*?)<\/script\s*>/is', $html, $m ) ) {
+		return $blocks;
+	}
+	foreach ( $m[1] as $raw ) {
+		$raw  = trim( $raw );
+		$data = json_decode( $raw, true );
+		if ( '' === $raw || JSON_ERROR_NONE !== json_last_error() || ! is_array( $data ) ) {
+			$blocks[] = array(
+				'valid' => false,
+				'data'  => null,
+				'error' => 'invalid_json',
+			);
+			continue;
+		}
+		$blocks[] = array(
+			'valid' => true,
+			'data'  => $data,
+			'error' => null,
+		);
+	}
+	return $blocks;
+}
+
+/**
+ * Returns true when a managed snippet would emit on the given post's page.
+ *
+ * Static mirror of rmb_output_snippets() + rmb_snippet_matches_display() for
+ * an anonymous public visitor on a singular page. Archive-only targeting
+ * (term/tax) never applies to a post. Unknown display_on values do not apply,
+ * as the emitter skips them.
+ *
+ * @param array $snippet Snippet record.
+ * @param array $ctx     array{post_id: int, post_type: string, is_front: bool, path: string}.
+ * @return bool
+ */
+function rr_snippet_applies_to_post( array $snippet, array $ctx ): bool {
+	if ( ( $snippet['status'] ?? 'active' ) !== 'active' ) {
+		return false;
+	}
+	if ( '' === (string) ( $snippet['content'] ?? '' ) ) {
+		return false;
+	}
+	if ( ! isset( RR_SNIPPET_LOCATION_HOOKS[ (string) ( $snippet['location'] ?? 'footer' ) ] ) ) {
+		return false;
+	}
+	if ( 'logged_in' === (string) ( $snippet['display_on_user'] ?? 'all' ) ) {
+		return false;
+	}
+
+	$display_on = trim( (string) ( $snippet['display_on'] ?? 'sitewide' ) );
+	switch ( $display_on ) {
+		case 'sitewide':
+		case 'all':
+		case 'entire_website':
+		case 'singular':
+			return true;
+		case 'home':
+		case 'homepage':
+		case 'front_page':
+			return (bool) $ctx['is_front'];
+		case 'all_pages':
+			return 'page' === $ctx['post_type'];
+		case 'all_posts':
+			return 'page' !== $ctx['post_type'];
+	}
+
+	if ( 0 === strpos( $display_on, 'page_id:' ) || 0 === strpos( $display_on, 'post_id:' ) ) {
+		$id = (int) substr( $display_on, 8 );
+		return $id > 0 && $id === (int) $ctx['post_id'];
+	}
+	if ( 0 === strpos( $display_on, 'post_type:' ) ) {
+		$slug = trim( substr( $display_on, 10 ) );
+		return '' !== $slug && $slug === $ctx['post_type'];
+	}
+	if ( 0 === strpos( $display_on, 'url:' ) ) {
+		$pattern = substr( $display_on, 4 );
+		return '' !== $pattern && rtrim( $pattern, '/' ) === rtrim( (string) $ctx['path'], '/' );
+	}
+	if ( is_numeric( $display_on ) ) {
+		$id = (int) $display_on;
+		return $id > 0 && $id === (int) $ctx['post_id'];
+	}
+	return false;
+}
+
+/**
+ * Collects per-source schema inventories for one post (stored + snippets).
+ *
+ * Public frontend evidence is added by the caller; it is not collected here.
+ *
+ * @param int   $post_id   Post ID.
+ * @param array $ctx       Context for rr_snippet_applies_to_post().
+ * @param array $snippets  Managed snippets option value.
+ * @param bool  $emit_on   Whether snippet emission is globally enabled.
+ * @return array<int, array> Source records: source, snippet_id (snippets only), types,
+ *                           entities, references, duplicate_ids, invalid_blocks.
+ */
+function rr_schema_collect_post_sources( int $post_id, array $ctx, array $snippets, bool $emit_on ): array {
+	$sources = array();
+
+	$stored = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
+	$inv    = rr_schema_inventory( is_array( $stored ) ? $stored : array() );
+	if ( ! empty( $inv['types'] ) ) {
+		$sources[] = array_merge(
+			array( 'source' => 'native' ),
+			$inv,
+			array( 'invalid_blocks' => 0 )
+		);
+	}
+
+	if ( $emit_on ) {
+		foreach ( $snippets as $id => $snippet ) {
+			if ( ! is_array( $snippet ) || ! rr_snippet_applies_to_post( $snippet, $ctx ) ) {
+				continue;
+			}
+			$invalid = 0;
+			$merged  = array(
+				'types'         => array(),
+				'entities'      => array(),
+				'references'    => array(),
+				'duplicate_ids' => array(),
+			);
+			foreach ( rr_schema_extract_jsonld_blocks( (string) $snippet['content'] ) as $block ) {
+				if ( ! $block['valid'] ) {
+					++$invalid;
+					continue;
+				}
+				$b                       = rr_schema_inventory( $block['data'] );
+				$merged['types']         = array_values( array_unique( array_merge( $merged['types'], $b['types'] ) ) );
+				$merged['entities']      = array_merge( $merged['entities'], $b['entities'] );
+				$merged['references']    = array_values( array_unique( array_merge( $merged['references'], $b['references'] ) ) );
+				$merged['duplicate_ids'] = array_values( array_unique( array_merge( $merged['duplicate_ids'], $b['duplicate_ids'] ) ) );
+			}
+			if ( empty( $merged['types'] ) && 0 === $invalid ) {
+				continue;
+			}
+			$sources[] = array_merge(
+				array(
+					'source'     => 'snippet',
+					'snippet_id' => (string) $id,
+				),
+				$merged,
+				array( 'invalid_blocks' => $invalid )
+			);
+		}
+	}
+
+	return $sources;
+}
+
+/**
+ * Builds the schema-source context for a post (type, front-page flag, path).
+ *
+ * @param int    $post_id   Post ID.
+ * @param string $post_type Post type.
+ * @param string $url       Canonical public URL.
+ * @return array{post_id: int, post_type: string, is_front: bool, path: string}
+ */
+function rr_schema_post_context( int $post_id, string $post_type, string $url ): array {
+	$path = wp_parse_url( $url, PHP_URL_PATH );
+	return array(
+		'post_id'   => $post_id,
+		'post_type' => $post_type,
+		'is_front'  => in_array( $post_id, array( (int) get_option( 'page_on_front', 0 ), (int) get_option( 'page_for_posts', 0 ) ), true ),
+		'path'      => is_string( $path ) ? $path : '/',
+	);
+}
+
+/**
+ * Returns the first typed entity whose types intersect $wanted, or null.
+ *
+ * @param mixed    $data   Stored schema meta or decoded JSON-LD.
+ * @param string[] $wanted Type names to look for.
+ * @return array|null Entity node array, or null.
+ */
+function rr_schema_find_node( $data, array $wanted ): ?array {
+	foreach ( rr_schema_inventory( $data )['entities'] as $e ) {
+		if ( array_intersect( $e['types'], $wanted ) ) {
+			return $e['node'];
+		}
+	}
+	return null;
+}
+
 /**
  * Returns a per-URL schema type inventory across all canonical URLs.
  *
@@ -191,8 +489,17 @@ function rr_aeo_compute_entity_signals(): array {
  *   - FAQPage schema (no_faqpage_anywhere).
  *   - BreadcrumbList schema (no_breadcrumblist_anywhere).
  *
+ * Evidence sources (issue #30): stored schema (any supported JSON-LD shape,
+ * walked recursively), active managed snippets that apply to the page, and --
+ * only when options['inspect_public'] is set -- the public frontend HTML of a
+ * bounded window of URLs. A URL is never reported as lacking schema merely
+ * because a source was not inspected: each URL carries `public_schema`
+ * ('not_inspected' | 'inspected' | 'unavailable') and the summary carries
+ * `sources_inspected` and `complete`.
+ *
  * @param array      $args             Optional args forwarded to rr_get_canonical_url_set().
  * @param array|null $canonical_result Pre-fetched rr_get_canonical_url_set() result, or null to fetch.
+ * @param array      $options          Optional: inspect_public (bool), public_offset (int), public_limit (int).
  * @return array{
  *   urls: array,
  *   summary: array{
@@ -205,7 +512,7 @@ function rr_aeo_compute_entity_signals(): array {
  *   global_warnings: string[]
  * }
  */
-function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_result = null ): array {
+function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_result = null, array $options = array() ): array {
 	$canonical   = $canonical_result ?? rr_get_canonical_url_set( $args );
 	$site_base   = home_url( '/' );
 	$urls_out    = array();
@@ -216,34 +523,94 @@ function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_r
 	$global_has_faqpage      = false;
 	$global_has_breadcrumb   = false;
 
-	foreach ( $canonical['urls'] as $entry ) {
+	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
+	$snippets = is_array( $snippets ) ? $snippets : array();
+	$emit_on  = (bool) get_option( 'rrseo_emit_snippets', true );
+
+	$inspect_public = ! empty( $options['inspect_public'] );
+	$public_offset  = max( 0, (int) ( $options['public_offset'] ?? 0 ) );
+	$public_limit   = min( RR_AEO_PUBLIC_INSPECT_MAX, max( 1, (int) ( $options['public_limit'] ?? 20 ) ) );
+	$public_ok      = 0;
+	$public_tried   = 0;
+
+	foreach ( $canonical['urls'] as $index => $entry ) {
 		$post_id  = (int) $entry['post_id'];
 		$url      = (string) $entry['url'];
 		$raw_path = wp_parse_url( $url, PHP_URL_PATH );
 		$norm     = rr_normalize_url_path( is_string( $raw_path ) ? $raw_path : '/' );
 		$is_home  = ( '/' === $norm ) || ( $url === $site_base );
 
-		$schema     = get_post_meta( $post_id, RR_SCHEMA_META_KEY, true );
-		$has_schema = is_array( $schema ) && ! empty( $schema['@type'] );
+		$sources = rr_schema_collect_post_sources( $post_id, rr_schema_post_context( $post_id, (string) $entry['post_type'], $url ), $snippets, $emit_on );
 
+		// Public frontend evidence for a bounded window of URLs.
+		$public_status = 'not_inspected';
+		$public_error  = null;
+		if ( $inspect_public && $index >= $public_offset && $public_tried < $public_limit ) {
+			++$public_tried;
+			$post    = get_post( $post_id );
+			$fetched = $post instanceof WP_Post ? rr_observe_fetch_frontend_html( $post ) : array(
+				'html'  => null,
+				'error' => 'post_not_found',
+			);
+			if ( null === $fetched['html'] ) {
+				// A failed fetch never erases stored/snippet evidence.
+				$public_status = 'unavailable';
+				$public_error  = $fetched['error'];
+			} else {
+				$public_status = 'inspected';
+				++$public_ok;
+				$pub = array(
+					'types'          => array(),
+					'entities'       => array(),
+					'references'     => array(),
+					'duplicate_ids'  => array(),
+					'invalid_blocks' => 0,
+				);
+				foreach ( rr_schema_extract_jsonld_blocks( $fetched['html'] ) as $block ) {
+					if ( ! $block['valid'] ) {
+						++$pub['invalid_blocks'];
+						continue;
+					}
+					$b                    = rr_schema_inventory( $block['data'] );
+					$pub['types']         = array_values( array_unique( array_merge( $pub['types'], $b['types'] ) ) );
+					$pub['entities']      = array_merge( $pub['entities'], $b['entities'] );
+					$pub['references']    = array_values( array_unique( array_merge( $pub['references'], $b['references'] ) ) );
+					$pub['duplicate_ids'] = array_values( array_unique( array_merge( $pub['duplicate_ids'], $b['duplicate_ids'] ) ) );
+				}
+				if ( ! empty( $pub['types'] ) || $pub['invalid_blocks'] > 0 ) {
+					$sources[] = array_merge( array( 'source' => 'public' ), $pub );
+				}
+			}
+		}
+
+		// Merge types across sources; typed @id definitions repeated across
+		// sources are duplicate entities, references never are.
 		$schema_types = array();
+		$defined_ids  = array();
+		$invalid      = 0;
+		foreach ( $sources as $src ) {
+			$schema_types = array_values( array_unique( array_merge( $schema_types, $src['types'] ) ) );
+			$invalid     += (int) $src['invalid_blocks'];
+			foreach ( $src['entities'] as $e ) {
+				if ( '' !== $e['id'] ) {
+					$defined_ids[ $e['id'] ] = ( $defined_ids[ $e['id'] ] ?? 0 ) + 1;
+				}
+			}
+		}
+		$has_schema = ! empty( $schema_types );
 		if ( $has_schema ) {
 			++$with_schema;
-			$schema_types = is_array( $schema['@type'] )
-				? $schema['@type']
-				: array( $schema['@type'] );
-
-			foreach ( $schema_types as $t ) {
-				$type_counts[ $t ] = ( $type_counts[ $t ] ?? 0 ) + 1;
-				if ( in_array( $t, RR_AEO_LOCAL_ENTITY_TYPES, true ) ) {
-					$global_has_local_entity = true;
-				}
-				if ( 'FAQPage' === $t ) {
-					$global_has_faqpage = true;
-				}
-				if ( 'BreadcrumbList' === $t ) {
-					$global_has_breadcrumb = true;
-				}
+		}
+		foreach ( $schema_types as $t ) {
+			$type_counts[ $t ] = ( $type_counts[ $t ] ?? 0 ) + 1;
+			if ( in_array( $t, RR_AEO_LOCAL_ENTITY_TYPES, true ) ) {
+				$global_has_local_entity = true;
+			}
+			if ( 'FAQPage' === $t ) {
+				$global_has_faqpage = true;
+			}
+			if ( 'BreadcrumbList' === $t ) {
+				$global_has_breadcrumb = true;
 			}
 		}
 
@@ -273,6 +640,24 @@ function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_r
 			'schema_types'          => $schema_types,
 			'has_schema'            => $has_schema,
 			'missing_opportunities' => $missing,
+			'schema_sources'        => array_map(
+				function ( $src ) {
+					$row = array(
+						'source'         => $src['source'],
+						'types'          => $src['types'],
+						'invalid_blocks' => $src['invalid_blocks'],
+					);
+					if ( isset( $src['snippet_id'] ) ) {
+						$row['snippet_id'] = $src['snippet_id'];
+					}
+					return $row;
+				},
+				$sources
+			),
+			'duplicate_entity_ids'  => array_keys( array_filter( $defined_ids, fn( $n ) => $n > 1 ) ),
+			'invalid_jsonld_blocks' => $invalid,
+			'public_schema'         => $public_status,
+			'public_schema_error'   => $public_error,
 		);
 	}
 
@@ -290,16 +675,28 @@ function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_r
 		$global_warnings[] = 'no_breadcrumblist_anywhere';
 	}
 
+	$sources_inspected = array( 'native', 'snippets' );
+	if ( $public_tried > 0 ) {
+		$sources_inspected[] = 'public';
+	}
+
 	return array(
 		'urls'            => $urls_out,
 		'summary'         => array(
-			'total'          => $total,
-			'with_schema'    => $with_schema,
-			'without_schema' => $total - $with_schema,
-			'types'          => $type_counts,
-			'coverage_pct'   => $coverage_pct,
+			'total'                  => $total,
+			'with_schema'            => $with_schema,
+			'without_schema'         => $total - $with_schema,
+			'types'                  => $type_counts,
+			'coverage_pct'           => $coverage_pct,
+			'sources_inspected'      => $sources_inspected,
+			'public_inspected_count' => $public_ok,
+			'public_requested_count' => $public_tried,
+			'complete'               => $total > 0 && $public_ok === $total,
 		),
 		'global_warnings' => $global_warnings,
+		'note'            => 'without_schema counts URLs with no schema in the inspected sources only (stored schema and applicable snippets' .
+			( $public_tried > 0 ? ', plus public HTML for the inspected window' : '; public HTML was not inspected' ) .
+			'). It is not proof that a public page emits no JSON-LD unless summary.complete is true.',
 	);
 }
 
@@ -555,11 +952,26 @@ function rmb_aeo_geo_entity( WP_REST_Request $request ): WP_REST_Response { // p
 /**
  * Handles GET /aeo-geo/schema-audit — per-canonical-URL schema type inventory.
  *
+ * Query params: inspect_public (bool, default false) fetches the public HTML
+ * of up to public_limit URLs (max RR_AEO_PUBLIC_INSPECT_MAX) starting at
+ * public_offset; page through the set with successive offsets.
+ *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
  */
-function rmb_aeo_geo_schema_audit( WP_REST_Request $request ): WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-	return new WP_REST_Response( rr_aeo_compute_schema_audit(), 200 );
+function rmb_aeo_geo_schema_audit( WP_REST_Request $request ): WP_REST_Response {
+	return new WP_REST_Response(
+		rr_aeo_compute_schema_audit(
+			array(),
+			null,
+			array(
+				'inspect_public' => (bool) $request->get_param( 'inspect_public' ),
+				'public_offset'  => (int) $request->get_param( 'public_offset' ),
+				'public_limit'   => (int) $request->get_param( 'public_limit' ),
+			)
+		),
+		200
+	);
 }
 
 /**

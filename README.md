@@ -716,6 +716,18 @@ curl "$BASE/observe/llms-diff" -u "$CRED"
 curl "$BASE/observe/agentic-browsing/123" -u "$CRED"
 ```
 
+**`GET /aeo-geo/schema-audit` evidence (v3.19.0)** — a URL's schema is the
+union of three sources, reported per URL in `schema_sources`: stored schema
+(any JSON-LD shape: single object, array, `@graph`, nested entities),
+active snippets that apply to that page, and — only when
+`?inspect_public=1` — the public HTML (`public_offset` / `public_limit`, max
+25 per call; page through with offsets). `public_schema` is `not_inspected`
+by default, so `without_schema` means "none found in the inspected sources";
+check `summary.complete` before reading it as "none emitted". Invalid
+JSON-LD is reported per block (`invalid_jsonld_blocks`) and repeated `@id`
+definitions as `duplicate_entity_ids`; `@id`-only references are not
+duplicates.
+
 **`GET /observe/heading-hierarchy/{post_id}` scope (v3.18.0)** — stored post
 content is only a fragment of the page: theme templates and Elementor Theme
 Builder parts render headings (often the H1) outside it. `source=document`

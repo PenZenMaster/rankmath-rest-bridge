@@ -302,16 +302,8 @@ function rr_observe_extract_schema_types( $graph ): array {
 		return array();
 	}
 
-	$types = array();
-	$nodes = isset( $graph['@graph'] ) && is_array( $graph['@graph'] ) ? $graph['@graph'] : array( $graph );
-	foreach ( $nodes as $node ) {
-		if ( is_array( $node ) && isset( $node['@type'] ) ) {
-			foreach ( (array) $node['@type'] as $type ) {
-				$types[] = (string) $type;
-			}
-		}
-	}
-	return array_values( array_unique( $types ) );
+	// Shared recursive walker: single object, bare array, @graph, nested entities.
+	return rr_schema_inventory( $graph )['types'];
 }
 
 /**
