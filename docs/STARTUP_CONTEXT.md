@@ -1,36 +1,39 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-09-11
+**Last Updated:** 2026-09-30
 **Branch:** main
 **Version:** 3.16.0 (shipped, zip on CDN; live sites still on 3.14.1 as of
 last check -- see Current State)
-**Last Commit:** 48bfba0 -- chore(checkpoint): 2026-09-11_1052
+**Last Commit:** 98b73fd -- docs: fix self-referential commit hash in STARTUP_CONTEXT.md
+(checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Doc backfill for v3.15.0/v3.16.0 + issue #28 surfaced (2026-09-11)**
+1. **Issue scan + AUD triage (2026-09-30)** -- found #29-#37 untracked in
+   docs. Moved AUD-01..AUD-05 (#32-#36, seo-site-audit consumer issues) to
+   `workflow-portal` #50-#54 and closed the originals as not planned.
+   PLG-01..PLG-04 (#29, #30, #31, #37) stay here. See
+   `CheckPoint-2026-09-30_1750.md`.
+
+2. **Doc backfill for v3.15.0/v3.16.0 + issue #28 surfaced (2026-09-11)**
    -- `RRSEO start` caught that this file, `projectStatus.md`, and the
    checkpoint archive had all drifted two releases behind actual repo
    state. Backfilled both releases and discovered issue #28 (stale-cache
    bug, filed 2026-08-15) had never been tracked in this repo's docs at
    all. See `CheckPoint-2026-09-11_1052.md`.
 
-2. **v3.16.0 SHIPPED** -- new `GET /elementor/{post_id}` read endpoint;
+3. **v3.16.0 SHIPPED** -- new `GET /elementor/{post_id}` read endpoint;
    closes the gap where nothing could read back a post's existing
    Elementor layout (only the write-side `dry_run` existed before). Built
    for workflow-portal's Location Page Builder workflow. 442 tests total.
-
-3. **v3.15.0 SHIPPED** -- new `create_page` typed action (draft-only,
-   hard-clamped `status`; rollback trashes rather than hard-deletes) via
-   the existing `/actions/*` engine, no new REST route needed.
 
 ---
 
 ## Next 3 Priorities
 
-1. **#28 (NEW, top priority)** -- `GET /get/{id}` returns stale SEO meta
+1. **#28 (top priority)** -- `GET /get/{id}` returns stale SEO meta
    immediately after a `POST /update` write, live on `tristate-hvac.com`.
    Root cause already well-narrowed by the reporter: the site runs
    LiteSpeed + Varnish in front of WP, and `rmb_update_meta()` only busts
@@ -38,10 +41,12 @@ last check -- see Current State)
    `rmb_cache_purge()` (`POST /cache/purge`) already has. Likely fix:
    have write handlers call that same purge routine (or purge just the
    affected URL) on every write. Not yet scoped as a version bump.
-2. **#18** -- `/capabilities` `since: null` backfill (low impact,
+2. **PLG-01..PLG-04 (#29, #30, #31, #37)** -- filed 2026-10-01, not yet
+   read in full or scoped. Order them against #28.
+3. **#18/#19** -- `/capabilities` `since: null` backfill (low impact,
    optional; use `git log -S` archaeology, not the issue's own
    confirmed-wrong version-guess table).
-3. **#19** -- `entity_clarity` README docs gap (low impact, docs-only).
+   `entity_clarity` README docs gap (#19) is docs-only.
 
 **[P3, still deferred] RankMath Reference Purge is NOT fully scoped** --
 go/no-go prerequisite ("confirm no active clients rely on the
@@ -60,10 +65,12 @@ defense-in-depth only, not a live bug.
 ## Current State
 
 **Git:**
-- Branch `main`, in sync with `origin/main` at `48bfba0`.
-- Working tree clean.
+- Branch `main`, base `98b73fd`; docs changes pending checkpoint commit.
 
-**Open GitHub issues (3):**
+**Open GitHub issues (7):**
+- **#29, #30, #31, #37** -- PLG-01..PLG-04 (heading source-awareness, graph-aware
+  schema audits, local URL lookup vs HTTP 404, reversible publish/draft
+  action). AUD-01..AUD-05 were moved to workflow-portal #50-#54.
 - **#28** -- `GET /get/{id}` stale-cache bug on write (see Next 3
   Priorities above) -- newly surfaced into this repo's docs, not new on
   GitHub (filed 2026-08-15)

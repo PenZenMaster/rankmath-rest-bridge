@@ -1,11 +1,33 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-09-11
+**Last Updated:** 2026-09-30
 **Current Version:** 3.16.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** 94ae5e0 -- chore: release v3.16.0 zip
-**Git Status:** clean
+**Last Commit:** 98b73fd -- docs: fix self-referential commit hash in STARTUP_CONTEXT.md
+**Git Status:** docs changes pending commit (checkpoint)
+
+---
+
+## 2026-09-30 Session -- Issue Scan + AUD Issues Moved to workflow-portal
+
+### Session Summary
+Scanned GitHub issues and found #29-#37 (filed 2026-10-01 UTC), none tracked in
+docs. PLG-01..PLG-04 (#29, #30, #31, #37) are plugin work and stay. AUD-01..
+AUD-05 (#32-#36) belong to the seo-site-audit consumer; recreated them in
+`PenZenMaster/workflow-portal` as #50-#54 and closed the originals as
+"not planned" with pointer comments. No plugin code changed. Detail in
+`docs/archive/checkpoints/CheckPoint-2026-09-30_1750.md`.
+
+### Known Issues / Blockers
+- #28 still top priority; #29, #30, #31, #37 newly tracked, not yet scoped.
+- #18, #19 unchanged; P3 RankMath Reference Purge still deferred.
+
+### Next
+Read and scope #29-#31 and #37 against #28, then fix #28, then #18/#19.
+
+### Backlog Movement
+- Added: #29, #30, #31, #37. Removed: #32-#36 (moved to workflow-portal #50-#54).
 
 ---
 
