@@ -1,11 +1,39 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-09-30
-**Current Version:** 3.20.0
+**Last Updated:** 2026-10-01
+**Current Version:** 3.20.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** e4f4b5e -- chore: release v3.20.0 zip
-**Git Status:** checkpoint docs pending commit
+**Last Commit:** c65c0de -- chore: release v3.20.1 zip
+**Git Status:** shutdown checkpoint pending commit
+
+---
+
+## 2026-10-01 Session -- Deploy + Live Verification, v3.20.1, Issues Closed
+
+### Session Summary
+Deployed to rankrocket.co (3.16.0 -> 3.20.1) and tristate-hvac.com (3.14.1 ->
+3.20.1) via `POST /self-update` (run by the user; no MCP tool). Verified #29,
+#31 and #28 live and closed them. Verification of #29 found that
+`<h2>&nbsp;</h2>` headings were not flagged empty; fixed and shipped as
+v3.20.1. Detail in `docs/archive/checkpoints/CheckPoint-2026-10-01_0035.md`.
+
+### Accomplishments
+- MCP access to rankrocket.co restored (remote `sites.json` + server restart).
+- #29, #31, #28 verified live and closed with comments.
+- v3.20.1 nbsp empty-heading fix (`rr_observe_normalize_text()`), 536 tests.
+
+### Known Issues / Blockers
+- #30 not verified live (needs direct REST `schema-audit?inspect_public=1`).
+- #37 blocked on the MCP's action enum (rankrocket-mcp repo).
+- trevoraspiranti / endlessenergyfitness: MCP `/status` "No route" unresolved.
+
+### Next
+Verify and close #30; update the MCP enum and test #37 on a staging page;
+diagnose the two unreachable sites; then #18/#19 and the P3 re-check.
+
+### Backlog Movement
+- Closed: #28, #29, #31. Fixed, awaiting verification: #30, #37.
 
 ---
 
