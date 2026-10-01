@@ -637,6 +637,77 @@ if ( ! function_exists( 'get_page_by_path' ) ) {
     }
 }
 
+// WP_REST_Response -- data holder with get_data()/get_status().
+if ( ! class_exists( 'WP_REST_Response' ) ) {
+    class WP_REST_Response {
+        private $data;
+        private $status;
+        public function __construct( $data = null, $status = 200 ) {
+            $this->data   = $data;
+            $this->status = $status;
+        }
+        public function get_data() {
+            return $this->data;
+        }
+        public function get_status() {
+            return $this->status;
+        }
+    }
+}
+
+if ( ! defined( 'MB_IN_BYTES' ) ) {
+    define( 'MB_IN_BYTES', 1048576 );
+}
+
+// Same-site frontend fetch (issue #29). Tests seed $GLOBALS['_test_http']:
+// a WP_Error to simulate a transport failure, or array( 'code', 'type',
+// 'body', 'url' ) for a response. Every request is recorded in
+// $GLOBALS['_test_http_requests'] so tests can assert whether a fetch ran.
+if ( ! function_exists( 'wp_safe_remote_get' ) ) {
+    function wp_safe_remote_get( $url, $args = array() ) {
+        $GLOBALS['_test_http_requests'][] = $url;
+        $seed = $GLOBALS['_test_http'] ?? new WP_Error( 'no_seed', 'no http seeded' );
+        if ( is_wp_error( $seed ) ) {
+            return $seed;
+        }
+        $inner      = new stdClass();
+        $inner->url = $seed['url'] ?? $url;
+        $wrapper    = new class( $inner ) {
+            private $inner;
+            public function __construct( $inner ) {
+                $this->inner = $inner;
+            }
+            public function get_response_object() {
+                return $this->inner;
+            }
+        };
+        return array(
+            'response'      => array( 'code' => $seed['code'] ),
+            'headers'       => array( 'content-type' => $seed['type'] ),
+            'body'          => $seed['body'],
+            'http_response' => $wrapper,
+        );
+    }
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+    function wp_remote_retrieve_response_code( $response ) {
+        return $response['response']['code'] ?? '';
+    }
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_header' ) ) {
+    function wp_remote_retrieve_header( $response, $header ) {
+        return $response['headers'][ $header ] ?? '';
+    }
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+    function wp_remote_retrieve_body( $response ) {
+        return $response['body'] ?? '';
+    }
+}
+
 // get_term -- no terms are seeded by default; handlers see "not a term".
 if ( ! function_exists( 'get_term' ) ) {
     function get_term( $term_id ) {

@@ -9,12 +9,14 @@
  * image ALT coverage, per-post schema graph, and llms.txt drift. None of these
  * endpoints mutate state and none perform external HTTP calls — external link
  * verification is the Audit Engine's job (see docs/plugin-v3-executor-spec.md).
+ * The one exception is heading-hierarchy, which can fetch the post's own
+ * public permalink (same host only, unauthenticated) to see the full document.
  *
  * Author(s):
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-06
- * Last Modified Date: 2026-08-13
+ * Last Modified Date: 2026-09-30
  *
  * Comments:
  * v1.00 - Initial release. Five GET /observe/* endpoints per the Shape B spec.
@@ -23,6 +25,9 @@
  *         presence) matching PSI's Agentic Browsing sub-audits. Extracted
  *         rr_observe_extract_schema_types() out of rmb_observe_schema_graph()
  *         so both endpoints share one graph-walk implementation.
+ * v1.02 - Source-aware heading observation (issue #29): scope/source/complete
+ *         metadata, document source via same-host loopback fetch, fragment
+ *         H1 absence reported as no_h1_in_fragment, inert-markup stripping.
  *
  * @package RankRocket_SEO
  */
@@ -111,14 +116,37 @@ function rr_observe_build_heading_tree( array $flat ): array {
 }
 
 /**
+ * Removes markup that can contain heading-like text but is not rendered
+ * content: comments, script, style, template and noscript blocks.
+ *
+ * Applied to full-document HTML before heading extraction so JSON blobs,
+ * inline templates and commented-out markup are not counted as headings.
+ *
+ * @param string $html Full-document HTML.
+ * @return string HTML with inert blocks removed.
+ */
+function rr_observe_strip_inert_markup( string $html ): string {
+	$html = (string) preg_replace( '/<!--.*?-->/s', '', $html );
+	return (string) preg_replace( '/<(script|style|template|noscript)\b[^>]*>.*?<\/\1\s*>/is', '', $html );
+}
+
+/**
  * Derives structural warnings from a flat heading list.
  *
- * Warning codes: no_h1, multiple_h1, skipped_level, empty_heading.
+ * Warning codes: no_h1, no_h1_in_fragment, multiple_h1, skipped_level,
+ * empty_heading.
  *
- * @param array<int, array{level: int, text: string}> $flat Flat heading list.
+ * Scope decides what a missing H1 means. In 'document' scope the headings
+ * are the whole page, so zero H1s (even with zero headings at all) is a real
+ * 'no_h1'. In 'fragment' scope the headings are only a slice of the page,
+ * so a missing H1 is reported as 'no_h1_in_fragment' and never as a claim
+ * about the whole page (issue #29).
+ *
+ * @param array<int, array{level: int, text: string}> $flat  Flat heading list.
+ * @param string                                      $scope 'fragment' | 'document'.
  * @return string[] Warning codes (deduplicated, ordered by first occurrence).
  */
-function rr_observe_heading_warnings( array $flat ): array {
+function rr_observe_heading_warnings( array $flat, string $scope = 'fragment' ): array {
 	$warnings = array();
 	$h1_count = 0;
 	$prev     = 0;
@@ -136,8 +164,12 @@ function rr_observe_heading_warnings( array $flat ): array {
 		$prev = $h['level'];
 	}
 
-	if ( 0 === $h1_count && ! empty( $flat ) ) {
-		$warnings[] = 'no_h1';
+	if ( 0 === $h1_count ) {
+		if ( 'document' === $scope ) {
+			$warnings[] = 'no_h1';
+		} elseif ( ! empty( $flat ) ) {
+			$warnings[] = 'no_h1_in_fragment';
+		}
 	}
 	if ( $h1_count > 1 ) {
 		$warnings[] = 'multiple_h1';
@@ -383,6 +415,53 @@ function rr_observe_check_breadcrumb_navigation( array $types ): array {
 	);
 }
 
+// ── Frontend document source (issue #29) ───────────────────────────────────
+
+/**
+ * Decides whether a same-site frontend fetch produced usable document HTML.
+ *
+ * Pure so it is unit-testable. Anything other than a 200 text/html response
+ * from the site's own host is an error: the caller must treat it as
+ * "document unavailable", never as "page has no headings".
+ *
+ * @param int    $status       HTTP status code (0 when the request failed).
+ * @param string $content_type Content-Type response header.
+ * @param string $final_host   Host of the final response URL (after redirects).
+ * @param string $home_host    Host of this site.
+ * @param string $body         Response body.
+ * @return array{html: string|null, error: string|null}
+ */
+function rr_observe_classify_frontend_response( int $status, string $content_type, string $final_host, string $home_host, string $body ): array {
+	if ( 0 === $status ) {
+		return array(
+			'html'  => null,
+			'error' => 'fetch_failed',
+		);
+	}
+	if ( '' !== $final_host && strtolower( $final_host ) !== strtolower( $home_host ) ) {
+		return array(
+			'html'  => null,
+			'error' => 'redirected_off_host',
+		);
+	}
+	if ( 200 !== $status ) {
+		return array(
+			'html'  => null,
+			'error' => 'http_status_' . $status,
+		);
+	}
+	if ( false === stripos( $content_type, 'html' ) || '' === trim( $body ) ) {
+		return array(
+			'html'  => null,
+			'error' => 'not_html',
+		);
+	}
+	return array(
+		'html'  => $body,
+		'error' => null,
+	);
+}
+
 // ── Link classification (pure) ────────────────────────────────────────────────
 
 /**
@@ -475,6 +554,64 @@ function rr_observe_rendered_content( WP_Post $post ): string {
 }
 
 /**
+ * Fetches a post's full public frontend document from this site's own host.
+ *
+ * Stored post content is only a fragment: theme templates, Elementor Theme
+ * Builder headers and page-title bars render headings outside it. This
+ * requests the post's own permalink so the observer sees what a visitor
+ * gets. The target URL comes from the database (never from request input),
+ * must be on the site's own host, is fetched unauthenticated (no cookies, no
+ * credentials) with a short timeout, a redirect cap and a response size cap,
+ * and any off-host redirect, non-200 or non-HTML result is an error.
+ *
+ * @param WP_Post $post Published post.
+ * @return array{html: string|null, error: string|null}
+ */
+function rr_observe_fetch_frontend_html( WP_Post $post ): array {
+	$permalink = get_permalink( $post );
+	$home_host = strtolower( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ) );
+	$host      = is_string( $permalink ) ? wp_parse_url( $permalink, PHP_URL_HOST ) : null;
+
+	if ( ! is_string( $host ) || strtolower( $host ) !== $home_host ) {
+		return array(
+			'html'  => null,
+			'error' => 'bad_permalink',
+		);
+	}
+
+	$response = wp_safe_remote_get(
+		$permalink,
+		array(
+			'timeout'             => 8,
+			'redirection'         => 3,
+			'limit_response_size' => 3 * MB_IN_BYTES,
+			'headers'             => array( 'Accept' => 'text/html' ),
+		)
+	);
+	if ( is_wp_error( $response ) ) {
+		return array(
+			'html'  => null,
+			'error' => 'fetch_failed',
+		);
+	}
+
+	$final_url  = '';
+	$http_class = isset( $response['http_response'] ) ? $response['http_response'] : null;
+	if ( is_object( $http_class ) && method_exists( $http_class, 'get_response_object' ) ) {
+		$final_url = (string) $http_class->get_response_object()->url;
+	}
+	$final_host = (string) wp_parse_url( $final_url, PHP_URL_HOST );
+
+	return rr_observe_classify_frontend_response(
+		(int) wp_remote_retrieve_response_code( $response ),
+		(string) wp_remote_retrieve_header( $response, 'content-type' ),
+		$final_host,
+		$home_host,
+		(string) wp_remote_retrieve_body( $response )
+	);
+}
+
+/**
  * Resolves an internal URL against WordPress content without HTTP.
  *
  * Returns 'ok' when the URL maps to a published post/page, 'not_public' when
@@ -543,6 +680,13 @@ function rr_observe_resolve_internal_url( string $url ): string {
 /**
  * Handles GET /observe/heading-hierarchy/{post_id} — exports the H1-H6 structure.
  *
+ * The `source` parameter picks the evidence: 'document' (the full public
+ * page, fetched from this site's own permalink), 'content' (the stored post
+ * content rendered through the_content only — a fragment), or 'auto' (the
+ * default: document, falling back to content when the fetch fails). The
+ * response always reports `scope`, `source` and `complete` so a consumer
+ * never has to infer whole-page meaning from the endpoint name (issue #29).
+ *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response|WP_Error
  */
@@ -553,15 +697,64 @@ function rmb_observe_heading_hierarchy( WP_REST_Request $request ) {
 		return new WP_Error( 'invalid_post', 'Published post not found', array( 'status' => 404 ) );
 	}
 
-	$flat = rr_observe_parse_headings( rr_observe_rendered_content( $post ) );
+	$source = (string) $request->get_param( 'source' );
+	if ( ! in_array( $source, array( 'auto', 'document', 'content' ), true ) ) {
+		$source = 'auto';
+	}
+
+	$html            = null;
+	$scope           = 'fragment';
+	$evidence        = 'post_content';
+	$fallback_reason = null;
+
+	if ( 'content' !== $source ) {
+		$fetched = rr_observe_fetch_frontend_html( $post );
+		if ( null !== $fetched['html'] ) {
+			$html     = rr_observe_strip_inert_markup( $fetched['html'] );
+			$scope    = 'document';
+			$evidence = 'frontend_html';
+		} else {
+			$fallback_reason = $fetched['error'];
+		}
+	}
+
+	if ( null === $html && 'document' !== $source ) {
+		$html = rr_observe_rendered_content( $post );
+	}
+
+	// Document requested but unavailable: report partial/unverified, never a
+	// confirmed absence of headings.
+	if ( null === $html ) {
+		return new WP_REST_Response(
+			array(
+				'post_id'       => $post_id,
+				'post_title'    => get_the_title( $post ),
+				'scope'         => 'document',
+				'source'        => 'frontend_html',
+				'complete'      => false,
+				'verification'  => 'unverified',
+				'error'         => $fallback_reason,
+				'heading_count' => null,
+				'warnings'      => array(),
+				'tree'          => array(),
+			),
+			200
+		);
+	}
+
+	$flat = rr_observe_parse_headings( $html );
 
 	return new WP_REST_Response(
 		array(
-			'post_id'       => $post_id,
-			'post_title'    => get_the_title( $post ),
-			'heading_count' => count( $flat ),
-			'warnings'      => rr_observe_heading_warnings( $flat ),
-			'tree'          => rr_observe_build_heading_tree( $flat ),
+			'post_id'         => $post_id,
+			'post_title'      => get_the_title( $post ),
+			'scope'           => $scope,
+			'source'          => $evidence,
+			'complete'        => 'document' === $scope,
+			'fallback_reason' => $fallback_reason,
+			'heading_count'   => count( $flat ),
+			'warnings'        => rr_observe_heading_warnings( $flat, $scope ),
+			'tree'            => rr_observe_build_heading_tree( $flat ),
 		),
 		200
 	);

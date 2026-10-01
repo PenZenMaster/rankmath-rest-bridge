@@ -1,5 +1,52 @@
 # Changelog
 
+## v3.18.0
+
+Fix for issue #29 -- `GET /observe/heading-hierarchy/{post_id}` reported
+`no_h1` for pages whose H1 is rendered by the theme or a template rather than
+stored in `post_content` (homepage 2604: 20 headings, `no_h1`, one real H1).
+
+### Added
+
+- `source` query parameter: `auto` (default), `document`, `content`.
+  `document` fetches the post's own public permalink (same host only,
+  unauthenticated, 8s timeout, 3 redirects, 3 MB cap) so headings from theme
+  templates and Elementor Theme Builder parts are seen. `content` is the
+  previous behaviour (stored content through `the_content` only). `auto`
+  tries `document` and falls back to `content`.
+- Response fields on every call: `scope` (`document` | `fragment`), `source`
+  (`frontend_html` | `post_content`), `complete` (true only for a full
+  document), `fallback_reason` (why `auto` fell back, else null).
+- `source=document` with an unavailable page returns `complete: false`,
+  `verification: "unverified"`, `error`, `heading_count: null` -- never an
+  empty success.
+- Full-document HTML is stripped of comments, `script`, `style`, `template`
+  and `noscript` blocks before heading extraction.
+- Pure helpers `rr_observe_strip_inert_markup()` and
+  `rr_observe_classify_frontend_response()`; WP-bound
+  `rr_observe_fetch_frontend_html()`.
+
+### Changed (compatibility transition)
+
+- `rr_observe_heading_warnings()` takes a scope. Fragment scope reports a
+  missing H1 as `no_h1_in_fragment` instead of `no_h1`. `no_h1` now means the
+  whole document has no H1, and also fires for a document with zero headings.
+  Consumers that keyed on `no_h1` from fragment output should handle
+  `no_h1_in_fragment` (and treat it as "unknown for the whole page").
+- This is the first observation endpoint that makes an HTTP request, and only
+  to the post's own permalink on this host. `source=content` makes none.
+
+### Notes
+
+- 17 new unit tests (461 -> 478) plus `WP_REST_Response`, `MB_IN_BYTES` and
+  `wp_safe_remote_get` stubs in `tests/bootstrap.php`.
+- Not changed: the fragment path still renders without establishing global
+  post/query context; the full-document path has no global state to leak.
+- Caches can serve the permalink fetch; the observed HTML is what a visitor
+  would be served. `wp_safe_remote_get` blocks private/loopback addresses, so
+  hosts whose public hostname resolves to a private IP fall back to `content`
+  with `fallback_reason: fetch_failed`.
+
 ## v3.17.0
 
 Fix for issue #31 -- `GET /observe/broken-links` reported local URL lookup

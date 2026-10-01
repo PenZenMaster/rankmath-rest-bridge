@@ -692,11 +692,13 @@ Not a plugin bug; nothing to fix on this side. Confirmed correct
 ### Observation (v2.18.0 — v3.0 Bite 1)
 
 Read-only signals for the external Audit Engine. All require `manage_options`;
-none mutate state; the plugin performs no external HTTP calls.
+none mutate state; the plugin performs no external HTTP calls (the only request
+it can make is `heading-hierarchy` fetching the post's own permalink on this host).
 
 ```bash
 # Heading structure as a nested tree, with warnings (no_h1, multiple_h1, ...)
-curl "$BASE/observe/heading-hierarchy/123" -u "$CRED"
+# source=auto (default) | document | content -- see note below
+curl "$BASE/observe/heading-hierarchy/123?source=document" -u "$CRED"
 
 # Link inventory: internal not_found/unverified + external unchecked
 curl "$BASE/observe/broken-links?page=1&per_page=20&post_type=post" -u "$CRED"
@@ -713,6 +715,18 @@ curl "$BASE/observe/llms-diff" -u "$CRED"
 # Agentic Browsing diagnostics (v3.10.0) — 3 static-DOM checks, score + detail
 curl "$BASE/observe/agentic-browsing/123" -u "$CRED"
 ```
+
+**`GET /observe/heading-hierarchy/{post_id}` scope (v3.18.0)** — stored post
+content is only a fragment of the page: theme templates and Elementor Theme
+Builder parts render headings (often the H1) outside it. `source=document`
+fetches the post's own public permalink (same host, unauthenticated, bounded)
+and observes the whole page; `source=content` observes the stored fragment
+only; `source=auto` (default) tries `document` and falls back to `content`.
+Every response reports `scope`, `source`, `complete` and `fallback_reason`.
+`no_h1` is only emitted for a full document (including one with zero
+headings); a fragment without an H1 reports `no_h1_in_fragment`. If the page
+cannot be fetched with `source=document`, the response is `complete: false`,
+`verification: "unverified"`, `heading_count: null` — never an empty success.
 
 Every link record carries `status_code: null`, `checked: false` and
 `verification: "unverified"` — the plugin makes no HTTP requests, so HTTP

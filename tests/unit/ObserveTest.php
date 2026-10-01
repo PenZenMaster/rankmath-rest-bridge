@@ -93,8 +93,9 @@ class ObserveTest extends TestCase {
 	// ── rr_observe_heading_warnings() ─────────────────────────────────────────
 
 	public function test_warnings_flags_missing_h1(): void {
+		// Document scope: the headings are the whole page, so this is a real no_h1.
 		$flat = array( array( 'level' => 2, 'text' => 'Only H2' ) );
-		$this->assertContains( 'no_h1', rr_observe_heading_warnings( $flat ) );
+		$this->assertContains( 'no_h1', rr_observe_heading_warnings( $flat, 'document' ) );
 	}
 
 	public function test_warnings_flags_multiple_h1_and_skipped_level(): void {
@@ -118,7 +119,7 @@ class ObserveTest extends TestCase {
 	}
 
 	public function test_warnings_empty_for_no_headings_at_all(): void {
-		// A post with zero headings gets no no_h1 warning — nothing to structure.
+		// A fragment with zero headings gets no warning -- nothing to structure.
 		$this->assertSame( array(), rr_observe_heading_warnings( array() ) );
 	}
 
@@ -405,6 +406,9 @@ class ObserveTest extends TestCase {
 		$GLOBALS['_test_posts']          = array();
 		$GLOBALS['_test_url_to_postid']  = array();
 		$GLOBALS['_test_pages_by_path']  = array();
+		$GLOBALS['_test_permalink']      = array();
+		$GLOBALS['_test_http']           = new WP_Error( 'no_seed', 'no http seeded' );
+		$GLOBALS['_test_http_requests']  = array();
 	}
 
 	private function seed_post( int $id, string $status ): WP_Post {
@@ -451,5 +455,214 @@ class ObserveTest extends TestCase {
 
 	public function test_resolve_archive_shaped_url_is_unverified(): void {
 		$this->assertSame( 'unverified', rr_observe_resolve_internal_url( 'https://example.test/category/news/' ) );
+	}
+
+	// ── Source-aware heading observation (issue #29) ──────────────────────────
+
+	public function test_document_scope_reports_no_h1_even_with_zero_headings(): void {
+		$this->assertContains( 'no_h1', rr_observe_heading_warnings( array(), 'document' ) );
+	}
+
+	public function test_document_scope_with_a_single_h1_has_no_h1_warning(): void {
+		$flat = array(
+			array( 'level' => 1, 'text' => 'Title' ),
+			array( 'level' => 2, 'text' => 'Section' ),
+		);
+		$this->assertNotContains( 'no_h1', rr_observe_heading_warnings( $flat, 'document' ) );
+		$this->assertNotContains( 'no_h1_in_fragment', rr_observe_heading_warnings( $flat, 'document' ) );
+	}
+
+	public function test_fragment_scope_never_claims_whole_page_h1_absence(): void {
+		$flat     = array( array( 'level' => 2, 'text' => 'Only H2' ) );
+		$warnings = rr_observe_heading_warnings( $flat, 'fragment' );
+
+		$this->assertContains( 'no_h1_in_fragment', $warnings );
+		$this->assertNotContains( 'no_h1', $warnings );
+	}
+
+	public function test_fragment_scope_with_no_headings_has_no_warning(): void {
+		$this->assertSame( array(), rr_observe_heading_warnings( array(), 'fragment' ) );
+	}
+
+	public function test_empty_headings_remain_discoverable_in_document_scope(): void {
+		$html  = '<h1>Title</h1><h2></h2><h2>  </h2>';
+		$flat  = rr_observe_parse_headings( $html );
+		$warns = rr_observe_heading_warnings( $flat, 'document' );
+
+		$this->assertContains( 'empty_heading', $warns );
+		$this->assertNotContains( 'no_h1', $warns );
+	}
+
+	public function test_strip_inert_markup_ignores_headings_in_scripts_styles_templates_and_comments(): void {
+		$html = '<h1>Real</h1>'
+			. '<script type="application/ld+json">{"x":"<h1>Fake A</h1>"}</script>'
+			. '<style>/* <h1>Fake B</h1> */</style>'
+			. '<template><h1>Fake C</h1></template>'
+			. '<noscript><h1>Fake D</h1></noscript>'
+			. '<!-- <h1>Fake E</h1> -->';
+		$flat = rr_observe_parse_headings( rr_observe_strip_inert_markup( $html ) );
+
+		$this->assertCount( 1, $flat );
+		$this->assertSame( 'Real', $flat[0]['text'] );
+	}
+
+	public function test_classify_frontend_response_accepts_same_host_html(): void {
+		$result = rr_observe_classify_frontend_response( 200, 'text/html; charset=UTF-8', 'example.test', 'example.test', '<h1>x</h1>' );
+
+		$this->assertSame( '<h1>x</h1>', $result['html'] );
+		$this->assertNull( $result['error'] );
+	}
+
+	public function test_classify_frontend_response_rejects_failures_without_returning_html(): void {
+		$cases = array(
+			'fetch_failed'        => array( 0, 'text/html', 'example.test', '<h1>x</h1>' ),
+			'redirected_off_host' => array( 200, 'text/html', 'evil.test', '<h1>x</h1>' ),
+			'http_status_403'     => array( 403, 'text/html', 'example.test', '<h1>x</h1>' ),
+			'http_status_503'     => array( 503, 'text/html', 'example.test', '<h1>x</h1>' ),
+			'not_html'            => array( 200, 'application/json', 'example.test', '{"a":1}' ),
+		);
+		foreach ( $cases as $expected => $c ) {
+			$result = rr_observe_classify_frontend_response( $c[0], $c[1], $c[2], 'example.test', $c[3] );
+			$this->assertNull( $result['html'], $expected );
+			$this->assertSame( $expected, $result['error'] );
+		}
+	}
+
+	public function test_classify_frontend_response_rejects_empty_body(): void {
+		$result = rr_observe_classify_frontend_response( 200, 'text/html', 'example.test', 'example.test', '   ' );
+		$this->assertSame( 'not_html', $result['error'] );
+	}
+
+	private function seed_heading_post( int $id, string $content ): WP_Post {
+		$post               = new WP_Post();
+		$post->ID           = $id;
+		$post->post_status  = 'publish';
+		$post->post_title   = 'Home';
+		$post->post_content = $content;
+		$GLOBALS['_test_posts'][ $id ] = $post;
+		$GLOBALS['_test_permalink'][ $id ] = 'https://example.test/home/';
+		return $post;
+	}
+
+	private function observe_headings( int $id, string $source = 'auto' ): array {
+		$response = rmb_observe_heading_hierarchy(
+			new WP_REST_Request(
+				array(
+					'post_id' => $id,
+					'source'  => $source,
+				)
+			)
+		);
+		return $response->get_data();
+	}
+
+	public function test_handler_document_source_sees_theme_h1_outside_post_content(): void {
+		// Issue #29: the H1 lives in the theme/template, not in post_content.
+		$this->seed_heading_post( 2604, '<h2>Services</h2><h2>About</h2>' );
+		$GLOBALS['_test_http'] = array(
+			'code' => 200,
+			'type' => 'text/html',
+			'url'  => 'https://example.test/home/',
+			'body' => '<html><body><h1>SEO Agency</h1><h2>Services</h2><h2>About</h2></body></html>',
+		);
+
+		$data = $this->observe_headings( 2604 );
+
+		$this->assertSame( 'document', $data['scope'] );
+		$this->assertSame( 'frontend_html', $data['source'] );
+		$this->assertTrue( $data['complete'] );
+		$this->assertNull( $data['fallback_reason'] );
+		$this->assertSame( 3, $data['heading_count'] );
+		$this->assertNotContains( 'no_h1', $data['warnings'] );
+		$this->assertSame( array( 'https://example.test/home/' ), $GLOBALS['_test_http_requests'] );
+	}
+
+	public function test_handler_document_source_detects_a_genuinely_h1_free_page(): void {
+		$this->seed_heading_post( 11, '<p>No headings</p>' );
+		$GLOBALS['_test_http'] = array(
+			'code' => 200,
+			'type' => 'text/html',
+			'url'  => 'https://example.test/home/',
+			'body' => '<html><body><p>nothing</p></body></html>',
+		);
+
+		$data = $this->observe_headings( 11 );
+
+		$this->assertSame( 0, $data['heading_count'] );
+		$this->assertContains( 'no_h1', $data['warnings'] );
+	}
+
+	public function test_handler_auto_falls_back_to_fragment_and_says_so(): void {
+		$this->seed_heading_post( 12, '<h2>Services</h2>' );
+		$GLOBALS['_test_http'] = new WP_Error( 'http_request_failed', 'timeout' );
+
+		$data = $this->observe_headings( 12 );
+
+		$this->assertSame( 'fragment', $data['scope'] );
+		$this->assertSame( 'post_content', $data['source'] );
+		$this->assertFalse( $data['complete'] );
+		$this->assertSame( 'fetch_failed', $data['fallback_reason'] );
+		$this->assertContains( 'no_h1_in_fragment', $data['warnings'] );
+		$this->assertNotContains( 'no_h1', $data['warnings'] );
+	}
+
+	public function test_handler_document_source_failure_is_unverified_not_empty(): void {
+		$this->seed_heading_post( 13, '<h1>Has H1</h1>' );
+		$GLOBALS['_test_http'] = array(
+			'code' => 503,
+			'type' => 'text/html',
+			'url'  => 'https://example.test/home/',
+			'body' => 'challenge',
+		);
+
+		$data = $this->observe_headings( 13, 'document' );
+
+		$this->assertFalse( $data['complete'] );
+		$this->assertSame( 'unverified', $data['verification'] );
+		$this->assertSame( 'http_status_503', $data['error'] );
+		$this->assertNull( $data['heading_count'] );
+		$this->assertSame( array(), $data['warnings'] );
+	}
+
+	public function test_handler_content_source_never_fetches(): void {
+		$this->seed_heading_post( 14, '<h1>Title</h1><h2>Section</h2>' );
+
+		$data = $this->observe_headings( 14, 'content' );
+
+		$this->assertSame( 'fragment', $data['scope'] );
+		$this->assertFalse( $data['complete'] );
+		$this->assertSame( array(), $GLOBALS['_test_http_requests'] );
+	}
+
+	public function test_handler_rejects_off_host_permalink_without_fetching(): void {
+		$this->seed_heading_post( 15, '<h2>x</h2>' );
+		$GLOBALS['_test_permalink'][15] = 'https://evil.test/home/';
+
+		$data = $this->observe_headings( 15 );
+
+		$this->assertSame( 'bad_permalink', $data['fallback_reason'] );
+		$this->assertSame( array(), $GLOBALS['_test_http_requests'] );
+	}
+
+	public function test_handler_sequential_posts_do_not_leak_state(): void {
+		$this->seed_heading_post( 16, '<h2>A</h2>' );
+		$this->seed_heading_post( 17, '<h1>B</h1>' );
+		$GLOBALS['_test_http'] = new WP_Error( 'http_request_failed', 'timeout' );
+
+		$first  = $this->observe_headings( 16 );
+		$second = $this->observe_headings( 17 );
+
+		$this->assertContains( 'no_h1_in_fragment', $first['warnings'] );
+		$this->assertSame( array(), $second['warnings'] );
+		$this->assertSame( 17, $second['post_id'] );
+	}
+
+	public function test_handler_unpublished_post_is_not_found(): void {
+		$post              = $this->seed_heading_post( 18, '<h1>x</h1>' );
+		$post->post_status = 'draft';
+
+		$result = rmb_observe_heading_hierarchy( new WP_REST_Request( array( 'post_id' => 18 ) ) );
+
+		$this->assertTrue( is_wp_error( $result ) );
 	}
 }
