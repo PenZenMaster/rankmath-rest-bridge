@@ -16,7 +16,7 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-06
- * Last Modified Date: 2026-09-30
+ * Last Modified Date: 2026-10-01
  *
  * Comments:
  * v1.00 - Initial release. Five GET /observe/* endpoints per the Shape B spec.
@@ -28,6 +28,8 @@
  * v1.02 - Source-aware heading observation (issue #29): scope/source/complete
  *         metadata, document source via same-host loopback fetch, fragment
  *         H1 absence reported as no_h1_in_fragment, inert-markup stripping.
+ * v1.03 - rr_observe_normalize_text(): &nbsp;/Unicode/zero-width-only headings
+ *         and links count as empty (empty_heading was missed for &nbsp;).
  *
  * @package RankRocket_SEO
  */
@@ -37,6 +39,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // ── Pure helpers (unit-testable without WordPress) ────────────────────────────
+
+/**
+ * Normalizes rendered text for emptiness checks and display.
+ *
+ * Decodes entities, then collapses every kind of space -- including the
+ * non-breaking space (&nbsp; / U+00A0), other Unicode space separators and
+ * zero-width characters that PHP's trim() and \s leave alone -- into single
+ * ASCII spaces and trims the result. A heading or link whose only content is
+ * &nbsp; is therefore empty, as it is to a visitor.
+ *
+ * @param string $html_fragment Inner HTML of a heading or link.
+ * @return string Normalized plain text.
+ */
+function rr_observe_normalize_text( string $html_fragment ): string {
+	$text = html_entity_decode( wp_strip_all_tags( $html_fragment ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+	// \p{Z} = Unicode space/line/paragraph separators (includes U+00A0);
+	// the explicit class adds zero-width space/joiners and the BOM.
+	$collapsed = preg_replace( '/[\s\p{Z}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]+/u', ' ', $text );
+	if ( null === $collapsed ) {
+		// Invalid UTF-8: fall back to ASCII whitespace handling.
+		$collapsed = preg_replace( '/\s+/', ' ', $text );
+	}
+	return trim( (string) $collapsed );
+}
 
 /**
  * Extracts H1-H6 headings from rendered HTML as a flat ordered list.
@@ -53,8 +79,7 @@ function rr_observe_parse_headings( string $html ): array {
 		return $headings;
 	}
 	foreach ( $matches as $m ) {
-		$text = html_entity_decode( wp_strip_all_tags( $m[2] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		$text = trim( preg_replace( '/\s+/', ' ', $text ) );
+		$text = rr_observe_normalize_text( $m[2] );
 
 		$headings[] = array(
 			'level' => (int) $m[1],
@@ -203,10 +228,9 @@ function rr_observe_extract_links( string $html ): array {
 		if ( preg_match( '/^(mailto|tel|javascript|data):/i', $href ) ) {
 			continue;
 		}
-		$text    = html_entity_decode( wp_strip_all_tags( $m[3] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		$links[] = array(
 			'url'         => $href,
-			'anchor_text' => trim( preg_replace( '/\s+/', ' ', $text ) ),
+			'anchor_text' => rr_observe_normalize_text( $m[3] ),
 		);
 	}
 	return $links;
@@ -340,8 +364,7 @@ function rr_observe_check_primary_action( string $html ): array {
 	$vague = array( 'click here', 'here', 'more', 'read more', 'learn more', 'submit', 'go' );
 	if ( preg_match_all( '/<a\b[^>]*>(.*?)<\/a\s*>/is', $html, $matches ) ) {
 		foreach ( $matches[1] as $raw_text ) {
-			$text = html_entity_decode( wp_strip_all_tags( $raw_text ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-			$text = trim( preg_replace( '/\s+/', ' ', $text ) );
+			$text = rr_observe_normalize_text( $raw_text );
 			if ( '' === $text || in_array( strtolower( $text ), $vague, true ) ) {
 				continue;
 			}

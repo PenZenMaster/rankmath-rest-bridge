@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.20.1
+
+Fix: `empty_heading` was not raised for headings whose only content is a
+non-breaking space. Found verifying v3.18.0 live on rankrocket.co: homepage
+2604 has two `<h2>&nbsp;</h2>` headings that were reported with the text `" "`
+and no warning.
+
+### Fixed
+
+- New `rr_observe_normalize_text()` decodes entities and collapses every kind
+  of space -- `&nbsp;` / U+00A0, other Unicode space separators (`\p{Z}`) and
+  zero-width characters (U+200B-U+200D, U+2060, U+FEFF) -- into single ASCII
+  spaces before trimming. PHP's `trim()` and `\s` (without `/u`) leave those
+  alone, so such headings were treated as non-empty.
+- Used for heading text, link anchor text (`GET /observe/broken-links`) and
+  the agentic-browsing primary-action check, so the three stay consistent.
+- Invalid UTF-8 falls back to plain ASCII whitespace collapsing instead of
+  dropping the text.
+
+### Notes
+
+- Visible text with a non-breaking space between words (`Local&nbsp;SEO`)
+  now reports as `Local SEO` (a normal space).
+- 8 new unit tests (528 -> 536); six fail against the previous behavior.
+
 ## v3.20.0
 
 New `set_post_status` typed action (issue #37). An audit workflow that needed

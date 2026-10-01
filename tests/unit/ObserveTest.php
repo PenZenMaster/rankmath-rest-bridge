@@ -665,4 +665,65 @@ class ObserveTest extends TestCase {
 
 		$this->assertTrue( is_wp_error( $result ) );
 	}
+
+	// ── Unicode-space-only text counts as empty (v3.20.1) ─────────────────────
+
+	public function test_normalize_text_treats_nbsp_and_unicode_spaces_as_whitespace(): void {
+		$this->assertSame( '', rr_observe_normalize_text( '&nbsp;' ) );
+		$this->assertSame( '', rr_observe_normalize_text( "\xC2\xA0" ) );
+		$this->assertSame( '', rr_observe_normalize_text( "\xE2\x80\x83" ) ); // Em space.
+		$this->assertSame( '', rr_observe_normalize_text( "\xE2\x80\x8B\xEF\xBB\xBF" ) ); // Zero-width space + BOM.
+		$this->assertSame( '', rr_observe_normalize_text( ' &nbsp; <br> &#160; ' ) );
+		$this->assertSame( '', rr_observe_normalize_text( '' ) );
+	}
+
+	public function test_normalize_text_keeps_words_separated_and_collapses_runs(): void {
+		$this->assertSame( 'Fish Chips', rr_observe_normalize_text( 'Fish&nbsp;Chips' ) );
+		$this->assertSame( 'a b c', rr_observe_normalize_text( "a \xC2\xA0\t\n b&nbsp;&nbsp;c" ) );
+		$this->assertSame( 'Business in a Box', rr_observe_normalize_text( '<em>Business</em>&nbsp;in a Box' ) );
+	}
+
+	public function test_normalize_text_falls_back_on_invalid_utf8_without_losing_text(): void {
+		$out = rr_observe_normalize_text( "text \xFF  more" );
+
+		$this->assertStringStartsWith( 'text', $out );
+		$this->assertStringEndsWith( 'more', $out );
+		$this->assertStringNotContainsString( '  ', $out );
+	}
+
+	public function test_nbsp_only_headings_are_empty_and_flagged(): void {
+		$html  = '<h1>Title</h1><h2>&nbsp;</h2><h2> </h2><h2>Real</h2><h2>&#160;</h2>';
+		$flat  = rr_observe_parse_headings( $html );
+		$texts = array_column( $flat, 'text' );
+
+		$this->assertSame( array( 'Title', '', '', 'Real', '' ), $texts );
+		$this->assertContains( 'empty_heading', rr_observe_heading_warnings( $flat, 'document' ) );
+	}
+
+	public function test_literal_nbsp_character_heading_is_empty(): void {
+		$flat = rr_observe_parse_headings( "<h1>Title</h1><h2>\xC2\xA0</h2>" );
+
+		$this->assertSame( '', $flat[1]['text'] );
+		$this->assertContains( 'empty_heading', rr_observe_heading_warnings( $flat, 'document' ) );
+	}
+
+	public function test_heading_with_real_text_and_nbsp_is_not_empty(): void {
+		$flat = rr_observe_parse_headings( '<h1>Title</h1><h2>Local&nbsp;SEO</h2>' );
+
+		$this->assertSame( 'Local SEO', $flat[1]['text'] );
+		$this->assertNotContains( 'empty_heading', rr_observe_heading_warnings( $flat, 'document' ) );
+	}
+
+	public function test_extract_links_normalizes_nbsp_anchor_text(): void {
+		$links = rr_observe_extract_links( '<a href="/a">&nbsp;</a><a href="/b">Book&nbsp;now</a>' );
+
+		$this->assertSame( '', $links[0]['anchor_text'] );
+		$this->assertSame( 'Book now', $links[1]['anchor_text'] );
+	}
+
+	public function test_primary_action_ignores_nbsp_only_links(): void {
+		$check = rr_observe_check_primary_action( '<p>text</p><a href="/x">&nbsp;</a>' );
+
+		$this->assertSame( 'fail', $check['status'] );
+	}
 }
