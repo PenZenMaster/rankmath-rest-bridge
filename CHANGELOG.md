@@ -1,5 +1,43 @@
 # Changelog
 
+## v3.17.0
+
+Fix for issue #31 -- `GET /observe/broken-links` reported local URL lookup
+misses as verified HTTP 404s.
+
+### Changed (compatibility transition)
+
+- Internal link records no longer carry `status_code: 404` / `checked: true`.
+  The endpoint makes no HTTP request, so every internal record now has
+  `status_code: null`, `checked: false` and `verification: "unverified"`.
+  `resolution` still carries the local lookup result (`not_found`,
+  `unverified`, ...). External records gain `verification: "unverified"`.
+- Consumers that treated `status_code == 404` as a confirmed broken link must
+  now HTTP-verify `resolution: "not_found"` candidates themselves (the plugin
+  still never calls out). The response `note` states this.
+
+### Added
+
+- New resolution `redirect_registered`: a local miss that matches an enabled
+  plugin redirect rule is reported with `redirect_target` instead of as a
+  broken-link candidate. Redirects done by WordPress itself, the host, or a
+  CDN are outside the registry and cannot be detected locally.
+- New resolution `not_public`: the URL maps to a post that is a draft,
+  private, pending, future or trashed, so it is not publicly viewable.
+- Response `summary` object: `occurrences` and `unique_urls`, so a consumer
+  can verify each destination once while keeping every source reference.
+- Pure helpers `rr_observe_status_to_resolution()`,
+  `rr_observe_internal_link_item()`, `rr_observe_link_summary()`.
+
+### Fixed
+
+- A root-path URL with a query string (`/?p=ID`, `/?page_id=ID`) was treated
+  as the site root and always reported healthy; it is now looked up, so a
+  draft target is no longer reported as a working link.
+- A draft page matched by `get_page_by_path()` is no longer silently skipped.
+- 15 new unit tests (446 -> 461) plus `url_to_postid`/`get_page_by_path`/
+  `OBJECT` stubs in `tests/bootstrap.php`.
+
 ## v3.16.1
 
 Fix for issue #28 -- `GET /get/{id}` returned stale SEO meta right after a

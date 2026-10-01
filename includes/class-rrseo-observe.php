@@ -383,6 +383,85 @@ function rr_observe_check_breadcrumb_navigation( array $types ): array {
 	);
 }
 
+// ── Link classification (pure) ────────────────────────────────────────────────
+
+/**
+ * Maps a post status to a local link-resolution state.
+ *
+ * Only publicly viewable statuses count as healthy; a draft/private target
+ * must not be reported as a working link just because its post ID resolves.
+ *
+ * @param string $post_status WordPress post status.
+ * @return string 'ok' | 'not_public'
+ */
+function rr_observe_status_to_resolution( string $post_status ): string {
+	return in_array( $post_status, array( 'publish', 'inherit' ), true ) ? 'ok' : 'not_public';
+}
+
+/**
+ * Builds a link-inventory record for an internal link, or null if healthy.
+ *
+ * Local resolution never measures HTTP, so every record returned here has
+ * status_code null, checked false and verification 'unverified' (issue #31).
+ * A local miss that matches an enabled plugin redirect rule is reported as
+ * 'redirect_registered' with the rule's target rather than as a candidate
+ * broken link.
+ *
+ * @param array  $link       Link as returned by rr_observe_extract_links().
+ * @param string $url        Absolute internal URL.
+ * @param int    $source_id  Post ID containing the link.
+ * @param string $resolution Result of rr_observe_resolve_internal_url().
+ * @param array  $redirects  Redirect rules, as from rr_redirect_list().
+ * @return array|null Inventory record, or null when the link resolves publicly.
+ */
+function rr_observe_internal_link_item( array $link, string $url, int $source_id, string $resolution, array $redirects ): ?array {
+	if ( 'ok' === $resolution ) {
+		return null;
+	}
+
+	$item = array(
+		'url'            => $url,
+		'status_code'    => null,
+		'anchor_text'    => $link['anchor_text'],
+		'source_post_id' => $source_id,
+		'scope'          => 'internal',
+		'resolution'     => $resolution,
+		'checked'        => false,
+		'verification'   => 'unverified',
+	);
+
+	if ( 'not_found' === $resolution ) {
+		$rule = rr_redirect_match( rr_redirect_normalize_path( $url ), $redirects );
+		if ( null !== $rule ) {
+			$item['resolution']      = 'redirect_registered';
+			$item['redirect_target'] = (string) $rule['target'];
+		}
+	}
+
+	return $item;
+}
+
+/**
+ * Summarizes a link inventory as occurrence and unique-destination counts.
+ *
+ * Several occurrences of one target are one destination to verify; both
+ * counts are kept so a consumer can measure each URL once and still report
+ * every source reference.
+ *
+ * @param array $items Inventory records.
+ * @return array{occurrences:int, unique_urls:int}
+ */
+function rr_observe_link_summary( array $items ): array {
+	$urls = array();
+	foreach ( $items as $item ) {
+		$urls[ (string) $item['url'] ] = true;
+	}
+	return array(
+		'occurrences' => count( $items ),
+		'unique_urls' => count( $urls ),
+	);
+}
+
 // ── WordPress-bound helpers ───────────────────────────────────────────────────
 
 /**
@@ -398,31 +477,39 @@ function rr_observe_rendered_content( WP_Post $post ): string {
 /**
  * Resolves an internal URL against WordPress content without HTTP.
  *
- * Returns 'ok' when the URL maps to a published post/page, 'unverified' for
- * archive-shaped URLs this helper cannot resolve locally (term/author/date
- * archives), and 'not_found' otherwise.
+ * Returns 'ok' when the URL maps to a published post/page, 'not_public' when
+ * it maps to a post that exists but is not publicly viewable (draft, private,
+ * pending, trash), 'unverified' for archive-shaped URLs this helper cannot
+ * resolve locally (term/author/date archives), and 'not_found' otherwise.
+ *
+ * A 'not_found' result is a local lookup miss only. It is NOT a measured HTTP
+ * status: WordPress, the host, a CDN, or a third-party plugin can still
+ * redirect or serve the URL (issue #31).
  *
  * @param string $url Absolute internal URL.
- * @return string 'ok' | 'not_found' | 'unverified'
+ * @return string 'ok' | 'not_public' | 'not_found' | 'unverified'
  */
 function rr_observe_resolve_internal_url( string $url ): string {
 	$path = wp_parse_url( $url, PHP_URL_PATH );
 	$path = is_string( $path ) ? $path : '/';
 
-	// Site root always resolves.
-	if ( '' === trim( $path, '/' ) ) {
+	// A bare site root always resolves. A root path carrying a query string
+	// (?p=ID, ?page_id=ID) can still target a specific post, so look it up.
+	$is_root = '' === trim( $path, '/' );
+	$post_id = ( $is_root && '' === (string) wp_parse_url( $url, PHP_URL_QUERY ) ) ? 0 : url_to_postid( $url );
+	if ( $is_root && $post_id <= 0 ) {
 		return 'ok';
 	}
 
-	$post_id = url_to_postid( $url );
 	if ( $post_id > 0 ) {
-		return 'ok';
+		$resolved = get_post( $post_id );
+		return $resolved ? rr_observe_status_to_resolution( (string) $resolved->post_status ) : 'not_found';
 	}
 
 	// Hierarchical page paths that url_to_postid() sometimes misses.
 	$page = get_page_by_path( trim( $path, '/' ), OBJECT, apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ) );
-	if ( $page && 'publish' === $page->post_status ) {
-		return 'ok';
+	if ( $page ) {
+		return rr_observe_status_to_resolution( (string) $page->post_status );
 	}
 
 	// Archive-shaped URLs (term, author, date, feed) cannot be resolved to a
@@ -483,9 +570,11 @@ function rmb_observe_heading_hierarchy( WP_REST_Request $request ) {
 /**
  * Handles GET /observe/broken-links — paginated internal/external link inventory.
  *
- * Internal links are resolved against WordPress content locally (no HTTP).
- * External links are returned with status_code null and checked=false — the
- * Audit Engine performs external verification; the plugin never calls out.
+ * Internal links are resolved against WordPress content locally (no HTTP), so
+ * a lookup miss is an unverified candidate with status_code null and
+ * checked=false, never a measured 404 (issue #31). External links are
+ * returned the same way — the Audit Engine performs HTTP verification; the
+ * plugin never calls out.
  *
  * @param WP_REST_Request $request REST request object.
  * @return WP_REST_Response
@@ -515,6 +604,7 @@ function rmb_observe_broken_links( WP_REST_Request $request ): WP_REST_Response 
 
 	$home_host = strtolower( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ) );
 	$items     = array();
+	$redirects = rr_redirect_list();
 
 	foreach ( $query->posts as $source_id ) {
 		$post = get_post( $source_id );
@@ -533,19 +623,11 @@ function rmb_observe_broken_links( WP_REST_Request $request ): WP_REST_Response 
 			}
 
 			if ( strtolower( $host ) === $home_host ) {
-				$resolution = rr_observe_resolve_internal_url( $url );
-				if ( 'ok' === $resolution ) {
-					continue; // Healthy internal link — not part of the problem inventory.
+				// Healthy internal links yield null and stay out of the inventory.
+				$item = rr_observe_internal_link_item( $link, $url, $source_id, rr_observe_resolve_internal_url( $url ), $redirects );
+				if ( null !== $item ) {
+					$items[] = $item;
 				}
-				$items[] = array(
-					'url'            => $url,
-					'status_code'    => 'not_found' === $resolution ? 404 : null,
-					'anchor_text'    => $link['anchor_text'],
-					'source_post_id' => $source_id,
-					'scope'          => 'internal',
-					'resolution'     => $resolution,
-					'checked'        => 'not_found' === $resolution,
-				);
 			} elseif ( $include_external ) {
 				$items[] = array(
 					'url'            => $url,
@@ -555,6 +637,7 @@ function rmb_observe_broken_links( WP_REST_Request $request ): WP_REST_Response 
 					'scope'          => 'external',
 					'resolution'     => 'external_unchecked',
 					'checked'        => false,
+					'verification'   => 'unverified',
 				);
 			}
 		}
@@ -566,7 +649,10 @@ function rmb_observe_broken_links( WP_REST_Request $request ): WP_REST_Response 
 			'per_page'    => $per_page,
 			'total_posts' => (int) $query->found_posts,
 			'total_pages' => (int) $query->max_num_pages,
-			'note'        => 'External links are unchecked by design; the Audit Engine performs external verification.',
+			'note'        => 'No HTTP requests are made. status_code is always null and checked always false: ' .
+				'resolution reflects a local WordPress lookup only, so not_found is a candidate to verify, ' .
+				'not a confirmed 404. The Audit Engine performs HTTP verification.',
+			'summary'     => rr_observe_link_summary( $items ),
 			'links'       => $items,
 		),
 		200

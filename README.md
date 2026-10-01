@@ -714,8 +714,16 @@ curl "$BASE/observe/llms-diff" -u "$CRED"
 curl "$BASE/observe/agentic-browsing/123" -u "$CRED"
 ```
 
-External links are returned with `status_code: null` and `checked: false` —
-external verification belongs to the Audit Engine, not the plugin.
+Every link record carries `status_code: null`, `checked: false` and
+`verification: "unverified"` — the plugin makes no HTTP requests, so HTTP
+verification belongs to the Audit Engine. For internal links, `resolution` is
+the result of a local WordPress lookup: `not_found` is a candidate to verify,
+not a confirmed 404 (WordPress, the host or a CDN may still redirect or serve
+it). Other values: `redirect_registered` (matches an enabled plugin redirect,
+with `redirect_target`), `not_public` (target is a draft/private/pending
+post), `unverified` (archive-shaped URL). The response `summary` reports
+`occurrences` and `unique_urls`. Changed in v3.17.0: earlier versions returned
+`status_code: 404, checked: true` for `not_found`.
 
 **`GET /observe/agentic-browsing/{post_id}` (v3.10.0)** — reports pass/fail on
 the three PSI Agentic Browsing sub-audits without opening a browser or

@@ -619,6 +619,24 @@ if ( ! function_exists( 'rest_ensure_response' ) ) {
     }
 }
 
+if ( ! defined( 'OBJECT' ) ) {
+    define( 'OBJECT', 'OBJECT' );
+}
+
+// url_to_postid / get_page_by_path -- driven by $GLOBALS so link-observer
+// tests can seed local lookups (issue #31). Unseeded URLs resolve to nothing.
+if ( ! function_exists( 'url_to_postid' ) ) {
+    function url_to_postid( $url ) {
+        return (int) ( $GLOBALS['_test_url_to_postid'][ $url ] ?? 0 );
+    }
+}
+
+if ( ! function_exists( 'get_page_by_path' ) ) {
+    function get_page_by_path( $page_path, $output = OBJECT, $post_type = 'page' ) {
+        return $GLOBALS['_test_pages_by_path'][ $page_path ] ?? null;
+    }
+}
+
 // get_term -- no terms are seeded by default; handlers see "not a term".
 if ( ! function_exists( 'get_term' ) ) {
     function get_term( $term_id ) {

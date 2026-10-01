@@ -295,4 +295,161 @@ class ObserveTest extends TestCase {
 		$this->assertSame( 'fail', $check['status'] );
 		$this->assertSame( 'add_breadcrumblist_via_post_schema_endpoint', $check['remediation_hint'] );
 	}
+
+	// ── Link classification (issue #31) ───────────────────────────────────────
+
+	private function link( string $url = 'https://example.test/contact' ): array {
+		return array(
+			'url'         => $url,
+			'anchor_text' => 'Contact',
+		);
+	}
+
+	private function redirect_rule( string $source, string $target ): array {
+		return array(
+			'id'          => 'r1',
+			'enabled'     => true,
+			'source'      => $source,
+			'match_type'  => 'exact',
+			'target'      => $target,
+			'status_code' => 301,
+		);
+	}
+
+	public function test_status_to_resolution_only_public_statuses_are_ok(): void {
+		$this->assertSame( 'ok', rr_observe_status_to_resolution( 'publish' ) );
+		$this->assertSame( 'ok', rr_observe_status_to_resolution( 'inherit' ) );
+		foreach ( array( 'draft', 'private', 'pending', 'future', 'trash' ) as $status ) {
+			$this->assertSame( 'not_public', rr_observe_status_to_resolution( $status ), $status );
+		}
+	}
+
+	public function test_healthy_internal_link_is_not_inventoried(): void {
+		$this->assertNull( rr_observe_internal_link_item( $this->link(), 'https://example.test/contact', 1, 'ok', array() ) );
+	}
+
+	public function test_local_miss_is_an_unverified_candidate_not_a_measured_404(): void {
+		$item = rr_observe_internal_link_item( $this->link(), 'https://example.test/contact', 3609, 'not_found', array() );
+
+		$this->assertNull( $item['status_code'] );
+		$this->assertFalse( $item['checked'] );
+		$this->assertSame( 'unverified', $item['verification'] );
+		$this->assertSame( 'not_found', $item['resolution'] );
+		$this->assertSame( 3609, $item['source_post_id'] );
+		$this->assertSame( 'internal', $item['scope'] );
+	}
+
+	public function test_local_miss_matching_a_registered_redirect_is_not_a_broken_candidate(): void {
+		$rules = array( $this->redirect_rule( '/contact', '/contact-rank-rocket/' ) );
+		$item  = rr_observe_internal_link_item( $this->link(), 'https://example.test/contact', 1, 'not_found', $rules );
+
+		$this->assertSame( 'redirect_registered', $item['resolution'] );
+		$this->assertSame( '/contact-rank-rocket/', $item['redirect_target'] );
+		$this->assertNull( $item['status_code'] );
+		$this->assertFalse( $item['checked'] );
+	}
+
+	public function test_registered_redirect_match_ignores_query_string(): void {
+		$rules = array( $this->redirect_rule( '/contact', '/contact-rank-rocket/' ) );
+		$item  = rr_observe_internal_link_item( $this->link(), 'https://example.test/contact?utm_source=x', 1, 'not_found', $rules );
+
+		$this->assertSame( 'redirect_registered', $item['resolution'] );
+	}
+
+	public function test_disabled_redirect_rule_does_not_hide_a_local_miss(): void {
+		$rule            = $this->redirect_rule( '/contact', '/contact-rank-rocket/' );
+		$rule['enabled'] = false;
+		$item            = rr_observe_internal_link_item( $this->link(), 'https://example.test/contact', 1, 'not_found', array( $rule ) );
+
+		$this->assertSame( 'not_found', $item['resolution'] );
+		$this->assertArrayNotHasKey( 'redirect_target', $item );
+	}
+
+	public function test_non_public_and_unverified_resolutions_pass_through_without_redirect_lookup(): void {
+		$rules = array( $this->redirect_rule( '/contact', '/elsewhere/' ) );
+		foreach ( array( 'not_public', 'unverified' ) as $resolution ) {
+			$item = rr_observe_internal_link_item( $this->link(), 'https://example.test/contact', 1, $resolution, $rules );
+			$this->assertSame( $resolution, $item['resolution'] );
+			$this->assertNull( $item['status_code'] );
+			$this->assertFalse( $item['checked'] );
+		}
+	}
+
+	public function test_link_summary_counts_occurrences_and_unique_destinations_separately(): void {
+		$items = array();
+		foreach ( array( 10, 11, 12 ) as $source ) {
+			$items[] = rr_observe_internal_link_item( $this->link(), 'https://example.test/contact', $source, 'not_found', array() );
+		}
+		$items[] = rr_observe_internal_link_item( $this->link( 'https://example.test/tos' ), 'https://example.test/tos', 10, 'not_found', array() );
+
+		$summary = rr_observe_link_summary( $items );
+
+		$this->assertSame( 4, $summary['occurrences'] );
+		$this->assertSame( 2, $summary['unique_urls'] );
+		$this->assertSame( array( 10, 11, 12 ), array_column( array_slice( $items, 0, 3 ), 'source_post_id' ) );
+	}
+
+	public function test_link_summary_of_empty_inventory_is_zero(): void {
+		$this->assertSame(
+			array(
+				'occurrences' => 0,
+				'unique_urls' => 0,
+			),
+			rr_observe_link_summary( array() )
+		);
+	}
+
+	// ── rr_observe_resolve_internal_url() (issue #31) ────────────────────────
+
+	protected function setUp(): void {
+		$GLOBALS['_test_posts']          = array();
+		$GLOBALS['_test_url_to_postid']  = array();
+		$GLOBALS['_test_pages_by_path']  = array();
+	}
+
+	private function seed_post( int $id, string $status ): WP_Post {
+		$post              = new WP_Post();
+		$post->ID          = $id;
+		$post->post_status = $status;
+		$GLOBALS['_test_posts'][ $id ] = $post;
+		return $post;
+	}
+
+	public function test_resolve_published_post_is_ok(): void {
+		$this->seed_post( 5, 'publish' );
+		$GLOBALS['_test_url_to_postid']['https://example.test/about/'] = 5;
+
+		$this->assertSame( 'ok', rr_observe_resolve_internal_url( 'https://example.test/about/' ) );
+	}
+
+	public function test_resolve_draft_and_private_posts_are_not_public(): void {
+		$this->seed_post( 6, 'draft' );
+		$this->seed_post( 7, 'private' );
+		$GLOBALS['_test_url_to_postid']['https://example.test/?p=6'] = 6;
+		$GLOBALS['_test_url_to_postid']['https://example.test/?p=7'] = 7;
+
+		$this->assertSame( 'not_public', rr_observe_resolve_internal_url( 'https://example.test/?p=6' ) );
+		$this->assertSame( 'not_public', rr_observe_resolve_internal_url( 'https://example.test/?p=7' ) );
+	}
+
+	public function test_resolve_draft_page_found_by_path_is_not_public(): void {
+		$GLOBALS['_test_pages_by_path']['services/plumbing'] = $this->seed_post( 8, 'draft' );
+
+		$this->assertSame( 'not_public', rr_observe_resolve_internal_url( 'https://example.test/services/plumbing/' ) );
+	}
+
+	public function test_resolve_published_page_found_by_path_is_ok(): void {
+		$GLOBALS['_test_pages_by_path']['services/plumbing'] = $this->seed_post( 9, 'publish' );
+
+		$this->assertSame( 'ok', rr_observe_resolve_internal_url( 'https://example.test/services/plumbing/' ) );
+	}
+
+	public function test_resolve_unknown_path_is_a_local_miss_and_site_root_is_ok(): void {
+		$this->assertSame( 'not_found', rr_observe_resolve_internal_url( 'https://example.test/contact' ) );
+		$this->assertSame( 'ok', rr_observe_resolve_internal_url( 'https://example.test/' ) );
+	}
+
+	public function test_resolve_archive_shaped_url_is_unverified(): void {
+		$this->assertSame( 'unverified', rr_observe_resolve_internal_url( 'https://example.test/category/news/' ) );
+	}
 }
