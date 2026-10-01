@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.16.1
+
+Fix for issue #28 -- `GET /get/{id}` returned stale SEO meta right after a
+write on sites whose page cache (LiteSpeed) caches REST responses.
+
+### Fixed
+
+- `POST /update`, `POST /meta/bulk-update` (non-dry-run only) and
+  `POST /migrate-legacy` now call `rrseo_purge_rest_cache()` for
+  `get/{id}` after writing, so the cached REST response is invalidated
+  alongside the WordPress object-cache busts that were already there. The
+  other write endpoints (snippets, redirects, actions) already used this
+  helper; the SEO meta writers had never adopted it.
+- 4 new unit tests (442 -> 446) plus REST-handler stubs in `tests/bootstrap.php`.
+
+### Notes
+
+- Only LiteSpeed is purged per URL. A Varnish-only cache in front of WP is
+  not covered by this helper; `POST /cache/purge` remains the full-flush
+  fallback there.
+- No behavior change for sites without a page cache. Deployed sites need
+  the 3.16.1 update before the fix takes effect.
+
 ## v3.16.0
 
 New `GET /elementor/{post_id}` read endpoint -- lets a caller fetch a post's

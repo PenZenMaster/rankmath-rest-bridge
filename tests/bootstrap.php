@@ -590,6 +590,55 @@ if ( ! function_exists( 'get_edit_post_link' ) ) {
 }
 
 // ------------------------------------------------------------------
+// REST handler stubs (issue #28 -- cache purge on SEO meta writes)
+// ------------------------------------------------------------------
+
+// WP_REST_Request -- param/header bag; enough for handlers that only call
+// get_param() and get_header().
+if ( ! class_exists( 'WP_REST_Request' ) ) {
+    class WP_REST_Request {
+        private $params;
+        private $headers;
+        public function __construct( array $params = [], array $headers = [] ) {
+            $this->params  = $params;
+            $this->headers = $headers;
+        }
+        public function get_param( $key ) {
+            return $this->params[ $key ] ?? null;
+        }
+        public function get_header( $key ) {
+            return $this->headers[ $key ] ?? null;
+        }
+    }
+}
+
+// rest_ensure_response -- pass-through (real core wraps arrays in WP_REST_Response).
+if ( ! function_exists( 'rest_ensure_response' ) ) {
+    function rest_ensure_response( $response ) {
+        return $response;
+    }
+}
+
+// get_term -- no terms are seeded by default; handlers see "not a term".
+if ( ! function_exists( 'get_term' ) ) {
+    function get_term( $term_id ) {
+        return $GLOBALS['_test_terms'][ $term_id ] ?? null;
+    }
+}
+
+if ( ! function_exists( 'clean_post_cache' ) ) {
+    function clean_post_cache( $post_id ) {
+        $GLOBALS['_test_cleaned_posts'][] = $post_id;
+    }
+}
+
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+    function wp_generate_uuid4() {
+        return '00000000-0000-4000-8000-000000000000';
+    }
+}
+
+// ------------------------------------------------------------------
 // Load the plugin (defines all constants and functions under test)
 // ------------------------------------------------------------------
 require dirname( __DIR__ ) . '/rankmath-rest-bridge.php';

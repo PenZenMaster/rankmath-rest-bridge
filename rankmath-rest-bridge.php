@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.16.0
+ * Version:      3.16.1
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.16.0' );
+define( 'RMB_VERSION', '3.16.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -3563,6 +3563,10 @@ function rmb_update_meta( WP_REST_Request $request ) {
 		clean_post_cache( $id );
 	}
 
+	// Page-cache layers (LiteSpeed) can hold a cached GET /get/{id} response
+	// that the object-cache busts above never reach (issue #28).
+	rrseo_purge_rest_cache( array( 'get/' . $id ) );
+
 	if ( ! empty( $audit_changes ) ) {
 		rr_audit_log( $id, '/update', $audit_changes, $request_id, 'written' );
 	}
@@ -3808,6 +3812,7 @@ function rmb_meta_bulk_update( WP_REST_Request $request ) {
 		if ( ! $dry_run ) {
 			wp_cache_delete( $post_id, 'post_meta' );
 			clean_post_cache( $post_id );
+			rrseo_purge_rest_cache( array( 'get/' . $post_id ) );
 
 			if ( ! empty( $audit_changes ) ) {
 				rr_audit_log( $post_id, '/meta/bulk-update', $audit_changes, $request_id, 'written' );
@@ -6387,6 +6392,7 @@ function rmb_migrate_legacy( WP_REST_Request $request ) {
 			rr_audit_log( $post_id, '/migrate-legacy', $audit_changes, $request_id, 'migrated' );
 			wp_cache_delete( $post_id, 'post_meta' );
 			clean_post_cache( $post_id );
+			rrseo_purge_rest_cache( array( 'get/' . $post_id ) );
 		}
 
 		$post_status = 'skipped';
