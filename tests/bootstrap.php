@@ -708,6 +708,36 @@ if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
     }
 }
 
+// current_user_can -- permissive by default; a test denies a capability by
+// seeding $GLOBALS['_test_caps'][ $cap ] = false (issue #37).
+if ( ! function_exists( 'current_user_can' ) ) {
+    function current_user_can( $capability, ...$args ) {
+        return $GLOBALS['_test_caps'][ $capability ] ?? true;
+    }
+}
+
+// wp_update_post -- updates only the fields passed (like core) on a stubbed
+// post. $GLOBALS['_test_update_post_error'] forces a WP_Error / no-op to
+// exercise the "change did not take effect" path.
+if ( ! function_exists( 'wp_update_post' ) ) {
+    function wp_update_post( array $postarr, $wp_error = false ) {
+        $id = (int) ( $postarr['ID'] ?? 0 );
+        if ( ! empty( $GLOBALS['_test_update_post_error'] ) ) {
+            return new WP_Error( 'update_failed', 'update refused' );
+        }
+        $post = $GLOBALS['_test_posts'][ $id ] ?? null;
+        if ( null === $post ) {
+            return new WP_Error( 'invalid_post', 'Invalid post ID.' );
+        }
+        foreach ( $postarr as $key => $value ) {
+            if ( 'ID' !== $key ) {
+                $post->$key = $value;
+            }
+        }
+        return $id;
+    }
+}
+
 // get_term -- no terms are seeded by default; handlers see "not a term".
 if ( ! function_exists( 'get_term' ) ) {
     function get_term( $term_id ) {

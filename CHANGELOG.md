@@ -1,5 +1,58 @@
 # Changelog
 
+## v3.20.0
+
+New `set_post_status` typed action (issue #37). An audit workflow that needed
+to move an existing empty page from Published to Draft after explicit user
+approval had to use native `POST /wp/v2/pages/{id}` and capture snapshots and
+rollback instructions outside the typed action log. It can now do it through
+`/actions/dry-run`, `/actions/execute` and `/actions/{id}/rollback`.
+
+### Added
+
+- `set_post_status` in the action whitelist. `target_id` is the page ID;
+  payload: `expected_status` (`publish` | `draft`), `new_value` (`publish` |
+  `draft`, must differ), optional `reason` (max 255 chars).
+- Scope is deliberately narrow: existing pages only, publish <-> draft only.
+  Trash, delete, scheduling, arbitrary post types and bulk changes are out of
+  scope. `create_page` is unchanged.
+- Optimistic status match: if the page's current status is not
+  `expected_status` (changed since the preview), validation fails with a
+  `conflict:` error and nothing is written.
+- Homepage (`page_on_front`) and posts page (`page_for_posts`) are protected
+  and cannot be moved.
+- Per-target capability checks on top of the endpoint's `manage_options`
+  gate: `edit_post`, plus `publish_post` when publishing.
+- Execute changes only `post_status` via `wp_update_post()`; content, meta,
+  slug, parent and template are untouched. WordPress may still apply its own
+  status side effects (for example assigning a slug when a never-published
+  draft is first published).
+- Execute returns an `action_id`, `before`/`after` status and a rollback
+  envelope, writes a per-post audit row, invalidates the canonical URL set
+  and purges the page-cache copies of `status`, `canonical-urls/preview` and
+  `llms/preview`. The envelope carries a warning that sitemaps and llms.txt
+  are rendered from the canonical set and that a front page cache may need
+  `POST /cache/purge` plus an unauthenticated public check.
+- Rollback restores the prior status. It refuses (409 `action_state_drift`,
+  override with `force: true`) when the status changed since the action, the
+  page no longer exists, or the page has since become the homepage/posts page.
+
+### Changed
+
+- `rr_action_run()` now merges warnings raised by the apply layer into the
+  envelope's `warnings`, so a change that did not take effect is visible.
+  `rr_action_apply()` results may include an optional `warnings` list.
+- If `wp_update_post()` fails or the status does not change, the envelope
+  records the status actually read back, sets `reversible: false` and warns,
+  instead of reporting success.
+
+### Notes
+
+- 23 new unit tests (505 -> 528) plus `current_user_can` and
+  `wp_update_post` stubs in `tests/bootstrap.php`.
+- Public consistency is not claimed by the action: verify the unauthenticated
+  response and the regenerated sitemap/llms.txt after executing.
+
 ## v3.19.0
 
 Fix for issue #30 -- schema audits reported 0/75 pages with schema on a site

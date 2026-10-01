@@ -16,7 +16,7 @@
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
  *
  * Created Date: 2026-07-09
- * Last Modified Date: 2026-09-09
+ * Last Modified Date: 2026-09-30
  *
  * Comments:
  * v1.00 - Initial release. POST /actions/dry-run + /actions/execute with the
@@ -35,6 +35,10 @@
  *         class-rrseo-pages.php. Rollback trashes the created page rather
  *         than hard-deleting it. Status is hard-clamped to draft/pending at
  *         validation -- this action can never publish a page directly.
+ * v1.40 - Issue #37: set_post_status moves an EXISTING page between publish
+ *         and draft through the typed action engine (expected-status
+ *         conflict check, homepage/posts-page guard, per-target capability
+ *         checks, drift-checked rollback). Pages and publish/draft only.
  *
  * @package RankRocket_SEO
  */
@@ -93,6 +97,7 @@ if ( ! defined( 'RR_ACTION_TYPES' ) ) {
 			'update_redirect',
 			'delete_redirect',
 			'create_page',
+			'set_post_status',
 		)
 	);
 }
@@ -137,6 +142,8 @@ function rr_action_validate( $action_type, $target_id, array $payload ) {
 			return rr_action_validate_delete_redirect( $target_id, $payload );
 		case 'create_page':
 			return rr_action_validate_create_page( $target_id, $payload );
+		case 'set_post_status':
+			return rr_action_validate_set_post_status( $target_id, $payload );
 		case 'toggle_indexing':
 		default:
 			return rr_action_validate_toggle_indexing( $target_id, $payload );
@@ -332,6 +339,97 @@ function rr_action_validate_create_page( $target_id, array $payload ) {
 }
 
 /**
+ * Validates a set_post_status action (issue #37): move an existing page
+ * between published and draft.
+ *
+ * Deliberately narrow: pages only, publish <-> draft only, and the caller
+ * must state the status it expects the page to be in now (optimistic match),
+ * so a status that changed since the preview produces a conflict instead of
+ * silently overwriting someone else's change. The homepage and the posts
+ * page are protected. Per-target capabilities are enforced on top of the
+ * endpoint-level manage_options gate.
+ *
+ * @param mixed $target_id Page ID.
+ * @param array $payload   Expects expected_status ('publish'|'draft'),
+ *                         new_value ('publish'|'draft'), optional reason.
+ * @return array{errors: string[], warnings: string[], normalized: array}
+ */
+function rr_action_validate_set_post_status( $target_id, array $payload ) {
+	$errors   = array();
+	$post_id  = absint( $target_id );
+	$post     = $post_id ? get_post( $post_id ) : null;
+	$allowed  = array( 'publish', 'draft' );
+	$expected = isset( $payload['expected_status'] ) && is_string( $payload['expected_status'] ) ? $payload['expected_status'] : '';
+	$new      = isset( $payload['new_value'] ) && is_string( $payload['new_value'] ) ? $payload['new_value'] : '';
+	$reason   = isset( $payload['reason'] ) && is_scalar( $payload['reason'] ) ? sanitize_text_field( (string) $payload['reason'] ) : '';
+
+	if ( ! $post ) {
+		$errors[] = "target_id: post {$post_id} not found";
+	} elseif ( 'page' !== $post->post_type ) {
+		$errors[] = "target_id: only pages are supported (post {$post_id} is '{$post->post_type}')";
+	}
+
+	if ( ! in_array( $expected, $allowed, true ) ) {
+		$errors[] = "payload.expected_status: expected 'publish' or 'draft'";
+	}
+	if ( ! in_array( $new, $allowed, true ) ) {
+		$errors[] = "payload.new_value: expected 'publish' or 'draft'";
+	}
+	if ( in_array( $expected, $allowed, true ) && $expected === $new ) {
+		$errors[] = 'payload.new_value must differ from payload.expected_status';
+	}
+	if ( strlen( $reason ) > 255 ) {
+		$errors[] = 'payload.reason must be 255 characters or fewer';
+	}
+
+	if ( $post && 'page' === $post->post_type && empty( $errors ) ) {
+		if ( (string) $post->post_status !== $expected ) {
+			$errors[] = "conflict: page {$post_id} is '{$post->post_status}', not the expected '{$expected}'; re-preview before applying";
+		}
+		if ( rr_action_is_protected_page( $post_id ) ) {
+			$errors[] = "target_id: page {$post_id} is the homepage or posts page and cannot be moved between publish and draft";
+		}
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			$errors[] = "forbidden: current user cannot edit page {$post_id}";
+		} elseif ( 'publish' === $new && ! current_user_can( 'publish_post', $post_id ) ) {
+			$errors[] = "forbidden: current user cannot publish page {$post_id}";
+		}
+	}
+
+	$warnings = array();
+	if ( empty( $errors ) ) {
+		$warnings[] = 'The XML sitemaps and llms.txt are rendered from the canonical URL set, which is invalidated by this change. '
+			. 'If a page cache sits in front of the site, run POST /cache/purge and confirm the public URL unauthenticated before treating the change as live.';
+	}
+
+	return array(
+		'errors'     => $errors,
+		'warnings'   => $warnings,
+		'normalized' => array(
+			'post_id'         => $post_id,
+			'expected_status' => $expected,
+			'new_value'       => $new,
+			'reason'          => $reason,
+		),
+	);
+}
+
+/**
+ * Returns true when a page is the static front page or the posts page.
+ *
+ * @param int $post_id Page ID.
+ * @return bool
+ */
+function rr_action_is_protected_page( $post_id ) {
+	$post_id = absint( $post_id );
+	return $post_id > 0 && in_array(
+		$post_id,
+		array( absint( get_option( 'page_on_front', 0 ) ), absint( get_option( 'page_for_posts', 0 ) ) ),
+		true
+	);
+}
+
+/**
  * Validates an update_redirect action (issue #27): target_id is the
  * redirect's id, payload is the fields to change (merged onto the
  * existing stored redirect before validation, same as
@@ -397,7 +495,8 @@ function rr_action_validate_delete_redirect( $target_id, array $payload ) {
  * @param bool   $dry_run     True to simulate without writing.
  * @return array{before: mixed, after: mixed, rollback_payload: array|null,
  *               reversible: bool, reason: string, post_id: int|null,
- *               touched_options: string[], purge_endpoints: string[]}
+ *               touched_options: string[], purge_endpoints: string[],
+ *               warnings?: string[]}
  */
 function rr_action_apply( $action_type, $target_id, array $normalized, $dry_run ) {
 	switch ( $action_type ) {
@@ -531,6 +630,43 @@ function rr_action_apply( $action_type, $target_id, array $normalized, $dry_run 
 				'purge_endpoints'  => array( 'status' ),
 			);
 
+		case 'set_post_status':
+			$post_id = $normalized['post_id'];
+			$before  = (string) get_post( $post_id )->post_status;
+			$after   = $normalized['new_value'];
+			$warn    = array();
+			if ( ! $dry_run ) {
+				$updated = wp_update_post(
+					array(
+						'ID'          => $post_id,
+						'post_status' => $after,
+					),
+					true
+				);
+				if ( is_wp_error( $updated ) ) {
+					$warn[] = 'wp_update_post failed: ' . $updated->get_error_message();
+				}
+				// Record what actually happened, not what was requested.
+				$read  = get_post( $post_id );
+				$after = $read ? (string) $read->post_status : $before;
+				rr_invalidate_canonical_cache();
+			}
+			$changed = $dry_run || $after === $normalized['new_value'];
+			if ( ! $changed ) {
+				$warn[] = "status change did not take effect: page is '{$after}', requested '{$normalized['new_value']}'";
+			}
+			return array(
+				'before'           => $before,
+				'after'            => $after,
+				'rollback_payload' => ( $changed && ! $dry_run ) ? array( 'old_status' => $before ) : null,
+				'reversible'       => $changed && ! $dry_run,
+				'reason'           => $changed ? '' : 'the status change did not take effect, so there is nothing to roll back',
+				'post_id'          => $post_id,
+				'touched_options'  => array(),
+				'purge_endpoints'  => array( 'status', 'canonical-urls/preview', 'llms/preview' ),
+				'warnings'         => $warn,
+			);
+
 		case 'toggle_indexing':
 		default:
 			$post_id    = $normalized['post_id'];
@@ -650,7 +786,7 @@ function rr_action_run( $action_type, $target_id, array $payload, $dry_run, $req
 		'rollback_payload' => $result['rollback_payload'],
 		'reversible'       => $result['reversible'],
 		'reason'           => $result['reason'],
-		'warnings'         => $validation['warnings'],
+		'warnings'         => array_merge( $validation['warnings'], isset( $result['warnings'] ) ? $result['warnings'] : array() ),
 		'request_id'       => (string) $request_id,
 	);
 
@@ -754,6 +890,21 @@ function rr_action_rollback_drift( array $envelope ) {
 			$current = rr_redirect_get( $id );
 			if ( null !== $current ) {
 				$drift[] = "redirect '{$id}': exists again (recreated since this action ran?)";
+			}
+			break;
+
+		case 'set_post_status':
+			$post_id = absint( $envelope['target_id'] );
+			$current = $post_id > 0 ? get_post( $post_id ) : null;
+			if ( null === $current ) {
+				$drift[] = "page '{$post_id}': no longer exists";
+				break;
+			}
+			if ( (string) $current->post_status !== (string) $envelope['after'] ) {
+				$drift[] = "page '{$post_id}': status is now '{$current->post_status}', not the action's recorded result '{$envelope['after']}'";
+			}
+			if ( rr_action_is_protected_page( $post_id ) ) {
+				$drift[] = "page '{$post_id}': is now the homepage or posts page";
 			}
 			break;
 
@@ -891,6 +1042,30 @@ function rr_action_rollback_apply( array $envelope, $dry_run ) {
 				'post_id'         => $post_id,
 				'touched_options' => array(),
 				'purge_endpoints' => array( 'status' ),
+			);
+
+		case 'set_post_status':
+			// Rollback of a status change = restore the prior status. Content,
+			// meta, slug, parent and template are never touched.
+			$post_id = absint( $envelope['target_id'] );
+			$old     = isset( $payload['old_status'] ) ? (string) $payload['old_status'] : '';
+			$current = get_post( $post_id );
+			$before  = $current ? (string) $current->post_status : '';
+			if ( ! $dry_run && $post_id > 0 && in_array( $old, array( 'publish', 'draft' ), true ) ) {
+				wp_update_post(
+					array(
+						'ID'          => $post_id,
+						'post_status' => $old,
+					)
+				);
+				rr_invalidate_canonical_cache();
+			}
+			return array(
+				'before'          => $before,
+				'after'           => $old,
+				'post_id'         => $post_id,
+				'touched_options' => array(),
+				'purge_endpoints' => array( 'status', 'canonical-urls/preview', 'llms/preview' ),
 			);
 
 		case 'toggle_indexing':
@@ -1060,7 +1235,7 @@ function rmb_actions_dispatch( WP_REST_Request $request, $force_dry ) {
 		'action_log' => RR_ACTION_LOG_KEY,
 		'post_id'    => null,
 	);
-	if ( in_array( $envelope['action_type'], array( 'update_meta_draft', 'toggle_indexing' ), true ) ) {
+	if ( in_array( $envelope['action_type'], array( 'update_meta_draft', 'toggle_indexing', 'set_post_status' ), true ) ) {
 		$envelope['audit_ref']['post_id'] = absint( $envelope['target_id'] );
 	}
 

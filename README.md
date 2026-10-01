@@ -825,7 +825,8 @@ All require `manage_options`. Whitelist: `update_setting` (9 typed WP core
 options), `regenerate_llms_txt`, `update_meta_draft` (writes `_rr_seo_draft_*`,
 never live meta), `toggle_indexing`, `create_redirect` / `update_redirect` /
 `delete_redirect` (target_id is the redirect id for update/delete; payload
-is the redirect fields — see Redirects above). Anything else is rejected 422.
+is the redirect fields — see Redirects above), `create_page` (draft pages
+only) and `set_post_status` (v3.20.0, below). Anything else is rejected 422.
 
 ```bash
 # Validate + simulate; never writes
@@ -842,6 +843,19 @@ curl "$BASE/actions/rrseo-action-20260710120000-1a2b3c4d" -u "$CRED"
 # Undo an executed action by replaying its stored envelope
 curl -X POST "$BASE/actions/rrseo-action-20260710120000-1a2b3c4d/rollback" \
   -u "$CRED" -H "Content-Type: application/json" -d '{}'
+```
+
+**`set_post_status` (v3.20.0)** — moves an *existing page* between
+`publish` and `draft`. Pages and publish/draft only; the homepage and posts
+page are protected; `expected_status` must match the page's current status
+(otherwise a 422 `conflict`, nothing written); only the status changes.
+Execute and rollback invalidate the canonical URL set, but sitemaps and
+llms.txt are served from it, so on a cached site run `POST /cache/purge` and
+check the public URL unauthenticated before treating the change as live.
+
+```bash
+curl -X POST "$BASE/actions/dry-run" -u "$CRED" -H "Content-Type: application/json" \
+  -d '{"action_type":"set_post_status","target_id":123,"payload":{"expected_status":"publish","new_value":"draft","reason":"User-approved empty placeholder cleanup"}}'
 ```
 
 Rollback refusals: 404 `action_not_found`, 422 `action_not_reversible`

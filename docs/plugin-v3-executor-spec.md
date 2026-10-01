@@ -76,6 +76,7 @@ approves, and queues.
 | `regenerate_llms_txt` | Trigger llms.txt rebuild via existing llms class | Low | No -- llms.txt renders live from config; no stored prior content exists (returns `reversible: false` + reason) |
 | `update_meta_draft` | Write a draft title/meta/alt to a draft field, not the live field | Low | Yes -- rollback deletes draft field |
 | `toggle_indexing` | Set post-level `rr_seo_robots` (noindex/index) | Medium | Yes |
+| `set_post_status` | Move an existing page between publish and draft (v3.20.0, issue #37): expected-status conflict check, homepage/posts-page guard, per-target capabilities | Medium | Yes -- rollback restores the prior status; refuses drift unless forced |
 
 ##### `update_setting` option whitelist (from issue #5)
 
