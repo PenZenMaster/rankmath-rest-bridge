@@ -321,6 +321,12 @@ Writes `_elementor_data`, `_elementor_edit_mode`, and
 workflows that would otherwise have to fall back to plain Gutenberg
 HTML + a manual "Edit with Elementor" conversion per page.
 
+A write that changes the stored layout, edit mode, template type or
+`css_print_method` also advances the post's modification date (and so its
+sitemap `lastmod`); the response reports `changed` and `post_modified_updated`.
+Dry runs, rejected payloads and identical re-submissions leave it alone. SEO
+meta and schema writes do not touch the modification date.
+
 ```bash
 curl -X POST "$BASE/elementor/set-data" -u "$CRED" \
   -H "Content-Type: application/json" \

@@ -514,6 +514,26 @@ if ( ! function_exists( 'current_time' ) ) {
     }
 }
 
+// sanitize_key / wp_slash / wp_json_encode -- minimal core-equivalent stubs
+// used by the Elementor write path (issue #38).
+if ( ! function_exists( 'sanitize_key' ) ) {
+    function sanitize_key( $key ) {
+        return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
+    }
+}
+
+if ( ! function_exists( 'wp_slash' ) ) {
+    function wp_slash( $value ) {
+        return is_string( $value ) ? addslashes( $value ) : $value;
+    }
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+    function wp_json_encode( $data, $options = 0, $depth = 512 ) {
+        return json_encode( $data, $options, $depth );
+    }
+}
+
 // wp_safe_redirect — records calls instead of sending real headers.
 if ( ! function_exists( 'wp_safe_redirect' ) ) {
     function wp_safe_redirect( $location, $status = 302 ) {

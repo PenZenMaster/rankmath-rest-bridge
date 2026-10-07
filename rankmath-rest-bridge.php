@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.20.1
+ * Version:      3.20.2
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.20.1' );
+define( 'RMB_VERSION', '3.20.2' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -4574,6 +4574,97 @@ function rr_elementor_clear_css_cache( $post_id ) {
 }
 
 /**
+ * Recursively sorts associative-array keys so two equivalent Elementor trees
+ * compare equal regardless of key order. Sequential lists keep their order
+ * (element order is meaningful).
+ *
+ * @param mixed $value Decoded JSON value.
+ * @return mixed Canonicalised value.
+ */
+function rr_elementor_canonicalize( $value ) {
+	if ( ! is_array( $value ) ) {
+		return $value;
+	}
+	foreach ( $value as $key => $child ) {
+		$value[ $key ] = rr_elementor_canonicalize( $child );
+	}
+	if ( ! wp_is_numeric_array( $value ) ) {
+		ksort( $value );
+	}
+	return $value;
+}
+
+/**
+ * Decides whether an Elementor write would change the stored page.
+ *
+ * Compares the incoming layout (semantically, ignoring key order and JSON
+ * whitespace), edit mode, template type and - only when supplied - the
+ * css_print_method page setting against what is stored. Used so identical
+ * re-submissions do not advance the post modification date.
+ *
+ * @param int         $post_id          Post being written.
+ * @param array       $elementor_data   Validated incoming layout.
+ * @param string      $edit_mode        Incoming edit mode.
+ * @param string      $template_type    Incoming template type.
+ * @param string|null $css_print_method Incoming css_print_method, if any.
+ * @return bool True when at least one stored value would change.
+ */
+function rr_elementor_write_changes_post( int $post_id, array $elementor_data, string $edit_mode, string $template_type, $css_print_method ): bool {
+	$stored_raw  = get_post_meta( $post_id, RR_ELEMENTOR_DATA_META_KEY, true );
+	$stored_data = is_string( $stored_raw ) ? json_decode( $stored_raw, true ) : null;
+
+	if ( ! is_array( $stored_data ) ) {
+		return true;
+	}
+	if ( rr_elementor_canonicalize( $stored_data ) !== rr_elementor_canonicalize( $elementor_data ) ) {
+		return true;
+	}
+	if ( (string) get_post_meta( $post_id, RR_ELEMENTOR_EDIT_MODE_META_KEY, true ) !== sanitize_key( $edit_mode ) ) {
+		return true;
+	}
+	if ( (string) get_post_meta( $post_id, RR_ELEMENTOR_TEMPLATE_TYPE_META_KEY, true ) !== sanitize_key( $template_type ) ) {
+		return true;
+	}
+	if ( $css_print_method ) {
+		$page_settings = get_post_meta( $post_id, RR_ELEMENTOR_PAGE_SETTINGS_META_KEY, true );
+		$current       = is_array( $page_settings ) && isset( $page_settings['css_print_method'] ) ? (string) $page_settings['css_print_method'] : '';
+		if ( sanitize_text_field( $css_print_method ) !== $current ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Advances a post's modification timestamps without touching anything else.
+ *
+ * Goes through wp_update_post() so core fires save_post (which clears the
+ * canonical URL counts cache and lets cache plugins react). Only the ID is
+ * material: core stamps post_modified/post_modified_gmt itself on update and
+ * leaves post_date, status, content, slug and the rest as stored. The dates
+ * are also passed explicitly so the intent is visible and the call does not
+ * depend on that core behaviour alone.
+ *
+ * @param int $post_id Post to touch.
+ * @return bool True when WordPress accepted the update; false on failure.
+ */
+function rr_touch_post_modified( int $post_id ): bool {
+	$result = wp_update_post(
+		array(
+			'ID'                => $post_id,
+			'post_modified'     => current_time( 'mysql' ),
+			'post_modified_gmt' => current_time( 'mysql', true ),
+		),
+		true
+	);
+	if ( is_wp_error( $result ) || empty( $result ) ) {
+		return false;
+	}
+	rr_invalidate_canonical_cache();
+	return true;
+}
+
+/**
  * Handles POST /elementor/set-data — validates and writes an Elementor
  * page's _elementor_data / _elementor_edit_mode / _elementor_template_type
  * meta, then clears Elementor's CSS cache.
@@ -4624,6 +4715,8 @@ function rmb_elementor_set_data( WP_REST_Request $request ) {
 		);
 	}
 
+	$changed = rr_elementor_write_changes_post( $post_id, $elementor_data, $edit_mode, $template_type, $css_print_method );
+
 	update_post_meta( $post_id, RR_ELEMENTOR_DATA_META_KEY, wp_slash( $encoded ) );
 	update_post_meta( $post_id, RR_ELEMENTOR_EDIT_MODE_META_KEY, sanitize_key( $edit_mode ) );
 	update_post_meta( $post_id, RR_ELEMENTOR_TEMPLATE_TYPE_META_KEY, sanitize_key( $template_type ) );
@@ -4636,17 +4729,20 @@ function rmb_elementor_set_data( WP_REST_Request $request ) {
 		update_post_meta( $post_id, RR_ELEMENTOR_PAGE_SETTINGS_META_KEY, $page_settings );
 	}
 
-	$css_regenerated = rr_elementor_clear_css_cache( $post_id );
+	$css_regenerated  = rr_elementor_clear_css_cache( $post_id );
+	$modified_updated = $changed ? rr_touch_post_modified( $post_id ) : false;
 
 	rr_audit_log(
 		$post_id,
 		'/elementor/set-data',
 		array(
 			'elementor_data' => array(
-				'bytes'         => $bytes,
-				'widget_count'  => $validation['widget_count'],
-				'edit_mode'     => $edit_mode,
-				'template_type' => $template_type,
+				'bytes'                 => $bytes,
+				'widget_count'          => $validation['widget_count'],
+				'edit_mode'             => $edit_mode,
+				'template_type'         => $template_type,
+				'changed'               => $changed,
+				'post_modified_updated' => $modified_updated,
 			),
 		),
 		rr_request_id( $request ),
@@ -4655,13 +4751,15 @@ function rmb_elementor_set_data( WP_REST_Request $request ) {
 
 	return rest_ensure_response(
 		array(
-			'post_id'              => $post_id,
-			'elementor_data_bytes' => $bytes,
-			'widget_count'         => $validation['widget_count'],
-			'edit_mode'            => $edit_mode,
-			'template_type'        => $template_type,
-			'css_regenerated'      => $css_regenerated,
-			'warnings'             => $validation['warnings'],
+			'post_id'               => $post_id,
+			'elementor_data_bytes'  => $bytes,
+			'widget_count'          => $validation['widget_count'],
+			'edit_mode'             => $edit_mode,
+			'template_type'         => $template_type,
+			'css_regenerated'       => $css_regenerated,
+			'changed'               => $changed,
+			'post_modified_updated' => $modified_updated,
+			'warnings'              => $validation['warnings'],
 		)
 	);
 }

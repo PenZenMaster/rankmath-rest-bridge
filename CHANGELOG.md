@@ -1,5 +1,39 @@
 # Changelog
 
+## v3.20.2
+
+Fix (issue #38): Elementor REST writes left WordPress modification dates, and
+so sitemap `lastmod`, stale. Found on olsonsrecycling.com: seven pages edited
+through `POST /elementor/set-data` kept their old `<lastmod>` after cache
+purges.
+
+### Fixed
+
+- `POST /elementor/set-data` now advances `post_modified` / `post_modified_gmt`
+  through `wp_update_post()` after a real change, which fires `save_post` and
+  clears the canonical URL counts cache. Publication date, status, slug and raw
+  content are untouched.
+- "Real change" means the layout (compared semantically, ignoring key order and
+  JSON whitespace), edit mode, template type or a supplied `css_print_method`
+  differs from what is stored. `dry_run: true`, validation failures and
+  identical re-submissions do not touch the dates.
+- If the timestamp update fails, the layout write still succeeds and the
+  response reports `post_modified_updated: false`.
+- Response and audit log gain `changed` and `post_modified_updated`.
+
+### Scope decision
+
+`POST /meta/{id}` and `POST /schema/{id}` are deliberately unchanged. Many of
+their fields (focus keyword, internal flags) are not publicly rendered, so
+advancing the modification date on every write would make pages look newly
+updated when nothing public changed. A per-field policy for publicly emitted
+fields (title, description, robots, canonical, schema) can be added as a
+follow-up if wanted.
+
+### Tests
+
+8 new tests in `tests/unit/ElementorModifiedDateTest.php` (536 -> 544).
+
 ## v3.20.1
 
 Fix: `empty_heading` was not raised for headings whose only content is a
