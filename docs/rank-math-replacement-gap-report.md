@@ -57,10 +57,37 @@ Guardrails that apply to every item (from the project playbook): write only
 `rr_validate_seo_fields()` / `rr_validate_schema()`, and do not reintroduce bulk
 wipe-and-replace endpoints.
 
-## 5. Open questions
+## 5. Design decisions (2026-10-07)
 
-- Should Local SEO live in a new options object or extend the snippets store?
-- Should automatic schema be on by default, or opt-in per site to avoid
-  duplicating schema emitted by themes and other plugins?
-- Is a 404 log acceptable on shared hosting (write volume), or should it be
-  capped and sampled?
+Resolved from the original open questions; recorded as comments on the issues.
+
+1. **Local SEO storage (#39):** a new dedicated options object
+   (`rr_local_seo`), not the snippets store. Snippets are free-form blobs that
+   cannot be validated per field or queried by location; llms.txt and the
+   entity audit duplicate business data today and should read one structured
+   source. The object renders into the existing schema pipeline with a stable
+   `@id` per location. Migration is never automatic: offer a read-only
+   "import from snippets" preview for existing LocalBusiness snippets, dedupe
+   by `@id`, never delete snippets, and skip snippets whose `@id` the object
+   already emits.
+2. **Automatic schema default (#40):** opt-in, default off, per site. Rank
+   Math is active on sites such as trevoraspiranti.com and
+   endlessenergyfitness.com and already emits schema, so default-on would
+   double-emit. Safeguards: a preview endpoint showing exactly what would be
+   emitted; skip any `@type` already in the stored graph or snippets; a
+   `/status` warning when another schema emitter is active. A later `auto`
+   setting ("on only if no other schema plugin is active") is deferred until
+   the opt-in version has run on a few sites.
+3. **404 log (#43):** acceptable on shared hosting if opt-in, default off and
+   aggregated. One row per normalized path (hits, first seen, last seen,
+   optional referrer host) in a small custom table with an upsert; ignore
+   query strings, static-asset extensions and common bot probe paths; hard cap
+   of about 500 distinct paths with oldest evicted; 30-day retention purged by
+   wp-cron; no IPs or full user agents. The redirect hit counter is separate
+   and always on, since it writes only when a rule matches.
+
+## 6. Remaining open questions
+
+- Exact cap and retention values for the 404 log once tested on a real
+  shared-hosting site.
+- Whether the later `auto` schema mode is worth building at all.

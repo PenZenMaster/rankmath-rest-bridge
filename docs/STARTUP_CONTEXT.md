@@ -34,16 +34,15 @@
 
 ## Next 3 Priorities
 
-1. **Restore the plugin on `trevoraspiranti` / `endlessenergyfitness`** -- their
-   REST index has no `rankrocket-seo/v1` or `rankmath-bridge/v1` namespace
-   (plugin inactive or removed, diagnosed 2026-10-07); activate/reinstall in WP
-   Admin, then re-run `rankrocket_status`.
+1. **Start the Rank Math replacement backlog** (#39-#43; order #39, #40, #41,
+   #42, #43). Design decisions are settled in the gap report section 5: #39
+   uses a dedicated `rr_local_seo` options object, #40 is opt-in default off,
+   #43 is an opt-in aggregated 404 log.
 2. **Fix MCP tool schema site enums** to include `olson-recycling` (runtime
    works; schemas list only the original four sites). Optional: align
    `reversible` between dry-run and execute for `set_post_status`.
-3. **Start the Rank Math replacement backlog** (#39-#43, order in the gap
-   report: #39, #40, #41, #42, #43) after settling the report's open design
-   questions. Optional: #18, #19, an MCP tool for `GET /aeo-geo/schema-audit`.
+3. **Optional backlog:** #18 (`since: null` backfill), #19 (`entity_clarity`
+   README gap); an MCP tool for `GET /aeo-geo/schema-audit`.
 
 ## Current State
 
@@ -67,8 +66,8 @@
 - `rankrocket.co` -- v3.20.1 (2026-10-01); 4 Service snippets; homepage 2604
   has two empty `<h2>` headings (site content, untouched)
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
-- `trevoraspiranti.com`, `endlessenergyfitness.com` -- last known 3.14.1, but
-  MCP `/status` returned "No route was found" (2026-09-30); unresolved
+- `trevoraspiranti.com`, `endlessenergyfitness.com` -- plugin reinstalled,
+  v3.20.2, `/status` clean (2026-10-07); Rank Math active on both
 - Kilday Baxter (kildaybaxter.com), Higgins (higginsoverheaddoor.com) --
   still on v3.8.1 as of last check (2026-08-06); not touched recently
 
@@ -78,7 +77,7 @@
   `v3.20.1/` zips exist for the v3.16.1-v3.20.1 batch.
 
 **Blockers:**
-- None for code. The two "No route was found" sites need the plugin activated/reinstalled in WP Admin.
+- None.
 
 ---
 
