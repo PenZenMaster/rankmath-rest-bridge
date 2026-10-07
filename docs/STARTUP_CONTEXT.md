@@ -1,10 +1,10 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-10-06
+**Last Updated:** 2026-10-07
 **Branch:** main
 **Version:** 3.20.2 (pushed; live sites still on 3.20.1 or older -- see Current
 State)
-**Last Commit:** 0e639dd -- chore(checkpoint): 2026-10-06_1903
+**Last Commit:** 41d4f2a -- chore(checkpoint): 2026-10-06_2346
 (checkpoint commit follows)
 
 ---
@@ -39,7 +39,7 @@ State)
 ## Current State
 
 **Git:**
-- Branch `main`, `0e639dd` pushed; checkpoint commit follows.
+- Branch `main`, `41d4f2a` pushed; checkpoint commit follows.
 - `rankrocket-mcp` (`master`): `e7016bd` pushed (v0.14.0, `set_post_status` enum); not deployed to the remote host.
 
 **Open GitHub issues (4):**
