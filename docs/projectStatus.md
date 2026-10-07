@@ -22,6 +22,14 @@
   sitemap `lastmod` advanced. Test class reverted (payload 10460 -> 10430
   bytes, matching the removed key).
 - Known gap: MCP tool schema site enums omit `olson-recycling`.
+- **#37 verified live** (MCP v0.14.0 deployed): created draft fixture
+  rankrocket.co post 3882; `set_post_status` draft -> publish (200, in pages
+  sitemap + llms.txt) -> draft (404, removed). Payload shape
+  `{expected_status, new_value}`. Dry-run reports `reversible: false`, execute
+  `true`. Fixture kept as a draft.
+- Diagnosed "No route was found" on trevoraspiranti.com and
+  endlessenergyfitness.com: REST index lacks `rankrocket-seo/v1` and
+  `rankmath-bridge/v1` -- plugin inactive or removed. Needs WP Admin action.
 
 ---
 

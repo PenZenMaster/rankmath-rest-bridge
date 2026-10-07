@@ -10,44 +10,47 @@
 
 ## Last 3 Accomplishments
 
-1. **#38 verified live (2026-10-07)** -- v3.20.2 on olsonsrecycling.com
+1. **#37 verified live (2026-10-07)** -- MCP v0.14.0 deployed; `set_post_status`
+   round trip on fixture draft rankrocket.co post 3882 (draft -> publish: 200,
+   in pages sitemap + llms.txt; publish -> draft: 404, removed from both).
+   Payload: `{expected_status, new_value}`. Dry-run says `reversible: false`,
+   execute says `true` (cosmetic). Fixture 3882 kept as a draft for reuse.
+
+2. **#38 verified live (2026-10-07)** -- v3.20.2 on olsonsrecycling.com
    (post 206): real edit `changed: true` / `post_modified_updated: true`,
    identical re-submit `changed: false`, sitemap `lastmod` moved to now.
    Test edit reverted. olsonsrecycling.com added to the MCP registry as
    `olson-recycling`.
 
-2. **v3.20.2 shipped (2026-10-06)** -- `POST /elementor/set-data` advances
+3. **v3.20.2 shipped (2026-10-06)** -- `POST /elementor/set-data` advances
    `post_modified` on a real change only. 544 tests.
-
-3. **#37 MCP side written and pushed (e7016bd, not deployed)** -- `set_post_status` added to the
-   dry-run/execute enums in `rankrocket-mcp` (v0.14.0, 152 tests).
-   `create_page` not added (already served by `rankrocket_pages*`).
 
 ---
 
 ## Next 3 Priorities
 
-1. **Finish #37** -- deploy the pushed rankrocket-mcp v0.14.0 and restart
-   the MCP on the remote host, test `set_post_status` on a staging fixture
-   page (never production page 3646), close #37.
-2. **Verify #30 live** (`GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
-   on rankrocket.co; last attempt produced no output file), then diagnose
-   `trevoraspiranti` / `endlessenergyfitness` ("No route was found").
+1. **Verify #30 live** (`GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
+   on rankrocket.co; needs direct REST with credentials, save output to
+   `docs/archive/schema-audit-rankrocket.json` so Claude can read it).
+2. **Restore the plugin on `trevoraspiranti` / `endlessenergyfitness`** -- their
+   REST index has no `rankrocket-seo/v1` or `rankmath-bridge/v1` namespace
+   (plugin inactive or removed, diagnosed 2026-10-07); activate/reinstall in WP
+   Admin, then re-run `rankrocket_status`.
 3. **Fix MCP tool schema site enums** to include `olson-recycling` (runtime
-   works; schemas list only the original four sites).
+   works; schemas list only the original four sites). Optional: align
+   `reversible` between dry-run and execute for `set_post_status`.
 
 ## Current State
 
 **Git:**
 - Branch `main`, `41d4f2a` pushed; checkpoint commit follows.
-- `rankrocket-mcp` (`master`): `e7016bd` pushed (v0.14.0, `set_post_status` enum); not deployed to the remote host.
+- `rankrocket-mcp` (`master`): `e7016bd` (v0.14.0, `set_post_status` enum); deployed to the remote host and verified.
 
-**Open GitHub issues (4):**
+**Open GitHub issues (3):**
 - **#30** -- fixed in v3.19.0, awaiting live verification (see priority 1)
-- **#37** -- plugin fixed in v3.20.0; MCP enum change pushed (e7016bd), undeployed (priority 2)
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
-- Closed this stretch: #28, #29, #31, #38 (fixed v3.20.2, not yet verified live). AUD-01..AUD-05 live in
+- Closed this stretch: #28, #29, #31, #37, #38 (all verified live). AUD-01..AUD-05 live in
   workflow-portal #50-#54.
 
 **Live deployment status:**
@@ -66,8 +69,8 @@
   `v3.20.1/` zips exist for the v3.16.1-v3.20.1 batch.
 
 **Blockers:**
-- None for code. #30 needs a direct REST call (no MCP tool); #37 needs the MCP
-  change deployed to the remote host and restarted.
+- None for code. #30 needs a direct REST call (no MCP tool); the two
+  "No route was found" sites need the plugin activated/reinstalled in WP Admin.
 
 ---
 
