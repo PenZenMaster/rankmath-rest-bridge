@@ -1,77 +1,57 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-10-01
+**Last Updated:** 2026-10-06
 **Branch:** main
-**Version:** 3.20.1 (live on rankrocket.co and tristate-hvac.com; other sites
-not updated -- see Current State)
-**Last Commit:** c65c0de -- chore: release v3.20.1 zip
-(shutdown checkpoint commit follows)
+**Version:** 3.20.2 (pushed; live sites still on 3.20.1 or older -- see Current
+State)
+**Last Commit:** 86f2927 -- chore: release v3.20.2 zip
+(checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Deployed + verified live, v3.20.1 (2026-10-01)** -- rankrocket.co
-   (3.16.0 -> 3.20.1) and tristate-hvac.com (3.14.1 -> 3.20.1) updated via
-   `POST /self-update`. Verified #29 (homepage 2604: one H1, no `no_h1`),
-   #31 (`/contact` unverified, not a 404) and #28 (write visible to the next
-   `GET /get/{id}` on tristate, the original repro site, and on rankrocket).
-   Closed #28, #29, #31. See `CheckPoint-2026-10-01_0035.md`.
+1. **v3.20.2 shipped (2026-10-06)** -- #38: `POST /elementor/set-data` now
+   advances `post_modified` / `post_modified_gmt` on a real change (not on
+   dry run, validation failure or identical payload). 544 tests. #38 closed;
+   not yet verified live. Meta/schema writes deliberately unchanged.
 
-2. **v3.20.1 nbsp fix (2026-10-01)** -- verification found `<h2>&nbsp;</h2>`
-   headings were not flagged `empty_heading` (PHP `trim()`/`\s` ignore
-   U+00A0). New `rr_observe_normalize_text()`; 536 tests; verified live.
+2. **#37 MCP side written (uncommitted)** -- `set_post_status` added to the
+   dry-run/execute enums in `rankrocket-mcp` (v0.14.0, 152 tests).
+   `create_page` not added (already served by `rankrocket_pages*`).
 
-3. **Five issues fixed and pushed, v3.16.1 -> v3.20.0 (2026-09-30)** -- #28,
-   #31, #29, #30, #37. See `CheckPoint-2026-09-30_2339.md`.
+3. **v3.20.1 deployed and verified (2026-10-01)** -- #28, #29, #31 closed.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Verify #30 live, then close it** -- `GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
-   on rankrocket.co (4 Service snippets, homepage graph): expect
-   `public_schema: inspected`, snippet + graph types, `summary.complete`.
-   The MCP has no schema-audit tool; call REST directly (PowerShell,
-   `curl.exe`, credential prompt).
-2. **#37** -- add `create_page` and `set_post_status` to the
-   `rankrocket_action_execute` enum in the `rankrocket-mcp` repo (currently
-   only update_setting, regenerate_llms_txt, update_meta_draft,
-   toggle_indexing, redirect actions), then test `set_post_status` on a
-   staging fixture page (never production page 3646), then close #37.
-3. **Diagnose `trevoraspiranti` / `endlessenergyfitness`** -- both returned
-   "No route was found" on `/status` via the MCP (2026-09-30), contradicting
-   notes that they were on 3.14.1; not rechecked after the registry restart.
-   Then update them to 3.20.1, then #18/#19 and the P3 re-check below.
-
-**[P3, still deferred] RankMath Reference Purge is NOT fully scoped** --
-go/no-go prerequisite ("confirm no active clients rely on the
-`rank_math_*` read-path fallback") unmet as of last check (2026-08-06,
-Higgins still `rankmath_active: true`, untouched since). Needs a re-check
-across all 4 original live sites (tristate-hvac, trevoraspiranti, Higgins,
-Kilday Baxter) before it can be picked up.
-
-*(Optional, low priority, carried over)* Harden
-`endlessenergyfitness.com`'s cPanel domain-redirect ordering -- WordPress's
-own canonical redirect covers the gap correctly today, so this is
-defense-in-depth only, not a live bug.
-
----
+1. **Deploy 3.20.2 to olsonsrecycling.com and verify #38** -- real set-data
+   edit: expect `changed: true`, `post_modified_updated: true`, moved sitemap
+   `lastmod`; identical re-submit: `changed: false`.
+2. **Finish #37** -- commit/push the rankrocket-mcp change, deploy and restart
+   the MCP on the remote host, test `set_post_status` on a staging fixture
+   page (never production page 3646), close #37.
+3. **Verify #30 live** (`GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
+   on rankrocket.co; last attempt produced no output file), then diagnose
+   `trevoraspiranti` / `endlessenergyfitness` ("No route was found").
 
 ## Current State
 
 **Git:**
-- Branch `main`, `c65c0de` pushed; shutdown checkpoint commit follows.
+- Branch `main`, `86f2927` pushed; checkpoint commit follows.
+- `rankrocket-mcp` (`master`): uncommitted `set_post_status` enum change (v0.14.0).
 
 **Open GitHub issues (4):**
 - **#30** -- fixed in v3.19.0, awaiting live verification (see priority 1)
-- **#37** -- fixed in v3.20.0, blocked on the MCP action enum (priority 2)
+- **#37** -- plugin fixed in v3.20.0; MCP enum change written, uncommitted/undeployed (priority 2)
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
-- Closed this stretch: #28, #29, #31. AUD-01..AUD-05 live in
+- Closed this stretch: #28, #29, #31, #38 (fixed v3.20.2, not yet verified live). AUD-01..AUD-05 live in
   workflow-portal #50-#54.
 
 **Live deployment status:**
+- `olsonsrecycling.com` -- reported #38 on 3.20.1; 3.20.2 not yet deployed
 - `rankrocket.co` -- v3.20.1 (2026-10-01); 4 Service snippets; homepage 2604
   has two empty `<h2>` headings (site content, untouched)
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
@@ -86,8 +66,8 @@ defense-in-depth only, not a live bug.
   `v3.20.1/` zips exist for the v3.16.1-v3.20.1 batch.
 
 **Blockers:**
-- None for code. #30 needs a direct REST call (no MCP tool); #37 needs an MCP
-  repo change.
+- None for code. #30 needs a direct REST call (no MCP tool); #37 needs the MCP
+  change deployed to the remote host and restarted.
 
 ---
 

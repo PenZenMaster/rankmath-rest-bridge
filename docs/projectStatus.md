@@ -9,6 +9,25 @@
 
 ---
 
+## 2026-10-06 Session -- #38 Fixed (v3.20.2), #37 Started in rankrocket-mcp
+
+### Session Summary
+New issue #38 (Elementor writes leave modified dates / sitemap lastmod stale)
+fixed and released as v3.20.2. #37's MCP enum change written, uncommitted.
+
+### Accomplishments
+- v3.20.2 pushed (8d0f03f, zip 86f2927); #38 closed; 544 tests.
+- rankrocket-mcp v0.14.0 (uncommitted): `set_post_status` in dry-run/execute enum; 152 tests.
+
+### Known Issues / Blockers
+- #38 and #30 not verified live; #37 needs MCP deploy + fixture test.
+
+### Next
+- Deploy 3.20.2 and verify #38; deploy MCP, test set_post_status, close #37; verify #30.
+
+### Backlog Movement
+- Closed #38.
+
 ## 2026-10-01 Session -- Deploy + Live Verification, v3.20.1, Issues Closed
 
 ### Session Summary
