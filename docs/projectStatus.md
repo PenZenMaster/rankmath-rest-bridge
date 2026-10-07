@@ -30,6 +30,11 @@
 - Diagnosed "No route was found" on trevoraspiranti.com and
   endlessenergyfitness.com: REST index lacks `rankrocket-seo/v1` and
   `rankmath-bridge/v1` -- plugin inactive or removed. Needs WP Admin action.
+- **#30 verified live** on rankrocket.co (`schema-audit?inspect_public=1&public_limit=10`):
+  200, 76 URLs, 10 inspected / 66 not_inspected, `complete: false`, 0 invalid
+  JSON-LD, 0 duplicate ids. Site schema coverage 6.6% (71/76 without schema;
+  no FAQPage or BreadcrumbList anywhere). Audit output kept local at
+  `docs/archive/schema-audit-rankrocket.json` (not committed).
 
 ---
 
