@@ -9,12 +9,19 @@
 
 ---
 
-## 2026-10-07 Session -- Startup Review Only (no code changes)
+## 2026-10-07 Session -- #38 Verified Live on olsonsrecycling.com
 
 - Ran `RRSEO start`; reviewed STARTUP_CONTEXT. Tree clean, v3.20.2, HEAD 41d4f2a.
 - No code or deploy work done. Priorities unchanged (deploy 3.20.2 + verify #38,
   finish #37 MCP deploy, verify #30 live).
 - Doc housekeeping: STARTUP_CONTEXT last-commit pointer refreshed to 41d4f2a.
+- v3.20.2 deployed to olsonsrecycling.com. Registered as `olson-recycling` in
+  the MCP.
+- **#38 verified live** on post 206: real edit `changed: true` +
+  `post_modified_updated: true`; identical re-submit `changed: false`;
+  sitemap `lastmod` advanced. Test class reverted (payload 10460 -> 10430
+  bytes, matching the removed key).
+- Known gap: MCP tool schema site enums omit `olson-recycling`.
 
 ---
 

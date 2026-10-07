@@ -2,8 +2,7 @@
 
 **Last Updated:** 2026-10-07
 **Branch:** main
-**Version:** 3.20.2 (pushed; live sites still on 3.20.1 or older -- see Current
-State)
+**Version:** 3.20.2 (deployed to olsonsrecycling.com; other sites per Current State)
 **Last Commit:** 41d4f2a -- chore(checkpoint): 2026-10-06_2346
 (checkpoint commit follows)
 
@@ -11,30 +10,31 @@ State)
 
 ## Last 3 Accomplishments
 
-1. **v3.20.2 shipped (2026-10-06)** -- #38: `POST /elementor/set-data` now
-   advances `post_modified` / `post_modified_gmt` on a real change (not on
-   dry run, validation failure or identical payload). 544 tests. #38 closed;
-   not yet verified live. Meta/schema writes deliberately unchanged.
+1. **#38 verified live (2026-10-07)** -- v3.20.2 on olsonsrecycling.com
+   (post 206): real edit `changed: true` / `post_modified_updated: true`,
+   identical re-submit `changed: false`, sitemap `lastmod` moved to now.
+   Test edit reverted. olsonsrecycling.com added to the MCP registry as
+   `olson-recycling`.
 
-2. **#37 MCP side written and pushed (e7016bd, not deployed)** -- `set_post_status` added to the
+2. **v3.20.2 shipped (2026-10-06)** -- `POST /elementor/set-data` advances
+   `post_modified` on a real change only. 544 tests.
+
+3. **#37 MCP side written and pushed (e7016bd, not deployed)** -- `set_post_status` added to the
    dry-run/execute enums in `rankrocket-mcp` (v0.14.0, 152 tests).
    `create_page` not added (already served by `rankrocket_pages*`).
-
-3. **v3.20.1 deployed and verified (2026-10-01)** -- #28, #29, #31 closed.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Deploy 3.20.2 to olsonsrecycling.com and verify #38** -- real set-data
-   edit: expect `changed: true`, `post_modified_updated: true`, moved sitemap
-   `lastmod`; identical re-submit: `changed: false`.
-2. **Finish #37** -- deploy the pushed rankrocket-mcp v0.14.0 and restart
+1. **Finish #37** -- deploy the pushed rankrocket-mcp v0.14.0 and restart
    the MCP on the remote host, test `set_post_status` on a staging fixture
    page (never production page 3646), close #37.
-3. **Verify #30 live** (`GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
+2. **Verify #30 live** (`GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
    on rankrocket.co; last attempt produced no output file), then diagnose
    `trevoraspiranti` / `endlessenergyfitness` ("No route was found").
+3. **Fix MCP tool schema site enums** to include `olson-recycling` (runtime
+   works; schemas list only the original four sites).
 
 ## Current State
 
@@ -51,7 +51,7 @@ State)
   workflow-portal #50-#54.
 
 **Live deployment status:**
-- `olsonsrecycling.com` -- reported #38 on 3.20.1; 3.20.2 not yet deployed
+- `olsonsrecycling.com` -- v3.20.2 (2026-10-07), #38 verified; `/status` clean
 - `rankrocket.co` -- v3.20.1 (2026-10-01); 4 Service snippets; homepage 2604
   has two empty `<h2>` headings (site content, untouched)
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
