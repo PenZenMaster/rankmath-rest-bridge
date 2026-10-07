@@ -39,6 +39,20 @@
 - Audited the plugin against Rank Math SEO Suite (image SEO, llms.txt, Local SEO,
   redirects, schema, sitemaps): not a full replacement. Report:
   `docs/rank-math-replacement-gap-report.md`. Filed #39-#43 (RMR-01..05).
+- **#39 Stage 1 built and shipped: v3.21.0, then v3.21.1.** New
+  `includes/class-rrseo-local.php` (`rr_local_seo` option; Organization or
+  Person entity; up to 50 locations; strict validation; `/local-seo`,
+  `/local-seo/preview`, `/local-seo/locations/{id}`; opt-in `wp_head` emission;
+  duplicate skipping; action-log audit). 594 tests, phpcs clean. Site-level
+  writes go to `rrseo_action_log` (decision), Person entity supported
+  (decision), llms/entity integration deferred to Stage 2 (decision).
+- Live on rankrocket.co (v3.21.1): validation, dry run, 422, real write with
+  `enabled: false`, preview all pass. Findings: LiteSpeed cached the GETs
+  (fixed in 3.21.1); dedupe cannot see HFCM-printed schema (documented, Stage 2
+  adds `preview?inspect_public=1`, an enable gate and a `schema_emitters`
+  inventory; no activation-time scan). Local SEO left disabled on rankrocket.co.
+- Plugin reinstalled on trevoraspiranti.com and endlessenergyfitness.com
+  (v3.20.2, `/status` clean).
 
 ---
 

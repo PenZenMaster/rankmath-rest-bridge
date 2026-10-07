@@ -2,56 +2,64 @@
 
 **Last Updated:** 2026-10-07
 **Branch:** main
-**Version:** 3.20.2 (deployed to olsonsrecycling.com; other sites per Current State)
-**Last Commit:** dd28043 -- docs: record #30 verified live on rankrocket.co
+**Version:** 3.21.1 (Local SEO Stage 1; deployed to rankrocket.co only)
+**Last Commit:** ae88b1c -- chore: release v3.21.1 zip
 (checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **#30 verified live (2026-10-07)** -- rankrocket.co schema-audit with
-   `inspect_public=1&public_limit=10`: HTTP 200, 76 URLs, 10 inspected / 66
-   `not_inspected`, `sources_inspected` = native/snippets/public,
-   `complete: false` (honest -- only 10 of 76 fetched), 0 invalid JSON-LD, 0
-   duplicate ids, global warnings `no_faqpage_anywhere` /
-   `no_breadcrumblist_anywhere`. Site finding: 71/76 URLs without schema
-   (coverage 6.6%).
+1. **Local SEO Stage 1 shipped: v3.21.0 + v3.21.1 (#39, 2026-10-07)** -- new
+   `includes/class-rrseo-local.php`: `rr_local_seo` option (Organization or
+   Person entity + up to 50 locations), strict validating REST CRUD
+   (`/local-seo`, `/local-seo/preview`, `/local-seo/locations/{id}`),
+   opt-in `wp_head` emission (priority 6), duplicate skipping against stored
+   schema + snippets, action-log audit. 594 tests, phpcs clean. Verified live
+   on rankrocket.co (validation, dry run, 422, real write with
+   `enabled: false`, preview). #39 stays open for Stage 2.
 
-2. **#37 verified live (2026-10-07)** -- MCP v0.14.0 deployed; `set_post_status`
-   round trip on fixture draft rankrocket.co post 3882 (draft -> publish: 200,
-   in pages sitemap + llms.txt; publish -> draft: 404, removed from both).
-   Payload: `{expected_status, new_value}`. Dry-run says `reversible: false`,
-   execute says `true` (cosmetic). Fixture 3882 kept as a draft for reuse.
+2. **Two live findings fixed/recorded** -- (a) LiteSpeed page-cached the Local
+   SEO GETs, so a preview was stale after a write; fixed in 3.21.1 (no-store +
+   `X-LiteSpeed-Cache-Control: no-cache`, wider purge). (b) Dedupe cannot see
+   schema printed by other plugins: rankrocket.co's homepage Organization comes
+   from HFCM "Home Schema". Do NOT enable Local SEO there until HFCM's snippet
+   is retired. Stage 2 scope agreed (see priorities).
 
-3. **#38 verified live (2026-10-07)** -- v3.20.2 on olsonsrecycling.com
-   (post 206): real edit `changed: true` / `post_modified_updated: true`,
-   identical re-submit `changed: false`, sitemap `lastmod` moved to now.
-   Test edit reverted. olsonsrecycling.com added to the MCP registry as
-   `olson-recycling`.
+3. **#30, #37, #38 verified live and closed (2026-10-07)**; Rank Math gap
+   report written and #39-#43 filed; plugin reinstalled on trevoraspiranti.com
+   and endlessenergyfitness.com (v3.20.2, `/status` clean); `olson-recycling`
+   added to the MCP registry.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Start the Rank Math replacement backlog** (#39-#43; order #39, #40, #41,
-   #42, #43). Design decisions are settled in the gap report section 5: #39
-   uses a dedicated `rr_local_seo` options object, #40 is opt-in default off,
-   #43 is an opt-in aggregated 404 log.
+1. **Local SEO Stage 2 (v3.22.0; the #39/#40 comments have the agreed scope):**
+   `/status` `schema_emitters` passive inventory (informational);
+   `GET /local-seo/preview?inspect_public=1` (fetch real page, report nodes
+   other plugins print); gate on `enabled` false->true (422 listing conflicts
+   unless `acknowledge_duplicates`, warn-unverified if the scan cannot run);
+   `rr_resolve_business_facts()` step between manual `business_facts` and
+   `schema_source_post_id` (+ `local_seo` source label); readiness audit counts
+   Local SEO; read-only import-from-snippets preview; MCP tools in
+   `rankrocket-mcp`. No activation-time scan.
 2. **Fix MCP tool schema site enums** to include `olson-recycling` (runtime
    works; schemas list only the original four sites). Optional: align
    `reversible` between dry-run and execute for `set_post_status`.
-3. **Optional backlog:** #18 (`since: null` backfill), #19 (`entity_clarity`
-   README gap); an MCP tool for `GET /aeo-geo/schema-audit`.
+3. **Rest of the Rank Math backlog:** #40 auto schema (reuse the Stage 2 scan
+   and gate), #41, #42, #43. Optional: #18, #19, MCP tool for
+   `GET /aeo-geo/schema-audit`.
 
 ## Current State
 
 **Git:**
-- Branch `main`, `dd28043` pushed; checkpoint commit follows.
+- Branch `main`, `ae88b1c` pushed; checkpoint commit follows.
 - `rankrocket-mcp` (`master`): `e7016bd` (v0.14.0, `set_post_status` enum); deployed to the remote host and verified.
 
 **Open GitHub issues (7):**
-- **#39-#43 (RMR-01..05)** -- Rank Math replacement gaps, filed 2026-10-07 from
+- **#39** -- Stage 1 shipped (v3.21.0/3.21.1); Stage 2 pending (priority 1)
+- **#40-#43 (RMR-02..05)** -- Rank Math replacement gaps, filed 2026-10-07 from
   `docs/rank-math-replacement-gap-report.md`: #39 Local SEO settings, #40
   automatic baseline schema + BreadcrumbList, #41 image title write + auto
   ALT/title, #42 taxonomy/product/image sitemaps, #43 410/451 redirects + 404
@@ -63,8 +71,9 @@
 
 **Live deployment status:**
 - `olsonsrecycling.com` -- v3.20.2 (2026-10-07), #38 verified; `/status` clean
-- `rankrocket.co` -- v3.20.1 (2026-10-01); 4 Service snippets; homepage 2604
-  has two empty `<h2>` headings (site content, untouched)
+- `rankrocket.co` -- v3.21.1 (2026-10-07); Local SEO entity stored, `enabled:
+  false`; 4 Service snippets; homepage 2604 has two empty `<h2>` headings and
+  its Organization/WebSite/WebPage graph is printed by HFCM, not this plugin
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
 - `trevoraspiranti.com`, `endlessenergyfitness.com` -- plugin reinstalled,
   v3.20.2, `/status` clean (2026-10-07); Rank Math active on both
@@ -74,7 +83,8 @@
 **Files of note:**
 - The release hook commits the zip after the push starts, so confirm with
   `git status -sb` and push again if ahead. Only the `releases/v3.20.0/` and
-  `v3.20.1/` zips exist for the v3.16.1-v3.20.1 batch.
+  `v3.20.1/` zips exist for the v3.16.1-v3.20.1 batch; v3.20.2, v3.21.0 and
+  v3.21.1 zips also exist.
 
 **Blockers:**
 - None.
@@ -180,3 +190,18 @@
     `focus_keyword` only -- not rendered publicly -- then revert with
     `unset_fields` and confirm). Used 2026-10-01 on rankrocket.co post 3768
     and tristate-hvac.com post 121.
+
+16. **Local SEO emission is opt-in and its dedupe is blind to other plugins** --
+    `rr_local_seo_plan()` compares against the post's `_rrseo_schema_graph`
+    and this plugin's snippets only. HFCM, WPCode and theme output are
+    invisible at runtime by design; protection is the Stage 2 preview scan and
+    enable gate. Never enable on a site whose homepage already prints an
+    Organization until the other source is retired.
+
+17. **LiteSpeed page-caches REST GETs on rankrocket.co** -- a stale response
+    looks like a logic bug. Verify with a `?cb=<random>` query string first.
+    Local SEO GETs now send no-cache headers (v3.21.1); older endpoints may not.
+
+18. **Editing repo files from Python on Windows writes CRLF** -- phpcs rejects
+    it (`Generic.Files.LineEndings`). Open with `newline=''` for read and write,
+    or convert with `sed -i 's/\r$//'`. Git's index stays LF either way.
