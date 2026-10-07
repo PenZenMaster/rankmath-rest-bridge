@@ -41,8 +41,9 @@
 2. **Fix MCP tool schema site enums** to include `olson-recycling` (runtime
    works; schemas list only the original four sites). Optional: align
    `reversible` between dry-run and execute for `set_post_status`.
-3. **Optional backlog:** #18 (`since: null` backfill), #19 (`entity_clarity`
-   README gap); consider an MCP tool for `GET /aeo-geo/schema-audit`.
+3. **Start the Rank Math replacement backlog** (#39-#43, order in the gap
+   report: #39, #40, #41, #42, #43) after settling the report's open design
+   questions. Optional: #18, #19, an MCP tool for `GET /aeo-geo/schema-audit`.
 
 ## Current State
 
@@ -50,7 +51,12 @@
 - Branch `main`, `dd28043` pushed; checkpoint commit follows.
 - `rankrocket-mcp` (`master`): `e7016bd` (v0.14.0, `set_post_status` enum); deployed to the remote host and verified.
 
-**Open GitHub issues (2):**
+**Open GitHub issues (7):**
+- **#39-#43 (RMR-01..05)** -- Rank Math replacement gaps, filed 2026-10-07 from
+  `docs/rank-math-replacement-gap-report.md`: #39 Local SEO settings, #40
+  automatic baseline schema + BreadcrumbList, #41 image title write + auto
+  ALT/title, #42 taxonomy/product/image sitemaps, #43 410/451 redirects + 404
+  log. Open design questions are listed in the report.
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
 - Closed this stretch: #28, #29, #31, #30, #37, #38 (all verified live). AUD-01..AUD-05 live in

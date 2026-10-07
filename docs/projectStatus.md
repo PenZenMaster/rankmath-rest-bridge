@@ -36,6 +36,9 @@
   no FAQPage or BreadcrumbList anywhere). Audit output kept local at
   `docs/archive/schema-audit-rankrocket.json` (not committed).
 - `.gitignore` now ignores `docs/archive/schema-audit-*.json`.
+- Audited the plugin against Rank Math SEO Suite (image SEO, llms.txt, Local SEO,
+  redirects, schema, sitemaps): not a full replacement. Report:
+  `docs/rank-math-replacement-gap-report.md`. Filed #39-#43 (RMR-01..05).
 
 ---
 
