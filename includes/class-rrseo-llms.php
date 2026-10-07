@@ -463,6 +463,7 @@ function rr_extract_business_facts_from_schema( int $post_id ): array {
  * Resolves business facts using the priority chain (v4 §16.1).
  *
  * 1. Manual business_facts config.
+ * 1b. Local SEO settings object (rr_local_seo), when an entity is stored.
  * 2. Schema from schema_source_post_id (if configured).
  * 3. Schema from homepage.
  * 4. WordPress site name / URL fallback.
@@ -476,6 +477,14 @@ function rr_resolve_business_facts( array $config ): array {
 	// 1. Manual config.
 	if ( ! empty( $config['business_facts'] ) && is_array( $config['business_facts'] ) ) {
 		return $config['business_facts'];
+	}
+
+	// 1b. Local SEO settings object (issue #39 Stage 2).
+	if ( function_exists( 'rr_local_seo_business_facts' ) ) {
+		$local_facts = rr_local_seo_business_facts( rr_local_seo_get_config() );
+		if ( ! empty( $local_facts ) ) {
+			return $local_facts;
+		}
 	}
 
 	// 2. Explicit schema source post.

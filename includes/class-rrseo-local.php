@@ -23,8 +23,10 @@
  * - Site-level writes are recorded in the rrseo_action_log option (not
  *   reversible), not in a per-post audit log.
  *
- * Stage 2 (not in this file): business_facts / entity-audit integration and
- * the read-only import-from-snippets preview.
+ * Stage 2 (v3.22.0): passive schema-emitter inventory, public-page scan for
+ * duplicates printed by other plugins, a gate on enabling emission,
+ * business_facts / entity-audit / schema-audit integration, and a read-only
+ * import-from-snippets preview.
  *
  * Author(s):
  * Rank Rocket Co (C) Copyright 2026 - All Rights Reserved
@@ -34,6 +36,8 @@
  *
  * Comments:
  * v1.00 - Initial release (Stage 1): settings, CRUD, preview, emission.
+ * v2.00 - Stage 2: shared snippet matcher, emitter inventory, public scan,
+ *         enable gate, business facts, audit source, import preview.
  *
  * @package RankRocket_SEO
  */
@@ -53,6 +57,9 @@ if ( ! defined( 'RR_LOCAL_SEO_MAX_SAME_AS' ) ) {
 }
 if ( ! defined( 'RR_LOCAL_SEO_MAX_HOURS' ) ) {
 	define( 'RR_LOCAL_SEO_MAX_HOURS', 14 );
+}
+if ( ! defined( 'RR_LOCAL_SEO_SCAN_MAX_PAGES' ) ) {
+	define( 'RR_LOCAL_SEO_SCAN_MAX_PAGES', 10 );
 }
 if ( ! defined( 'RR_LOCAL_SEO_MAX_AREAS' ) ) {
 	define( 'RR_LOCAL_SEO_MAX_AREAS', 50 );
@@ -1070,46 +1077,11 @@ function rr_local_seo_duplicate_reason( array $node, array $existing ): ?string 
 }
 
 /**
- * Tests whether a snippet display_on target applies to a page.
- *
- * Mirrors the targeting values documented on rmb_output_snippets(), but is
- * evaluated against an explicit page description so it works for previews
- * as well as live requests.
- *
- * @param string $display_on Snippet display_on value.
- * @param int    $post_id    Queried post ID (0 when none).
- * @param bool   $is_home    True for the front page.
- * @param string $post_type  Post type of the queried post.
- * @return bool
- */
-function rr_local_seo_snippet_applies( string $display_on, int $post_id, bool $is_home, string $post_type ): bool {
-	$display_on = trim( $display_on );
-	if ( in_array( $display_on, array( 'sitewide', 'all', 'entire_website' ), true ) ) {
-		return true;
-	}
-	if ( in_array( $display_on, array( 'home', 'homepage', 'front_page' ), true ) ) {
-		return $is_home;
-	}
-	if ( 'singular' === $display_on ) {
-		return $post_id > 0;
-	}
-	if ( 'all_pages' === $display_on ) {
-		return 'page' === $post_type;
-	}
-	if ( 'all_posts' === $display_on ) {
-		return 'post' === $post_type;
-	}
-	if ( 1 === preg_match( '/^(?:page_id:)?(\d+)$/', $display_on, $m ) ) {
-		return $post_id > 0 && (int) $m[1] === $post_id;
-	}
-	if ( 0 === strpos( $display_on, 'post_type:' ) ) {
-		return '' !== $post_type && substr( $display_on, 10 ) === $post_type;
-	}
-	return false;
-}
-
-/**
  * Collects the JSON-LD nodes of active snippets that apply to a page.
+ *
+ * Applicability uses rr_snippet_applies_to_post(), the same matcher the
+ * schema audit uses, so the two cannot drift. Honors the global snippet
+ * emission killswitch.
  *
  * @param int    $post_id   Queried post ID (0 when none).
  * @param bool   $is_home   True for the front page.
@@ -1118,26 +1090,28 @@ function rr_local_seo_snippet_applies( string $display_on, int $post_id, bool $i
  */
 function rr_local_seo_snippet_nodes( int $post_id, bool $is_home, string $post_type ): array {
 	$snippets = get_option( RMB_SNIPPETS_KEY, array() );
-	if ( ! is_array( $snippets ) ) {
+	if ( ! is_array( $snippets ) || ! (bool) get_option( 'rrseo_emit_snippets', true ) ) {
 		return array();
 	}
+	$path = '/';
+	if ( ! $is_home && $post_id > 0 ) {
+		$parsed = wp_parse_url( (string) get_permalink( $post_id ), PHP_URL_PATH );
+		$path   = is_string( $parsed ) ? $parsed : '/';
+	}
+	$ctx   = array(
+		'post_id'   => $post_id,
+		'post_type' => $post_type,
+		'is_front'  => $is_home,
+		'path'      => $path,
+	);
 	$nodes = array();
 	foreach ( $snippets as $snippet ) {
-		if ( ! is_array( $snippet ) || 'active' !== ( isset( $snippet['status'] ) ? $snippet['status'] : 'active' ) ) {
+		if ( ! is_array( $snippet ) || ! rr_snippet_applies_to_post( $snippet, $ctx ) ) {
 			continue;
 		}
-		$display_on = (string) ( isset( $snippet['display_on'] ) ? $snippet['display_on'] : 'sitewide' );
-		if ( ! rr_local_seo_snippet_applies( $display_on, $post_id, $is_home, $post_type ) ) {
-			continue;
-		}
-		$content = (string) ( isset( $snippet['content'] ) ? $snippet['content'] : '' );
-		if ( 0 === preg_match_all( '#<script[^>]*application/ld\+json[^>]*>(.*?)</script>#is', $content, $matches ) ) {
-			continue;
-		}
-		foreach ( $matches[1] as $json ) {
-			$decoded = json_decode( trim( $json ), true );
-			if ( is_array( $decoded ) ) {
-				$nodes = array_merge( $nodes, rr_schema_graph_nodes( $decoded ) );
+		foreach ( rr_schema_extract_jsonld_blocks( (string) $snippet['content'] ) as $block ) {
+			if ( $block['valid'] ) {
+				$nodes = array_merge( $nodes, rr_schema_graph_nodes( $block['data'] ) );
 			}
 		}
 	}
@@ -1247,6 +1221,598 @@ function rr_local_seo_emit(): void {
 }
 add_action( 'wp_head', 'rr_local_seo_emit', 6 );
 
+// -- Stage 2: other schema emitters -------------------------------------------
+
+/**
+ * Returns plugins known to print schema or arbitrary head code, keyed by
+ * plugin directory slug.
+ *
+ * @return array<string, array{name: string, kind: string}>
+ */
+function rr_local_seo_known_emitters(): array {
+	$known = array(
+		'seo-by-rank-math'                  => array(
+			'name' => 'Rank Math SEO',
+			'kind' => 'seo',
+		),
+		'seo-by-rank-math-pro'              => array(
+			'name' => 'Rank Math SEO PRO',
+			'kind' => 'seo',
+		),
+		'wordpress-seo'                     => array(
+			'name' => 'Yoast SEO',
+			'kind' => 'seo',
+		),
+		'wordpress-seo-premium'             => array(
+			'name' => 'Yoast SEO Premium',
+			'kind' => 'seo',
+		),
+		'all-in-one-seo-pack'               => array(
+			'name' => 'All in One SEO',
+			'kind' => 'seo',
+		),
+		'wp-seopress'                       => array(
+			'name' => 'SEOPress',
+			'kind' => 'seo',
+		),
+		'schema-and-structured-data-for-wp' => array(
+			'name' => 'Schema and Structured Data for WP',
+			'kind' => 'seo',
+		),
+		'wp-schema-pro'                     => array(
+			'name' => 'Schema Pro',
+			'kind' => 'seo',
+		),
+		'header-footer-code-manager'        => array(
+			'name' => 'Header Footer Code Manager (HFCM)',
+			'kind' => 'code_injection',
+		),
+		'insert-headers-and-footers'        => array(
+			'name' => 'WPCode',
+			'kind' => 'code_injection',
+		),
+		'wpcode-premium'                    => array(
+			'name' => 'WPCode Pro',
+			'kind' => 'code_injection',
+		),
+		'code-snippets'                     => array(
+			'name' => 'Code Snippets',
+			'kind' => 'code_injection',
+		),
+	);
+	$known = apply_filters( 'rrseo_local_seo_known_emitters', $known );
+	return is_array( $known ) ? $known : array();
+}
+
+/**
+ * Lists active plugins that are known to print schema or head code.
+ *
+ * Passive and HTTP-free: it only reads the active-plugin options. The result
+ * is a hint, not proof, that a plugin prints Organization or LocalBusiness
+ * schema; the public scan is the authoritative check.
+ *
+ * @return array<int, array{slug: string, name: string, kind: string}>
+ */
+function rr_local_seo_active_emitters(): array {
+	$active = get_option( 'active_plugins', array() );
+	$active = is_array( $active ) ? $active : array();
+	$site   = get_option( 'active_sitewide_plugins', array() );
+	if ( is_array( $site ) ) {
+		$active = array_merge( $active, array_keys( $site ) );
+	}
+
+	$slugs = array();
+	foreach ( $active as $plugin_file ) {
+		if ( ! is_string( $plugin_file ) ) {
+			continue;
+		}
+		$slug = strpos( $plugin_file, '/' ) !== false ? strstr( $plugin_file, '/', true ) : basename( $plugin_file, '.php' );
+		if ( is_string( $slug ) && '' !== $slug ) {
+			$slugs[ $slug ] = true;
+		}
+	}
+
+	$out = array();
+	foreach ( rr_local_seo_known_emitters() as $slug => $info ) {
+		if ( isset( $slugs[ $slug ] ) ) {
+			$out[] = array(
+				'slug' => $slug,
+				'name' => $info['name'],
+				'kind' => $info['kind'],
+			);
+		}
+	}
+	return $out;
+}
+
+// -- Stage 2: public-page scan ------------------------------------------------
+
+/**
+ * Removes this plugin's own marker-wrapped schema blocks from page HTML so
+ * that only schema printed by something else is left.
+ *
+ * @param string $html Page HTML.
+ * @return string
+ */
+function rr_local_seo_strip_own_blocks( string $html ): string {
+	$pattern = '/' . preg_quote( RR_SCHEMA_HYGIENE_MARKER_START, '/' ) . '.*?' . preg_quote( RR_SCHEMA_HYGIENE_MARKER_END, '/' ) . '/s';
+	$out     = preg_replace( $pattern, '', $html );
+	return is_string( $out ) ? $out : $html;
+}
+
+/**
+ * Fetches a page's public HTML for scanning.
+ *
+ * The filter `rrseo_local_seo_public_html` can supply the HTML directly
+ * (used by tests and by hosts that cannot loop back to themselves).
+ *
+ * @param int $post_id Post ID of the page (0 when there is no page post).
+ * @return array{html: string|null, error: string|null}
+ */
+function rr_local_seo_fetch_public_html( int $post_id ): array {
+	$supplied = apply_filters( 'rrseo_local_seo_public_html', null, $post_id );
+	if ( is_string( $supplied ) ) {
+		return array(
+			'html'  => $supplied,
+			'error' => null,
+		);
+	}
+	$post = $post_id > 0 ? get_post( $post_id ) : null;
+	if ( ! $post instanceof WP_Post ) {
+		return array(
+			'html'  => null,
+			'error' => 'no_page_to_fetch',
+		);
+	}
+	return rr_observe_fetch_frontend_html( $post );
+}
+
+/**
+ * Extracts the typed JSON-LD nodes that something other than this plugin
+ * prints in a page's HTML.
+ *
+ * @param string $html Page HTML.
+ * @return array[]
+ */
+function rr_local_seo_public_nodes( string $html ): array {
+	$nodes = array();
+	foreach ( rr_schema_extract_jsonld_blocks( rr_local_seo_strip_own_blocks( $html ) ) as $block ) {
+		if ( ! $block['valid'] ) {
+			continue;
+		}
+		$inventory = rr_schema_inventory( $block['data'] );
+		foreach ( $inventory['entities'] as $entity ) {
+			$nodes[] = $entity['node'];
+		}
+	}
+	return $nodes;
+}
+
+/**
+ * Scans one page: compares the nodes this plugin would emit with what the
+ * public HTML already contains from other sources.
+ *
+ * @param array $config  Local SEO config.
+ * @param int   $post_id Page post ID (0 when none).
+ * @param bool  $is_home True for the front page.
+ * @return array{post_id: int|null, is_home: bool, status: string, error: string|null, conflicts: array[]}
+ *         status: inspected | nothing_to_emit | unavailable.
+ */
+function rr_local_seo_scan_page( array $config, int $post_id, bool $is_home ): array {
+	$page = array(
+		'post_id'   => $post_id > 0 ? $post_id : null,
+		'is_home'   => $is_home,
+		'status'    => 'inspected',
+		'error'     => null,
+		'conflicts' => array(),
+	);
+
+	$plan = rr_local_seo_plan( $config, $post_id, $is_home );
+	if ( empty( $plan['nodes'] ) ) {
+		$page['status'] = 'nothing_to_emit';
+		return $page;
+	}
+
+	$fetched = rr_local_seo_fetch_public_html( $post_id );
+	if ( null === $fetched['html'] ) {
+		$page['status'] = 'unavailable';
+		$page['error']  = $fetched['error'];
+		return $page;
+	}
+
+	$public = rr_local_seo_public_nodes( $fetched['html'] );
+	foreach ( $plan['nodes'] as $node ) {
+		$reason = rr_local_seo_duplicate_reason( $node, $public );
+		if ( null !== $reason ) {
+			$page['conflicts'][] = array(
+				'@id'    => $node['@id'],
+				'reason' => $reason,
+			);
+		}
+	}
+	return $page;
+}
+
+/**
+ * Scans the pages a config would emit on: the front page plus each page
+ * assigned to a location (at most RR_LOCAL_SEO_SCAN_MAX_PAGES).
+ *
+ * @param array $config Local SEO config.
+ * @return array{pages: array[], conflicts: array[], unverified: bool}
+ */
+function rr_local_seo_scan_site( array $config ): array {
+	$front = (int) get_option( 'page_on_front', 0 );
+	$pages = array( rr_local_seo_scan_page( $config, $front, true ) );
+
+	$seen = array( $front => true );
+	foreach ( $config['locations'] as $location ) {
+		$post_id = isset( $location['post_id'] ) ? (int) $location['post_id'] : 0;
+		if ( $post_id < 1 || isset( $seen[ $post_id ] ) || count( $pages ) >= RR_LOCAL_SEO_SCAN_MAX_PAGES ) {
+			continue;
+		}
+		$seen[ $post_id ] = true;
+		$pages[]          = rr_local_seo_scan_page( $config, $post_id, false );
+	}
+
+	$conflicts  = array();
+	$unverified = false;
+	foreach ( $pages as $page ) {
+		if ( 'unavailable' === $page['status'] ) {
+			$unverified = true;
+		}
+		foreach ( $page['conflicts'] as $conflict ) {
+			$conflicts[] = array_merge( $conflict, array( 'post_id' => $page['post_id'] ) );
+		}
+	}
+	return array(
+		'pages'      => $pages,
+		'conflicts'  => $conflicts,
+		'unverified' => $unverified,
+	);
+}
+
+// -- Stage 2: facts and audit integration -------------------------------------
+
+/**
+ * Derives llms/entity business facts from the Local SEO config.
+ *
+ * Independent of `enabled`: the object is the structured source of truth for
+ * business data whether or not its JSON-LD is emitted.
+ *
+ * @param array $config Local SEO config.
+ * @return array Business facts, or an empty array when no entity is stored.
+ */
+function rr_local_seo_business_facts( array $config ): array {
+	$entity = $config['entity'];
+	if ( empty( $entity ) ) {
+		return array();
+	}
+	$first = ! empty( $config['locations'] ) ? $config['locations'][0] : array();
+
+	$facts = array(
+		'business_name' => $entity['name'],
+		'website'       => isset( $entity['url'] ) ? $entity['url'] : rtrim( home_url( '/' ), '/' ),
+		'schema_type'   => ! empty( $first ) && isset( $first['business_type'] ) ? $first['business_type'] : $entity['type'],
+		'entity_id'     => rr_local_seo_entity_id( $entity ),
+	);
+
+	if ( ! empty( $entity['phone'] ) ) {
+		$facts['phone'] = $entity['phone'];
+	} elseif ( ! empty( $first['phone'] ) ) {
+		$facts['phone'] = $first['phone'];
+	}
+	if ( ! empty( $first['address'] ) ) {
+		$parts = array();
+		foreach ( array( 'street', 'locality', 'region', 'postal_code' ) as $key ) {
+			if ( ! empty( $first['address'][ $key ] ) ) {
+				$parts[] = $first['address'][ $key ];
+			}
+		}
+		$facts['address'] = implode( ', ', $parts );
+	}
+
+	$areas = array();
+	foreach ( $config['locations'] as $location ) {
+		if ( ! empty( $location['area_served'] ) ) {
+			$areas = array_merge( $areas, $location['area_served'] );
+		}
+	}
+	if ( ! empty( $areas ) ) {
+		$facts['service_area'] = array_values( array_unique( $areas ) );
+	}
+	return $facts;
+}
+
+/**
+ * Builds a schema-audit source record for what Local SEO emits on a page.
+ *
+ * Returns null when emission is off or nothing would be emitted. The audit
+ * adds this only when the public page was not inspected, so a node is never
+ * counted both here and in the public HTML.
+ *
+ * @param int  $post_id  Page post ID.
+ * @param bool $is_front True for the front page.
+ * @return array|null
+ */
+function rr_local_seo_audit_source( int $post_id, bool $is_front ): ?array {
+	$config = rr_local_seo_get_config();
+	if ( ! $config['enabled'] ) {
+		return null;
+	}
+	$plan = rr_local_seo_plan( $config, $post_id, $is_front );
+	if ( empty( $plan['nodes'] ) ) {
+		return null;
+	}
+	return array_merge(
+		array( 'source' => 'local_seo' ),
+		rr_schema_inventory( $plan['nodes'] ),
+		array( 'invalid_blocks' => 0 )
+	);
+}
+
+// -- Stage 2: import preview --------------------------------------------------
+
+/**
+ * Reduces a JSON-LD image value (string, ImageObject or list) to a URL.
+ *
+ * @param mixed $value Raw value.
+ * @return string|null
+ */
+function rr_local_seo_import_image( $value ): ?string {
+	if ( is_array( $value ) && wp_is_numeric_array( $value ) && ! empty( $value ) ) {
+		$value = $value[0];
+	}
+	if ( is_array( $value ) && isset( $value['url'] ) ) {
+		$value = $value['url'];
+	}
+	return is_string( $value ) && '' !== $value ? $value : null;
+}
+
+/**
+ * Maps one JSON-LD business node to a proposed location object.
+ *
+ * @param array $node  JSON-LD node.
+ * @param int   $index Position, used for a fallback slug.
+ * @return array{proposed: array, notes: string[]}
+ */
+function rr_local_seo_import_map_location( array $node, int $index ): array {
+	$notes    = array();
+	$proposed = array();
+
+	$slug = '';
+	if ( isset( $node['@id'] ) && is_string( $node['@id'] ) && false !== strpos( $node['@id'], '#' ) ) {
+		$slug = sanitize_title( str_replace( 'localbusiness-', '', substr( strrchr( $node['@id'], '#' ), 1 ) ) );
+	}
+	if ( '' === $slug && isset( $node['name'] ) && is_string( $node['name'] ) ) {
+		$slug = sanitize_title( $node['name'] );
+	}
+	$proposed['id'] = '' !== $slug ? substr( $slug, 0, 40 ) : 'location-' . ( $index + 1 );
+
+	if ( isset( $node['name'] ) ) {
+		$proposed['name'] = $node['name'];
+	}
+	$allowed = rr_local_seo_business_types();
+	foreach ( rr_local_seo_node_types( $node ) as $type ) {
+		if ( in_array( $type, $allowed, true ) ) {
+			$proposed['business_type'] = $type;
+			break;
+		}
+	}
+	foreach ( array(
+		'url'        => 'url',
+		'telephone'  => 'phone',
+		'email'      => 'email',
+		'priceRange' => 'price_range',
+		'hasMap'     => 'map_url',
+	) as $from => $to ) {
+		if ( isset( $node[ $from ] ) ) {
+			$proposed[ $to ] = $node[ $from ];
+		}
+	}
+	$image = isset( $node['image'] ) ? rr_local_seo_import_image( $node['image'] ) : null;
+	if ( null !== $image ) {
+		$proposed['image'] = $image;
+	}
+
+	if ( isset( $node['address'] ) && is_array( $node['address'] ) ) {
+		$map     = array(
+			'streetAddress'   => 'street',
+			'addressLocality' => 'locality',
+			'addressRegion'   => 'region',
+			'postalCode'      => 'postal_code',
+			'addressCountry'  => 'country',
+		);
+		$address = array();
+		foreach ( $map as $from => $to ) {
+			if ( isset( $node['address'][ $from ] ) ) {
+				$address[ $to ] = $node['address'][ $from ];
+			}
+		}
+		$proposed['address'] = $address;
+	}
+
+	if ( isset( $node['geo'] ) && is_array( $node['geo'] ) && isset( $node['geo']['latitude'], $node['geo']['longitude'] ) ) {
+		if ( is_numeric( $node['geo']['latitude'] ) && is_numeric( $node['geo']['longitude'] ) ) {
+			$proposed['geo'] = array(
+				'lat' => (float) $node['geo']['latitude'],
+				'lng' => (float) $node['geo']['longitude'],
+			);
+		} else {
+			$notes[] = 'geo dropped: latitude/longitude are not numeric';
+		}
+	}
+
+	if ( isset( $node['openingHoursSpecification'] ) && is_array( $node['openingHoursSpecification'] ) ) {
+		$specs = wp_is_numeric_array( $node['openingHoursSpecification'] ) ? $node['openingHoursSpecification'] : array( $node['openingHoursSpecification'] );
+		$rows  = array();
+		foreach ( $specs as $spec ) {
+			if ( ! is_array( $spec ) || ! isset( $spec['dayOfWeek'], $spec['opens'], $spec['closes'] ) ) {
+				$notes[] = 'an openingHoursSpecification row was dropped: missing dayOfWeek, opens or closes';
+				continue;
+			}
+			$days = array();
+			foreach ( (array) $spec['dayOfWeek'] as $day ) {
+				$days[] = is_string( $day ) ? preg_replace( '#^https?://schema\.org/#', '', $day ) : $day;
+			}
+			$rows[] = array(
+				'days'   => $days,
+				'opens'  => is_string( $spec['opens'] ) ? substr( $spec['opens'], 0, 5 ) : $spec['opens'],
+				'closes' => is_string( $spec['closes'] ) ? substr( $spec['closes'], 0, 5 ) : $spec['closes'],
+			);
+		}
+		if ( ! empty( $rows ) ) {
+			$proposed['opening_hours'] = $rows;
+		}
+	}
+
+	if ( isset( $node['areaServed'] ) ) {
+		$areas = array();
+		$raw   = ( is_array( $node['areaServed'] ) && wp_is_numeric_array( $node['areaServed'] ) ) ? $node['areaServed'] : array( $node['areaServed'] );
+		foreach ( $raw as $place ) {
+			$name = is_array( $place ) && isset( $place['name'] ) ? $place['name'] : $place;
+			if ( is_string( $name ) && '' !== trim( $name ) ) {
+				$areas[] = trim( $name );
+			}
+		}
+		if ( ! empty( $areas ) ) {
+			$proposed['area_served'] = $areas;
+		}
+	}
+
+	if ( isset( $node['sameAs'] ) ) {
+		$urls = array();
+		foreach ( (array) $node['sameAs'] as $url ) {
+			if ( is_string( $url ) && 0 === strpos( $url, 'https://' ) ) {
+				$urls[] = $url;
+			} else {
+				$notes[] = 'a sameAs entry was dropped: not an https URL';
+			}
+		}
+		if ( ! empty( $urls ) ) {
+			$proposed['same_as'] = $urls;
+		}
+	}
+
+	return array(
+		'proposed' => $proposed,
+		'notes'    => $notes,
+	);
+}
+
+/**
+ * Maps one JSON-LD Organization or Person node to a proposed entity object.
+ *
+ * @param array $node JSON-LD node.
+ * @return array{proposed: array, notes: string[]}
+ */
+function rr_local_seo_import_map_entity( array $node ): array {
+	$notes    = array();
+	$types    = rr_local_seo_node_types( $node );
+	$proposed = array( 'type' => in_array( 'Person', $types, true ) ? 'Person' : 'Organization' );
+
+	foreach ( array(
+		'name'        => 'name',
+		'legalName'   => 'legal_name',
+		'jobTitle'    => 'job_title',
+		'url'         => 'url',
+		'description' => 'description',
+		'email'       => 'email',
+		'telephone'   => 'phone',
+	) as $from => $to ) {
+		if ( isset( $node[ $from ] ) ) {
+			$proposed[ $to ] = $node[ $from ];
+		}
+	}
+	$logo = null;
+	if ( isset( $node['logo'] ) ) {
+		$logo = rr_local_seo_import_image( $node['logo'] );
+	} elseif ( isset( $node['image'] ) ) {
+		$logo = rr_local_seo_import_image( $node['image'] );
+	}
+	if ( null !== $logo ) {
+		$proposed['logo'] = $logo;
+	}
+	if ( isset( $node['sameAs'] ) ) {
+		$urls = array();
+		foreach ( (array) $node['sameAs'] as $url ) {
+			if ( is_string( $url ) && 0 === strpos( $url, 'https://' ) ) {
+				$urls[] = $url;
+			} else {
+				$notes[] = 'a sameAs entry was dropped: not an https URL';
+			}
+		}
+		if ( ! empty( $urls ) ) {
+			$proposed['same_as'] = $urls;
+		}
+	}
+	return array(
+		'proposed' => $proposed,
+		'notes'    => $notes,
+	);
+}
+
+/**
+ * Finds business, Organization and Person nodes in snippets and proposes
+ * Local SEO entity and location objects for them. Read-only: nothing is
+ * written and no snippet is changed.
+ *
+ * Only top-level nodes are considered (root or direct @graph members), so
+ * an Organization nested inside a Service as its provider is not proposed.
+ *
+ * @param array $snippets Managed snippets option value.
+ * @return array[] Candidates: snippet_id, snippet_status, kind (entity|location),
+ *                 source_id, valid, errors, notes, proposed, normalized.
+ */
+function rr_local_seo_import_candidates( array $snippets ): array {
+	$business = array_merge( RR_AEO_LOCAL_ENTITY_TYPES, rr_local_seo_business_types() );
+	$out      = array();
+	$index    = 0;
+
+	foreach ( $snippets as $snippet_id => $snippet ) {
+		if ( ! is_array( $snippet ) ) {
+			continue;
+		}
+		foreach ( rr_schema_extract_jsonld_blocks( (string) ( isset( $snippet['content'] ) ? $snippet['content'] : '' ) ) as $block ) {
+			if ( ! $block['valid'] ) {
+				continue;
+			}
+			$inventory = rr_schema_inventory( $block['data'] );
+			foreach ( $inventory['entities'] as $entity ) {
+				if ( 1 !== preg_match( '/^\$(\[\d+\])?(\.@graph\[\d+\])?$/', $entity['path'] ) ) {
+					continue;
+				}
+				$node  = $entity['node'];
+				$types = rr_local_seo_node_types( $node );
+				if ( ! array_intersect( $types, array_merge( $business, array( 'Person' ) ) ) ) {
+					continue;
+				}
+
+				$is_location = (bool) array_intersect( $types, rr_local_seo_business_types() );
+				if ( $is_location ) {
+					$mapped = rr_local_seo_import_map_location( $node, $index );
+					$result = rr_validate_local_location( $mapped['proposed'] );
+				} else {
+					$mapped = rr_local_seo_import_map_entity( $node );
+					$result = rr_validate_local_entity( $mapped['proposed'] );
+				}
+				++$index;
+				$out[] = array(
+					'snippet_id'     => (string) $snippet_id,
+					'snippet_status' => (string) ( isset( $snippet['status'] ) ? $snippet['status'] : 'active' ),
+					'kind'           => $is_location ? 'location' : 'entity',
+					'source_id'      => isset( $node['@id'] ) && is_string( $node['@id'] ) ? $node['@id'] : null,
+					'valid'          => empty( $result['errors'] ),
+					'errors'         => $result['errors'],
+					'notes'          => $mapped['notes'],
+					'proposed'       => $mapped['proposed'],
+					'normalized'     => empty( $result['errors'] ) ? $result['data'] : null,
+				);
+			}
+		}
+	}
+	return $out;
+}
+
 // -- Action log ---------------------------------------------------------------
 
 /**
@@ -1303,6 +1869,23 @@ function rr_local_seo_log( string $action_type, ?string $target_id, array $befor
 }
 
 /**
+ * Names of active schema/head-code plugins other than Rank Math.
+ *
+ * Rank Math has its own dedicated warning.
+ *
+ * @return string[]
+ */
+function rr_local_seo_other_emitter_names(): array {
+	$names = array();
+	foreach ( rr_local_seo_active_emitters() as $emitter ) {
+		if ( 'seo-by-rank-math' !== $emitter['slug'] && 'seo-by-rank-math-pro' !== $emitter['slug'] ) {
+			$names[] = $emitter['name'];
+		}
+	}
+	return $names;
+}
+
+/**
  * Returns advisory warnings for a config.
  *
  * @param array $config Local SEO config.
@@ -1313,6 +1896,13 @@ function rr_local_seo_warnings( array $config ): array {
 	if ( ! empty( $config['enabled'] ) && class_exists( 'RankMath' ) ) {
 		$warnings[] = 'Rank Math is active and may emit its own Organization/LocalBusiness schema; '
 			. 'check the public page for duplicates, and disable Rank Math Local SEO or this setting.';
+	}
+	if ( ! empty( $config['enabled'] ) ) {
+		$others = rr_local_seo_other_emitter_names();
+		if ( ! empty( $others ) ) {
+			$warnings[] = 'Other plugins that can print schema or head code are active (' . implode( ', ', $others )
+				. '); run GET /local-seo/preview?inspect_public=1 to check for duplicates.';
+		}
 	}
 	if ( ! empty( $config['enabled'] ) ) {
 		$warnings[] = 'If a page cache sits in front of the site, purge it and confirm the public URL unauthenticated before treating the change as live.';
@@ -1413,6 +2003,32 @@ function rmb_local_seo_set( WP_REST_Request $request ) {
 		return rr_local_seo_invalid( $result['errors'] );
 	}
 
+	// Gate: turning emission on scans the real pages for schema other plugins
+	// already print. Conflicts refuse the write unless acknowledged.
+	$scan     = null;
+	$warnings = rr_local_seo_warnings( $result['config'] );
+	if ( ! $current['enabled'] && $result['config']['enabled'] ) {
+		$scan = rr_local_seo_scan_site( $result['config'] );
+		if ( ! empty( $scan['conflicts'] ) ) {
+			if ( ! (bool) $request->get_param( 'acknowledge_duplicates' ) ) {
+				return new WP_Error(
+					'duplicate_schema_conflict',
+					'Other sources already print schema for nodes Local SEO would emit. Remove them, or resend with acknowledge_duplicates=true.',
+					array(
+						'status'    => 422,
+						'conflicts' => $scan['conflicts'],
+						'pages'     => $scan['pages'],
+					)
+				);
+			}
+			$warnings[] = 'Enabled with acknowledged duplicates: the conflicting nodes are printed twice.';
+		}
+		if ( $scan['unverified'] ) {
+			$warnings[] = 'The public scan could not fetch every page, so duplicates are unverified; '
+				. 'run GET /local-seo/preview?inspect_public=1 after enabling.';
+		}
+	}
+
 	if ( ! $dry_run ) {
 		rr_local_seo_save_config( $result['config'] );
 		rr_local_seo_log( 'local_seo_update', null, $current, $result['config'], rr_request_id( $request ) );
@@ -1426,7 +2042,8 @@ function rmb_local_seo_set( WP_REST_Request $request ) {
 			'enabled'   => $result['config']['enabled'],
 			'entity'    => rr_local_seo_as_object( $result['config']['entity'] ),
 			'locations' => $result['config']['locations'],
-			'warnings'  => rr_local_seo_warnings( $result['config'] ),
+			'scan'      => $scan,
+			'warnings'  => $warnings,
 		)
 	);
 }
@@ -1456,7 +2073,11 @@ function rmb_local_seo_preview( WP_REST_Request $request ) {
 		$post_id = (int) get_option( 'page_on_front' );
 	}
 
-	$plan = rr_local_seo_plan( $config, $post_id, $is_home );
+	$plan   = rr_local_seo_plan( $config, $post_id, $is_home );
+	$public = null;
+	if ( (bool) $request->get_param( 'inspect_public' ) ) {
+		$public = rr_local_seo_scan_page( $config, $post_id, $is_home );
+	}
 	return rr_local_seo_response(
 		array(
 			'enabled'  => $config['enabled'],
@@ -1464,6 +2085,7 @@ function rmb_local_seo_preview( WP_REST_Request $request ) {
 			'is_home'  => $is_home,
 			'nodes'    => $plan['nodes'],
 			'skipped'  => $plan['skipped'],
+			'public'   => $public,
 			'warnings' => rr_local_seo_warnings( $config ),
 		)
 	);
@@ -1552,6 +2174,45 @@ function rmb_local_seo_location_delete( WP_REST_Request $request ) {
 		array(
 			'success' => true,
 			'deleted' => $id,
+		)
+	);
+}
+
+/**
+ * Handles GET /local-seo/import-preview -- read-only proposals mapped from
+ * the business, Organization and Person JSON-LD found in managed snippets.
+ *
+ * @param WP_REST_Request $request REST request object.
+ * @return WP_REST_Response
+ */
+function rmb_local_seo_import_preview( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- REST callback signature.
+	$snippets   = get_option( RMB_SNIPPETS_KEY, array() );
+	$candidates = rr_local_seo_import_candidates( is_array( $snippets ) ? $snippets : array() );
+	$entities   = 0;
+	$locations  = 0;
+	$invalid    = 0;
+	foreach ( $candidates as $candidate ) {
+		if ( 'entity' === $candidate['kind'] ) {
+			++$entities;
+		} else {
+			++$locations;
+		}
+		if ( ! $candidate['valid'] ) {
+			++$invalid;
+		}
+	}
+	return rr_local_seo_response(
+		array(
+			'read_only'  => true,
+			'summary'    => array(
+				'candidates' => count( $candidates ),
+				'entities'   => $entities,
+				'locations'  => $locations,
+				'invalid'    => $invalid,
+			),
+			'candidates' => $candidates,
+			'note'       => 'Nothing was written and no snippet was changed. Review each proposed object, '
+				. 'then write it with POST /local-seo or POST /local-seo/locations/{id}.',
 		)
 	);
 }

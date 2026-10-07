@@ -1,5 +1,57 @@
 # Changelog
 
+## v3.22.0
+
+Local SEO Stage 2 (issue #39). Closes the blind spot found live on
+rankrocket.co, where the homepage Organization was printed by HFCM and the
+Stage 1 duplicate check could not see it.
+
+### Added
+
+- `GET /local-seo/preview?inspect_public=1` fetches the real page (front page,
+  or `post_id`) and reports, under `public.conflicts`, nodes this plugin would
+  emit that another source already prints (same `@id`, or same name in the same
+  entity family). This plugin's own marker-wrapped blocks are ignored.
+- Enable gate: `POST /local-seo` with `enabled` going false to true scans the
+  front page and every page assigned to a location (at most 10). Conflicts
+  return `422 duplicate_schema_conflict` with the conflicts and pages unless
+  `acknowledge_duplicates` is `true`. If a page cannot be fetched (loopback
+  blocked, no front page post) the write goes ahead with a warning that
+  duplicates are unverified. The gate also applies to `dry_run`.
+- `GET /status` gains `schema_emitters`: a passive, HTTP-free list of active
+  plugins known to print schema or head code (Rank Math, Yoast, AIOSEO,
+  SEOPress, Schema plugins, HFCM, WPCode, Code Snippets). Hints, not proof. A
+  `local_seo_other_emitters` status warning appears only when Local SEO is
+  enabled. Extendable with the `rrseo_local_seo_known_emitters` filter.
+- Business facts: when an entity is stored, `rr_resolve_business_facts()` uses
+  it right after manual `business_facts` (before `schema_source_post_id` and the
+  homepage), independent of `enabled`. `GET /aeo-geo/entity` reports
+  `source: local_seo`.
+- Schema audit and entity signals count Local SEO output as a `local_seo`
+  source, except for URLs whose public page was inspected (that HTML already
+  contains it).
+- `GET /local-seo/import-preview`: read-only proposals mapped from LocalBusiness,
+  Organization and Person JSON-LD found in managed snippets, with validation
+  errors and dropped-field notes. Nothing is written and no snippet changes.
+- Capabilities `local_seo.public_scan` and `local_seo.import_preview`.
+
+### Changed
+
+- Duplicate detection reuses the schema audit's `rr_snippet_applies_to_post()`
+  and honors the snippet emission killswitch, replacing the Stage 1 copy.
+
+### Migration
+
+None. With no `rr_local_seo` entity stored, llms.txt and the audits behave as
+before. Sites that already have an entity stored will see it used for business
+facts. The MCP tools for these endpoints are tracked separately in
+`rankrocket-mcp`.
+
+### Tests
+
+Roughly 30 new tests in `tests/unit/LocalSeoTest.php`. The bootstrap's
+`add_filter` / `apply_filters` stubs now run registered callbacks.
+
 ## v3.21.1
 
 Fix: Local SEO GET responses were cacheable (found live on rankrocket.co, which

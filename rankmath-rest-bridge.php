@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.21.1
+ * Version:      3.22.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.21.1' );
+define( 'RMB_VERSION', '3.22.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -2486,20 +2486,25 @@ add_action(
 					'callback'            => 'rmb_local_seo_set',
 					'permission_callback' => $admin_only,
 					'args'                => array(
-						'enabled'   => array(
+						'enabled'                => array(
 							'required' => false,
 							'type'     => 'boolean',
 						),
-						'entity'    => array(
+						'entity'                 => array(
 							'required' => false,
 							'type'     => 'object',
 						),
-						'locations' => array(
+						'locations'              => array(
 							'required' => false,
 							'type'     => 'array',
 							'items'    => array( 'type' => 'object' ),
 						),
-						'dry_run'   => array(
+						'dry_run'                => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+						'acknowledge_duplicates' => array(
 							'required' => false,
 							'type'     => 'boolean',
 							'default'  => false,
@@ -2517,11 +2522,26 @@ add_action(
 				'callback'            => 'rmb_local_seo_preview',
 				'permission_callback' => $admin_only,
 				'args'                => array(
-					'post_id' => array(
+					'post_id'        => array(
 						'required' => false,
 						'type'     => 'integer',
 					),
+					'inspect_public' => array(
+						'required' => false,
+						'type'     => 'boolean',
+						'default'  => false,
+					),
 				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/local-seo/import-preview',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_local_seo_import_preview',
+				'permission_callback' => $admin_only,
 			)
 		);
 
@@ -6237,6 +6257,14 @@ function rmb_status( WP_REST_Request $request ) {
 			'message' => 'Local SEO emission is enabled while Rank Math is active; check the public page for duplicate Organization/LocalBusiness schema.',
 		);
 	}
+	$other_emitters = rr_local_seo_other_emitter_names();
+	if ( $local_seo['enabled'] && ! empty( $other_emitters ) ) {
+		$status_warnings[] = array(
+			'code'    => 'local_seo_other_emitters',
+			'message' => 'Local SEO emission is enabled while other schema or head-code plugins are active ('
+				. implode( ', ', $other_emitters ) . '); run GET /local-seo/preview?inspect_public=1.',
+		);
+	}
 
 	$response = array(
 		'plugin'                     => 'RankRocket SEO Control Layer',
@@ -6262,6 +6290,7 @@ function rmb_status( WP_REST_Request $request ) {
 		'wp_version'                 => get_bloginfo( 'version' ),
 		'allowed_post_types'         => apply_filters( 'rrseo_allowed_post_types', RR_ALLOWED_POST_TYPES ),
 		'allowed_schema_types'       => apply_filters( 'rrseo_allowed_schema_types', RR_ALLOWED_SCHEMA_TYPES ),
+		'schema_emitters'            => rr_local_seo_active_emitters(),
 		'warnings'                   => $status_warnings,
 	);
 
@@ -6434,6 +6463,16 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'POST /local-seo/locations/{id}',
 			'since'     => '3.21.0',
+		),
+		'local_seo.public_scan'    => array(
+			'available' => true,
+			'route'     => 'GET /local-seo/preview?inspect_public=1',
+			'since'     => '3.22.0',
+		),
+		'local_seo.import_preview' => array(
+			'available' => true,
+			'route'     => 'GET /local-seo/import-preview',
+			'since'     => '3.22.0',
 		),
 	);
 }

@@ -20,6 +20,7 @@ class LocalSeoTest extends TestCase {
         $GLOBALS['_test_queried_object_id'] = 0;
         $GLOBALS['_test_attachment_urls'] = array();
         $GLOBALS['_test_permalink']       = array();
+        $GLOBALS['_test_filters']         = array();
     }
 
     private function make_post( int $id, string $type = 'page' ): WP_Post {
@@ -363,19 +364,27 @@ class LocalSeoTest extends TestCase {
         $this->assertNull( rr_local_seo_duplicate_reason( $node, array( array( '@type' => 'Organization', '@id' => 'r', 'name' => 'Trevor' ) ) ) );
     }
 
-    // -- Snippet applicability -----------------------------------------------------
+    // -- Snippet applicability (shared matcher) ---------------------------------
 
-    public function test_snippet_applies_targets(): void {
-        $this->assertTrue( rr_local_seo_snippet_applies( 'sitewide', 0, false, '' ) );
-        $this->assertTrue( rr_local_seo_snippet_applies( 'home', 5, true, 'page' ) );
-        $this->assertFalse( rr_local_seo_snippet_applies( 'home', 5, false, 'page' ) );
-        $this->assertTrue( rr_local_seo_snippet_applies( 'page_id:5', 5, false, 'page' ) );
-        $this->assertTrue( rr_local_seo_snippet_applies( '5', 5, false, 'page' ) );
-        $this->assertFalse( rr_local_seo_snippet_applies( 'page_id:6', 5, false, 'page' ) );
-        $this->assertTrue( rr_local_seo_snippet_applies( 'post_type:post', 5, false, 'post' ) );
-        $this->assertTrue( rr_local_seo_snippet_applies( 'all_pages', 5, false, 'page' ) );
-        $this->assertFalse( rr_local_seo_snippet_applies( 'all_posts', 5, false, 'page' ) );
-        $this->assertFalse( rr_local_seo_snippet_applies( 'unknown', 5, false, 'page' ) );
+    public function test_snippet_nodes_use_shared_matcher_including_url_targets(): void {
+        $this->make_post( 5, 'page' );
+        $GLOBALS['_test_permalink'][5]                = 'https://example.test/contact/';
+        $content                                      = '<script type="application/ld+json">{"@type":"LocalBusiness","@id":"https://example.test/#a","name":"A"}</script>';
+        $GLOBALS['_test_options'][ RMB_SNIPPETS_KEY ] = array(
+            'by-url' => array( 'status' => 'active', 'display_on' => 'url:/contact', 'content' => $content ),
+        );
+        $this->assertCount( 1, rr_local_seo_snippet_nodes( 5, false, 'page' ) );
+        $this->assertCount( 0, rr_local_seo_snippet_nodes( 0, true, '' ) );
+    }
+
+    public function test_snippet_nodes_honor_global_killswitch(): void {
+        $content                                      = '<script type="application/ld+json">{"@type":"LocalBusiness","name":"A"}</script>';
+        $GLOBALS['_test_options'][ RMB_SNIPPETS_KEY ] = array(
+            'a' => array( 'status' => 'active', 'display_on' => 'sitewide', 'content' => $content ),
+        );
+        $this->assertCount( 1, rr_local_seo_snippet_nodes( 0, true, '' ) );
+        $GLOBALS['_test_options']['rrseo_emit_snippets'] = false;
+        $this->assertSame( array(), rr_local_seo_snippet_nodes( 0, true, '' ) );
     }
 
     // -- Emission plan -------------------------------------------------------------
@@ -532,5 +541,360 @@ class LocalSeoTest extends TestCase {
     public function test_warnings_present_only_when_enabled(): void {
         $this->assertSame( array(), rr_local_seo_warnings( rr_local_seo_get_config() ) );
         $this->assertNotEmpty( rr_local_seo_warnings( $this->enabled_config() ) );
+    }
+
+    // -- Stage 2: emitter inventory --------------------------------------------------
+
+    public function test_active_emitters_detects_known_plugins_only(): void {
+        $GLOBALS['_test_options']['active_plugins'] = array(
+            'header-footer-code-manager/99robots-header-footer-code-manager.php',
+            'seo-by-rank-math/rank-math.php',
+            'hello.php',
+            'some-other-plugin/some-other-plugin.php',
+        );
+        $slugs = array_column( rr_local_seo_active_emitters(), 'slug' );
+        $this->assertSame( array( 'seo-by-rank-math', 'header-footer-code-manager' ), $slugs );
+    }
+
+    public function test_active_emitters_reads_network_active_plugins(): void {
+        $GLOBALS['_test_options']['active_sitewide_plugins'] = array( 'insert-headers-and-footers/ihaf.php' => 1700000000 );
+        $found = rr_local_seo_active_emitters();
+        $this->assertSame( 'WPCode', $found[0]['name'] );
+        $this->assertSame( 'code_injection', $found[0]['kind'] );
+    }
+
+    public function test_active_emitters_empty_when_none(): void {
+        $this->assertSame( array(), rr_local_seo_active_emitters() );
+    }
+
+    public function test_other_emitter_names_exclude_rank_math(): void {
+        $GLOBALS['_test_options']['active_plugins'] = array( 'seo-by-rank-math/rank-math.php', 'wordpress-seo/wp-seo.php' );
+        $this->assertSame( array( 'Yoast SEO' ), rr_local_seo_other_emitter_names() );
+    }
+
+    public function test_warnings_name_other_emitters_only_when_enabled(): void {
+        $GLOBALS['_test_options']['active_plugins'] = array( 'header-footer-code-manager/x.php' );
+        $this->assertSame( array(), rr_local_seo_warnings( rr_local_seo_get_config() ) );
+        $joined = implode( ' ', rr_local_seo_warnings( $this->enabled_config() ) );
+        $this->assertStringContainsString( 'Header Footer Code Manager', $joined );
+    }
+
+    // -- Stage 2: public scan --------------------------------------------------------
+
+    private function ld( array $node ): string {
+        return '<html><head><script type="application/ld+json">' . wp_json_encode( $node ) . '</script></head></html>';
+    }
+
+    private function supply_html( array $by_post ): void {
+        $GLOBALS['_test_filters']['rrseo_local_seo_public_html'][] = function ( $value, $post_id ) use ( $by_post ) {
+            return array_key_exists( $post_id, $by_post ) ? $by_post[ $post_id ] : $value;
+        };
+    }
+
+    public function test_strip_own_blocks_removes_only_marked_region(): void {
+        $own   = RR_SCHEMA_HYGIENE_MARKER_START . '<script type="application/ld+json">{"@type":"Organization"}</script>' . RR_SCHEMA_HYGIENE_MARKER_END;
+        $other = '<script type="application/ld+json">{"@type":"WebSite"}</script>';
+        $out   = rr_local_seo_strip_own_blocks( $own . $other );
+        $this->assertStringNotContainsString( 'Organization', $out );
+        $this->assertStringContainsString( 'WebSite', $out );
+    }
+
+    public function test_public_nodes_ignore_own_blocks(): void {
+        $html = RR_SCHEMA_HYGIENE_MARKER_START . '<script type="application/ld+json">{"@type":"Organization","@id":"mine"}</script>' . RR_SCHEMA_HYGIENE_MARKER_END
+            . '<script type="application/ld+json">{"@type":"WebSite","@id":"theirs"}</script>';
+        $ids = array_column( rr_local_seo_public_nodes( $html ), '@id' );
+        $this->assertSame( array( 'theirs' ), $ids );
+    }
+
+    public function test_scan_page_reports_same_id_conflict_from_third_party(): void {
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'Organization', '@id' => 'https://example.test/#organization', 'name' => 'HFCM Org' ) ) ) );
+
+        $page = rr_local_seo_scan_page( $this->enabled_config(), 2, true );
+        $this->assertSame( 'inspected', $page['status'] );
+        $this->assertSame( 'https://example.test/#organization', $page['conflicts'][0]['@id'] );
+        $this->assertSame( 'same_id', $page['conflicts'][0]['reason'] );
+    }
+
+    public function test_scan_page_reports_same_name_conflict(): void {
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'LocalBusiness', '@id' => 'https://example.test/#other', 'name' => 'Olson Recycling' ) ) ) );
+
+        $page = rr_local_seo_scan_page( $this->enabled_config(), 2, true );
+        $this->assertSame( 'same_type_and_name', $page['conflicts'][0]['reason'] );
+    }
+
+    public function test_scan_page_clean_when_nothing_matches(): void {
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'WebSite', '@id' => 'https://example.test/#website', 'name' => 'Site' ) ) ) );
+        $page = rr_local_seo_scan_page( $this->enabled_config(), 2, true );
+        $this->assertSame( array(), $page['conflicts'] );
+    }
+
+    public function test_scan_page_unavailable_without_page_or_html(): void {
+        $page = rr_local_seo_scan_page( $this->enabled_config(), 0, true );
+        $this->assertSame( 'unavailable', $page['status'] );
+        $this->assertSame( 'no_page_to_fetch', $page['error'] );
+    }
+
+    public function test_scan_page_nothing_to_emit_without_entity(): void {
+        $page = rr_local_seo_scan_page( rr_local_seo_get_config(), 2, true );
+        $this->assertSame( 'nothing_to_emit', $page['status'] );
+    }
+
+    public function test_scan_site_covers_front_and_assigned_pages_and_flags_unverified(): void {
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->make_post( 21 );
+        $config                            = $this->enabled_config();
+        $config['locations'][0]['post_id'] = 21;
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'WebSite', '@id' => 'x' ) ) ) );
+
+        $scan = rr_local_seo_scan_site( $config );
+        $this->assertCount( 2, $scan['pages'] );
+        $this->assertSame( array( 21 ), array( $scan['pages'][1]['post_id'] ) );
+        $this->assertTrue( $scan['unverified'], 'page 21 has no HTML and no loopback in tests' );
+        $this->assertSame( array(), $scan['conflicts'] );
+    }
+
+    // -- Stage 2: enable gate --------------------------------------------------------
+
+    private function enable_request( array $extra = array() ): WP_REST_Request {
+        return new WP_REST_Request( array_merge( array( 'enabled' => true ), $extra ) );
+    }
+
+    private function seed_disabled_config(): void {
+        $config            = $this->enabled_config();
+        $config['enabled'] = false;
+        update_option( RR_LOCAL_SEO_KEY, $config );
+    }
+
+    public function test_gate_refuses_enable_on_conflict(): void {
+        $this->seed_disabled_config();
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'Organization', '@id' => 'https://example.test/#organization' ) ) ) );
+
+        $result = rmb_local_seo_set( $this->enable_request() );
+        $this->assertInstanceOf( WP_Error::class, $result );
+        $this->assertSame( 'duplicate_schema_conflict', $result->code );
+        $this->assertSame( 422, $result->data['status'] );
+        $this->assertNotEmpty( $result->data['conflicts'] );
+        $this->assertFalse( get_option( RR_LOCAL_SEO_KEY )['enabled'], 'nothing was written' );
+    }
+
+    public function test_gate_allows_enable_with_acknowledge_and_warns(): void {
+        $this->seed_disabled_config();
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'Organization', '@id' => 'https://example.test/#organization' ) ) ) );
+
+        $result = rmb_local_seo_set( $this->enable_request( array( 'acknowledge_duplicates' => true ) ) );
+        $this->assertTrue( $result['success'] );
+        $this->assertTrue( get_option( RR_LOCAL_SEO_KEY )['enabled'] );
+        $this->assertStringContainsString( 'acknowledged duplicates', implode( ' ', $result['warnings'] ) );
+    }
+
+    public function test_gate_allows_clean_enable(): void {
+        $this->seed_disabled_config();
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'WebSite', '@id' => 'x' ) ) ) );
+
+        $result = rmb_local_seo_set( $this->enable_request() );
+        $this->assertTrue( $result['success'] );
+        $this->assertSame( array(), $result['scan']['conflicts'] );
+    }
+
+    public function test_gate_warns_but_allows_when_scan_unverified(): void {
+        $this->seed_disabled_config();
+        $result = rmb_local_seo_set( $this->enable_request() );
+        $this->assertTrue( $result['success'] );
+        $this->assertStringContainsString( 'unverified', implode( ' ', $result['warnings'] ) );
+    }
+
+    public function test_gate_applies_to_dry_run_without_writing(): void {
+        $this->seed_disabled_config();
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'Organization', '@id' => 'https://example.test/#organization' ) ) ) );
+
+        $result = rmb_local_seo_set( $this->enable_request( array( 'dry_run' => true ) ) );
+        $this->assertInstanceOf( WP_Error::class, $result );
+    }
+
+    public function test_gate_does_not_scan_when_already_enabled_or_staying_disabled(): void {
+        update_option( RR_LOCAL_SEO_KEY, $this->enabled_config() );
+        $result = rmb_local_seo_set( new WP_REST_Request( array( 'locations' => array( $this->location( 'x' ) ) ) ) );
+        $this->assertNull( $result['scan'] );
+
+        $this->seed_disabled_config();
+        $result = rmb_local_seo_set( new WP_REST_Request( array( 'locations' => array( $this->location( 'y' ) ) ) ) );
+        $this->assertNull( $result['scan'] );
+    }
+
+    public function test_preview_inspect_public_attaches_scan(): void {
+        update_option( RR_LOCAL_SEO_KEY, $this->enabled_config() );
+        $GLOBALS['_test_options']['page_on_front'] = 2;
+        $this->make_post( 2 );
+        $this->supply_html( array( 2 => $this->ld( array( '@type' => 'Organization', '@id' => 'https://example.test/#organization' ) ) ) );
+
+        $with = rmb_local_seo_preview( new WP_REST_Request( array( 'inspect_public' => true ) ) );
+        $this->assertSame( 'same_id', $with['public']['conflicts'][0]['reason'] );
+
+        $without = rmb_local_seo_preview( new WP_REST_Request() );
+        $this->assertNull( $without['public'] );
+    }
+
+    // -- Stage 2: business facts and audit integration -------------------------------
+
+    public function test_business_facts_from_config(): void {
+        $loc                  = $this->location( 'seneca' );
+        $loc['area_served']   = array( 'Seneca', 'Streator' );
+        $config               = rr_validate_local_seo( array( 'entity' => $this->entity(), 'locations' => array( $loc ) ), rr_local_seo_get_config() )['config'];
+        $facts                = rr_local_seo_business_facts( $config );
+
+        $this->assertSame( 'Olson Recycling', $facts['business_name'] );
+        $this->assertSame( 'RecyclingCenter', $facts['schema_type'] );
+        $this->assertSame( 'https://example.test/#organization', $facts['entity_id'] );
+        $this->assertSame( '(815) 357-8625', $facts['phone'] );
+        $this->assertSame( '354 W. Jackson St., Seneca, IL, 61360', $facts['address'] );
+        $this->assertSame( array( 'Seneca', 'Streator' ), $facts['service_area'] );
+    }
+
+    public function test_business_facts_empty_without_entity(): void {
+        $this->assertSame( array(), rr_local_seo_business_facts( rr_local_seo_get_config() ) );
+    }
+
+    public function test_resolve_business_facts_precedence(): void {
+        $config = rr_validate_local_seo( array( 'entity' => $this->entity() ), rr_local_seo_get_config() )['config'];
+        update_option( RR_LOCAL_SEO_KEY, $config );
+
+        $facts = rr_resolve_business_facts( array() );
+        $this->assertSame( 'Olson Recycling', $facts['business_name'], 'local_seo beats homepage and fallback' );
+
+        $manual = rr_resolve_business_facts( array( 'business_facts' => array( 'business_name' => 'Manual Co' ) ) );
+        $this->assertSame( 'Manual Co', $manual['business_name'], 'manual wins' );
+    }
+
+    public function test_resolve_business_facts_unchanged_without_local_seo(): void {
+        $facts = rr_resolve_business_facts( array() );
+        $this->assertArrayNotHasKey( 'entity_id', $facts );
+    }
+
+    public function test_entity_signals_source_label(): void {
+        update_option( RR_LOCAL_SEO_KEY, rr_validate_local_seo( array( 'entity' => $this->entity() ), rr_local_seo_get_config() )['config'] );
+        $this->assertSame( 'local_seo', rr_aeo_compute_entity_signals()['source'] );
+    }
+
+    public function test_audit_source_null_when_disabled_and_typed_when_enabled(): void {
+        $this->assertNull( rr_local_seo_audit_source( 2, true ) );
+
+        update_option( RR_LOCAL_SEO_KEY, $this->enabled_config() );
+        $source = rr_local_seo_audit_source( 2, true );
+        $this->assertSame( 'local_seo', $source['source'] );
+        $this->assertContains( 'Organization', $source['types'] );
+        $this->assertContains( 'RecyclingCenter', $source['types'] );
+    }
+
+    // -- Stage 2: import preview -----------------------------------------------------
+
+    private function import_snippets(): array {
+        $graph = array(
+            '@context' => 'https://schema.org',
+            '@graph'   => array(
+                array(
+                    '@type'                     => 'LocalBusiness',
+                    '@id'                       => 'https://old.test/#localbusiness-seneca',
+                    'name'                      => 'Olson Recycling Seneca',
+                    'telephone'                 => '(815) 357-8625',
+                    'priceRange'                => '$$',
+                    'address'                   => array(
+                        '@type'           => 'PostalAddress',
+                        'streetAddress'   => '354 W. Jackson St.',
+                        'addressLocality' => 'Seneca',
+                        'addressRegion'   => 'IL',
+                        'postalCode'      => '61360',
+                        'addressCountry'  => 'US',
+                    ),
+                    'geo'                       => array( '@type' => 'GeoCoordinates', 'latitude' => '41.31', 'longitude' => '-88.61' ),
+                    'openingHoursSpecification' => array(
+                        array( 'dayOfWeek' => array( 'https://schema.org/Monday', 'Tuesday' ), 'opens' => '08:00:00', 'closes' => '17:00:00' ),
+                    ),
+                    'sameAs'                    => array( 'https://www.facebook.com/olson', 'http://insecure.test/x' ),
+                    'areaServed'                => array( array( '@type' => 'Place', 'name' => 'Streator' ), 'Seneca' ),
+                ),
+                array( '@type' => 'Organization', '@id' => 'https://old.test/#org', 'name' => 'Olson Recycling', 'url' => 'https://example.test', 'logo' => array( '@type' => 'ImageObject', 'url' => 'https://example.test/l.png' ) ),
+                array(
+                    '@type'    => 'Service',
+                    '@id'      => 'https://old.test/#svc',
+                    'name'     => 'Recycling',
+                    'provider' => array( '@type' => 'Organization', 'name' => 'Nested Provider' ),
+                ),
+            ),
+        );
+        return array(
+            'lb-all' => array( 'status' => 'inactive', 'display_on' => 'home', 'content' => '<script type="application/ld+json">' . wp_json_encode( $graph ) . '</script>' ),
+            'noise'  => array( 'status' => 'active', 'display_on' => 'sitewide', 'content' => '<script>console.log(1)</script>' ),
+        );
+    }
+
+    public function test_import_candidates_map_location_and_entity(): void {
+        $found = rr_local_seo_import_candidates( $this->import_snippets() );
+        $this->assertCount( 2, $found, 'nested provider Organization and the Service are not proposed' );
+
+        $loc = $found[0];
+        $this->assertSame( 'location', $loc['kind'] );
+        $this->assertSame( 'lb-all', $loc['snippet_id'] );
+        $this->assertSame( 'inactive', $loc['snippet_status'] );
+        $this->assertSame( 'seneca', $loc['proposed']['id'] );
+        $this->assertSame( 41.31, $loc['proposed']['geo']['lat'] );
+        $this->assertSame( array( 'Monday', 'Tuesday' ), $loc['proposed']['opening_hours'][0]['days'] );
+        $this->assertSame( '08:00', $loc['proposed']['opening_hours'][0]['opens'] );
+        $this->assertSame( array( 'https://www.facebook.com/olson' ), $loc['proposed']['same_as'] );
+        $this->assertSame( array( 'Streator', 'Seneca' ), $loc['proposed']['area_served'] );
+        $this->assertTrue( $loc['valid'], implode( '; ', $loc['errors'] ) );
+        $this->assertNotEmpty( $loc['notes'], 'the http sameAs entry was dropped with a note' );
+        $this->assertSame( 'LocalBusiness', $loc['normalized']['business_type'] );
+
+        $org = $found[1];
+        $this->assertSame( 'entity', $org['kind'] );
+        $this->assertSame( 'https://example.test/l.png', $org['proposed']['logo'] );
+        $this->assertTrue( $org['valid'] );
+    }
+
+    public function test_import_candidate_flags_invalid_mapping(): void {
+        $snippets = array(
+            's' => array( 'status' => 'active', 'display_on' => 'sitewide', 'content' => '<script type="application/ld+json">{"@type":"LocalBusiness","name":"No Address Co"}</script>' ),
+        );
+        $found = rr_local_seo_import_candidates( $snippets );
+        $this->assertCount( 1, $found );
+        $this->assertFalse( $found[0]['valid'] );
+        $this->assertNotEmpty( $found[0]['errors'] );
+        $this->assertNull( $found[0]['normalized'] );
+    }
+
+    public function test_import_candidate_person_maps_to_person_entity(): void {
+        $snippets = array(
+            's' => array( 'status' => 'active', 'display_on' => 'home', 'content' => '<script type="application/ld+json">{"@type":"Person","@id":"https://x.test/#person","name":"Trevor Aspiranti","jobTitle":"Coach"}</script>' ),
+        );
+        $found = rr_local_seo_import_candidates( $snippets );
+        $this->assertSame( 'Person', $found[0]['proposed']['type'] );
+        $this->assertSame( 'Coach', $found[0]['proposed']['job_title'] );
+        $this->assertTrue( $found[0]['valid'] );
+    }
+
+    public function test_import_preview_handler_is_read_only_and_summarizes(): void {
+        $GLOBALS['_test_options'][ RMB_SNIPPETS_KEY ] = $this->import_snippets();
+        $before                                       = $GLOBALS['_test_options'];
+
+        $result = rmb_local_seo_import_preview( new WP_REST_Request() );
+        $this->assertTrue( $result['read_only'] );
+        $this->assertSame( 2, $result['summary']['candidates'] );
+        $this->assertSame( 1, $result['summary']['locations'] );
+        $this->assertSame( 1, $result['summary']['entities'] );
+        $this->assertSame( $before, $GLOBALS['_test_options'], 'no options were written' );
     }
 }

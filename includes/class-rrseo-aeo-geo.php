@@ -116,6 +116,7 @@ function rr_aeo_compute_canonical_preview( array $args = array() ): array {
  *
  * Priority chain mirrors rr_resolve_business_facts():
  *   1. Manual business_facts in llms config.
+ *   1b. Local SEO settings object (source label local_seo).
  *   2. Schema from schema_source_post_id.
  *   3. Homepage schema (page_on_front).
  *   4. WordPress bloginfo fallback.
@@ -151,12 +152,20 @@ function rr_aeo_compute_entity_signals(): array {
 		foreach ( rr_schema_collect_post_sources( $homepage_id, $hp_ctx, $hp_snips, $hp_emit ) as $src ) {
 			$homepage_schema_types = array_values( array_unique( array_merge( $homepage_schema_types, $src['types'] ) ) );
 		}
+		if ( function_exists( 'rr_local_seo_audit_source' ) ) {
+			$local_src = rr_local_seo_audit_source( $homepage_id, true );
+			if ( null !== $local_src ) {
+				$homepage_schema_types = array_values( array_unique( array_merge( $homepage_schema_types, $local_src['types'] ) ) );
+			}
+		}
 	}
 
 	// Determine source label using the same priority chain as rr_resolve_business_facts().
 	$source = 'bloginfo_fallback';
 	if ( ! empty( $config['business_facts'] ) && is_array( $config['business_facts'] ) ) {
 		$source = 'manual_business_facts';
+	} elseif ( function_exists( 'rr_local_seo_business_facts' ) && ! empty( rr_local_seo_business_facts( rr_local_seo_get_config() ) ) ) {
+		$source = 'local_seo';
 	} elseif ( ! empty( $config['schema_source_post_id'] ) ) {
 		$src_facts = rr_extract_business_facts_from_schema( (int) $config['schema_source_post_id'] );
 		if ( ! empty( $src_facts ) ) {
@@ -580,6 +589,15 @@ function rr_aeo_compute_schema_audit( array $args = array(), ?array $canonical_r
 				if ( ! empty( $pub['types'] ) || $pub['invalid_blocks'] > 0 ) {
 					$sources[] = array_merge( array( 'source' => 'public' ), $pub );
 				}
+			}
+		}
+
+		// Local SEO output (issue #39 Stage 2). Skipped when the public page
+		// was inspected, because that HTML already contains these nodes.
+		if ( 'inspected' !== $public_status && function_exists( 'rr_local_seo_audit_source' ) ) {
+			$local_src = rr_local_seo_audit_source( $post_id, $is_home );
+			if ( null !== $local_src ) {
+				$sources[] = $local_src;
 			}
 		}
 

@@ -48,13 +48,21 @@ if ( ! function_exists( 'remove_action' ) ) {
     }
 }
 
+// add_filter: records callbacks in $GLOBALS['_test_filters'] so tests can inject
+// values; with nothing registered apply_filters passes the value through.
 if ( ! function_exists( 'add_filter' ) ) {
-    function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {}
+    function add_filter( $hook, $callback, $priority = 10, $accepted_args = 1 ) {
+        $GLOBALS['_test_filters'][ $hook ][] = $callback;
+    }
 }
 
-// apply_filters: return the value unchanged so allowlist constants pass through.
+// apply_filters: runs any registered test callbacks, else returns the value
+// unchanged so allowlist constants pass through.
 if ( ! function_exists( 'apply_filters' ) ) {
-    function apply_filters( $hook, $value ) {
+    function apply_filters( $hook, $value, ...$args ) {
+        foreach ( $GLOBALS['_test_filters'][ $hook ] ?? [] as $callback ) {
+            $value = $callback( $value, ...$args );
+        }
         return $value;
     }
 }

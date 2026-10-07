@@ -693,6 +693,45 @@ Writes are recorded in the `rrseo_action_log` option (not reversible).
 `GET /status` reports a `local_seo_rank_math_overlap` warning when emission is
 enabled while Rank Math is active.
 
+#### Duplicate protection (v3.22.0)
+
+Runtime duplicate detection only sees the page's stored schema graph and this
+plugin's snippets. Schema printed by anything else (HFCM, WPCode, a theme, Rank
+Math) is invisible while a page renders, so it is checked by scanning the real
+page instead:
+
+- `GET /local-seo/preview?inspect_public=1[&post_id=N]` fetches the public page
+  and lists, under `public.conflicts`, nodes Local SEO would emit that another
+  source already prints.
+- Turning emission on (`enabled` false to true) runs the same scan on the front
+  page and every page assigned to a location (at most 10). Conflicts return
+  `422 duplicate_schema_conflict` unless you resend with
+  `"acknowledge_duplicates": true`. If a page cannot be fetched, the write
+  proceeds with a warning that duplicates are unverified. The gate also applies
+  to `dry_run`.
+- `GET /status` lists `schema_emitters`, the active plugins known to print
+  schema or head code. These are hints, not proof.
+
+There is deliberately no scan on plugin activation: loopback requests are
+unreliable there and the result would go stale.
+
+#### Import from snippets (v3.22.0)
+
+`GET /local-seo/import-preview` reads the managed snippets and proposes entity
+and location objects for the LocalBusiness, Organization and Person JSON-LD in
+them. It is read-only: nothing is written, no snippet is changed, and each
+proposal carries its validation errors and any dropped-field notes. Write the
+ones you want with `POST /local-seo` or `POST /local-seo/locations/{id}`, then
+retire the old snippet in the same step you enable emission.
+
+#### llms.txt and audit integration (v3.22.0)
+
+A stored entity is used for llms.txt business facts, right after manual
+`business_facts` and before `schema_source_post_id` and the homepage schema,
+whether or not emission is enabled. `GET /aeo-geo/entity` reports
+`source: local_seo`, and the schema audit counts Local SEO output as a
+`local_seo` source.
+
 ### Status
 
 #### `GET /status` — plugin state snapshot
