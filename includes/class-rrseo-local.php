@@ -1323,6 +1323,36 @@ function rr_local_seo_warnings( array $config ): array {
 // -- REST handlers ------------------------------------------------------------
 
 /**
+ * Marks a REST response as uncacheable.
+ *
+ * These are admin-only configuration reads; a page-cache layer (LiteSpeed)
+ * serving a stale copy after a write misleads the caller, so the response
+ * opts out of caching.
+ *
+ * @param mixed $data Response data.
+ * @return WP_REST_Response|mixed
+ */
+function rr_local_seo_response( $data ) {
+	$response = rest_ensure_response( $data );
+	if ( is_object( $response ) && method_exists( $response, 'header' ) ) {
+		$response->header( 'Cache-Control', 'no-store, max-age=0' );
+		$response->header( 'X-LiteSpeed-Cache-Control', 'no-cache' );
+	}
+	return $response;
+}
+
+/**
+ * Returns an object-typed value for JSON output (an empty array would
+ * otherwise encode as [] instead of {}).
+ *
+ * @param array $value Associative array.
+ * @return array|stdClass
+ */
+function rr_local_seo_as_object( array $value ) {
+	return empty( $value ) ? new stdClass() : $value;
+}
+
+/**
  * Builds the invalid-request error response.
  *
  * @param string[] $errors Validation messages.
@@ -1347,10 +1377,10 @@ function rr_local_seo_invalid( array $errors ): WP_Error {
  */
 function rmb_local_seo_get( WP_REST_Request $request ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- REST callback signature.
 	$config = rr_local_seo_get_config();
-	return rest_ensure_response(
+	return rr_local_seo_response(
 		array(
 			'enabled'   => $config['enabled'],
-			'entity'    => $config['entity'],
+			'entity'    => rr_local_seo_as_object( $config['entity'] ),
 			'locations' => $config['locations'],
 			'warnings'  => rr_local_seo_warnings( $config ),
 		)
@@ -1386,15 +1416,15 @@ function rmb_local_seo_set( WP_REST_Request $request ) {
 	if ( ! $dry_run ) {
 		rr_local_seo_save_config( $result['config'] );
 		rr_local_seo_log( 'local_seo_update', null, $current, $result['config'], rr_request_id( $request ) );
-		rrseo_purge_rest_cache( array( 'local-seo' ) );
+		rrseo_purge_rest_cache( array( 'local-seo', 'local-seo/preview' ) );
 	}
 
-	return rest_ensure_response(
+	return rr_local_seo_response(
 		array(
 			'success'   => true,
 			'dry_run'   => $dry_run,
 			'enabled'   => $result['config']['enabled'],
-			'entity'    => $result['config']['entity'],
+			'entity'    => rr_local_seo_as_object( $result['config']['entity'] ),
 			'locations' => $result['config']['locations'],
 			'warnings'  => rr_local_seo_warnings( $result['config'] ),
 		)
@@ -1427,7 +1457,7 @@ function rmb_local_seo_preview( WP_REST_Request $request ) {
 	}
 
 	$plan = rr_local_seo_plan( $config, $post_id, $is_home );
-	return rest_ensure_response(
+	return rr_local_seo_response(
 		array(
 			'enabled'  => $config['enabled'],
 			'post_id'  => $post_id > 0 ? $post_id : null,
@@ -1449,7 +1479,7 @@ function rmb_local_seo_location_get( WP_REST_Request $request ) {
 	$id = (string) $request->get_param( 'id' );
 	foreach ( rr_local_seo_get_config()['locations'] as $location ) {
 		if ( isset( $location['id'] ) && $location['id'] === $id ) {
-			return rest_ensure_response( $location );
+			return rr_local_seo_response( $location );
 		}
 	}
 	return new WP_Error( 'not_found', 'Location not found', array( 'status' => 404 ) );
@@ -1480,7 +1510,7 @@ function rmb_local_seo_location_set( WP_REST_Request $request ) {
 	if ( ! $dry_run ) {
 		rr_local_seo_save_config( $result['config'] );
 		rr_local_seo_log( 'local_seo_location_set', $id, $current, $result['config'], rr_request_id( $request ) );
-		rrseo_purge_rest_cache( array( 'local-seo' ) );
+		rrseo_purge_rest_cache( array( 'local-seo', 'local-seo/preview', 'local-seo/locations/' . $id ) );
 	}
 
 	$saved = array();
@@ -1516,7 +1546,7 @@ function rmb_local_seo_location_delete( WP_REST_Request $request ) {
 
 	rr_local_seo_save_config( $result['config'] );
 	rr_local_seo_log( 'local_seo_location_delete', $id, $current, $result['config'], rr_request_id( $request ) );
-	rrseo_purge_rest_cache( array( 'local-seo' ) );
+	rrseo_purge_rest_cache( array( 'local-seo', 'local-seo/preview', 'local-seo/locations/' . $id ) );
 
 	return rest_ensure_response(
 		array(

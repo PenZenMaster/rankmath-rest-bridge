@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.21.1
+
+Fix: Local SEO GET responses were cacheable (found live on rankrocket.co, which
+sits behind LiteSpeed). After saving an entity, `GET /local-seo/preview` kept
+returning the previous, empty plan until a cache-busting query string was added.
+
+### Fixed
+
+- `GET /local-seo`, `GET /local-seo/preview` and
+  `GET /local-seo/locations/{id}` send `Cache-Control: no-store, max-age=0` and
+  `X-LiteSpeed-Cache-Control: no-cache`.
+- Local SEO writes also purge the preview and location URLs (previously only
+  `/local-seo`).
+- An empty `entity` is returned as `{}` instead of `[]`.
+
+### Known limitation (tracked for Stage 2)
+
+Duplicate detection sees the page's stored schema graph and this plugin's
+snippets only. Schema printed by another plugin (for example HFCM, which prints
+the rankrocket.co homepage Organization) is invisible to it, so check
+`/local-seo/preview` against the public page before enabling emission.
+
 ## v3.21.0
 
 New (issue #39, Stage 1): Local SEO settings, the first step toward replacing

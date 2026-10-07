@@ -489,6 +489,30 @@ class LocalSeoTest extends TestCase {
         $this->assertSame( '', ob_get_clean() );
     }
 
+    // -- Response helpers ----------------------------------------------------------
+
+    public function test_response_helper_sets_no_cache_headers(): void {
+        $response = new class() {
+            public $headers = array();
+
+            public function header( $name, $value ) {
+                $this->headers[ $name ] = $value;
+            }
+        };
+        $out = rr_local_seo_response( $response );
+        $this->assertSame( 'no-store, max-age=0', $out->headers['Cache-Control'] );
+        $this->assertSame( 'no-cache', $out->headers['X-LiteSpeed-Cache-Control'] );
+    }
+
+    public function test_response_helper_passes_plain_data_through(): void {
+        $this->assertSame( array( 'a' => 1 ), rr_local_seo_response( array( 'a' => 1 ) ) );
+    }
+
+    public function test_as_object_encodes_empty_as_json_object(): void {
+        $this->assertSame( '{}', wp_json_encode( rr_local_seo_as_object( array() ) ) );
+        $this->assertSame( '{"a":1}', wp_json_encode( rr_local_seo_as_object( array( 'a' => 1 ) ) ) );
+    }
+
     // -- Action log and warnings ---------------------------------------------------
 
     public function test_log_records_non_reversible_envelope(): void {
