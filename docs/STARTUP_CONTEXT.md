@@ -3,7 +3,7 @@
 **Last Updated:** 2026-10-07
 **Branch:** main
 **Version:** 3.20.2 (deployed to olsonsrecycling.com; other sites per Current State)
-**Last Commit:** 41d4f2a -- chore(checkpoint): 2026-10-06_2346
+**Last Commit:** dd28043 -- docs: record #30 verified live on rankrocket.co
 (checkpoint commit follows)
 
 ---
@@ -47,7 +47,7 @@
 ## Current State
 
 **Git:**
-- Branch `main`, `41d4f2a` pushed; checkpoint commit follows.
+- Branch `main`, `dd28043` pushed; checkpoint commit follows.
 - `rankrocket-mcp` (`master`): `e7016bd` (v0.14.0, `set_post_status` enum); deployed to the remote host and verified.
 
 **Open GitHub issues (2):**

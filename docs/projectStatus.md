@@ -35,6 +35,7 @@
   JSON-LD, 0 duplicate ids. Site schema coverage 6.6% (71/76 without schema;
   no FAQPage or BreadcrumbList anywhere). Audit output kept local at
   `docs/archive/schema-audit-rankrocket.json` (not committed).
+- `.gitignore` now ignores `docs/archive/schema-audit-*.json`.
 
 ---
 

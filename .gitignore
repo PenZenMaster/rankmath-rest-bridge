@@ -21,3 +21,6 @@ Thumbs.db
 
 # mu-plugin scratch file (lives in rrc-mu-toolkit repo)
 plugin-usage-audit.php
+
+# Local audit output
+docs/archive/schema-audit-*.json
