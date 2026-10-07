@@ -132,6 +132,25 @@ if ( ! function_exists( 'is_singular' ) ) {
     }
 }
 
+if ( ! function_exists( 'is_front_page' ) ) {
+    function is_front_page() {
+        return $GLOBALS['_test_is_front_page'] ?? false;
+    }
+}
+
+if ( ! function_exists( 'trailingslashit' ) ) {
+    function trailingslashit( $value ) {
+        return rtrim( (string) $value, '/' ) . '/';
+    }
+}
+
+if ( ! function_exists( 'wp_get_attachment_url' ) ) {
+    function wp_get_attachment_url( $id = 0 ) {
+        $map = $GLOBALS['_test_attachment_urls'] ?? array();
+        return $map[ (int) $id ] ?? false;
+    }
+}
+
 if ( ! function_exists( 'get_queried_object_id' ) ) {
     function get_queried_object_id() {
         return $GLOBALS['_test_queried_object_id'] ?? 0;

@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.20.2
+ * Version:      3.21.0
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.20.2' );
+define( 'RMB_VERSION', '3.21.0' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -319,6 +319,9 @@ require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-schema-hygiene.php';
 
 // ── FAQ schema (issue #22 Stage 1) ──────────────────────────────────────────
 require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-faq.php';
+
+// ── Local SEO settings (issue #39 Stage 1) ──────────────────────────────────
+require_once RMB_PLUGIN_DIR . 'includes/class-rrseo-local.php';
 
 
 // ── Admin UI (loaded only in the WordPress admin; zero front-end cost) ─────────
@@ -2463,6 +2466,89 @@ add_action(
 				array(
 					'methods'             => 'DELETE',
 					'callback'            => 'rmb_faq_delete',
+					'permission_callback' => $admin_only,
+				),
+			)
+		);
+
+		// ── Local SEO settings (issue #39) ────────────────────────────────────────
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/local-seo',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_local_seo_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_local_seo_set',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'enabled'   => array(
+							'required' => false,
+							'type'     => 'boolean',
+						),
+						'entity'    => array(
+							'required' => false,
+							'type'     => 'object',
+						),
+						'locations' => array(
+							'required' => false,
+							'type'     => 'array',
+							'items'    => array( 'type' => 'object' ),
+						),
+						'dry_run'   => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/local-seo/preview',
+			array(
+				'methods'             => 'GET',
+				'callback'            => 'rmb_local_seo_preview',
+				'permission_callback' => $admin_only,
+				'args'                => array(
+					'post_id' => array(
+						'required' => false,
+						'type'     => 'integer',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			'rankrocket-seo/v1',
+			'/local-seo/locations/(?P<id>[a-z0-9]+(?:-[a-z0-9]+)*)',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => 'rmb_local_seo_location_get',
+					'permission_callback' => $admin_only,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => 'rmb_local_seo_location_set',
+					'permission_callback' => $admin_only,
+					'args'                => array(
+						'dry_run' => array(
+							'required' => false,
+							'type'     => 'boolean',
+							'default'  => false,
+						),
+					),
+				),
+				array(
+					'methods'             => 'DELETE',
+					'callback'            => 'rmb_local_seo_location_delete',
 					'permission_callback' => $admin_only,
 				),
 			)
@@ -6144,6 +6230,14 @@ function rmb_status( WP_REST_Request $request ) {
 		);
 	}
 
+	$local_seo = rr_local_seo_get_config();
+	if ( $local_seo['enabled'] && $rankmath_on ) {
+		$status_warnings[] = array(
+			'code'    => 'local_seo_rank_math_overlap',
+			'message' => 'Local SEO emission is enabled while Rank Math is active; check the public page for duplicate Organization/LocalBusiness schema.',
+		);
+	}
+
 	$response = array(
 		'plugin'                     => 'RankRocket SEO Control Layer',
 		'version'                    => RMB_VERSION,
@@ -6320,6 +6414,26 @@ function rr_get_capabilities_map() {
 			'available' => true,
 			'route'     => 'POST /faq/{post_id}',
 			'since'     => '3.12.0',
+		),
+		'local_seo.read'           => array(
+			'available' => true,
+			'route'     => 'GET /local-seo',
+			'since'     => '3.21.0',
+		),
+		'local_seo.write'          => array(
+			'available' => true,
+			'route'     => 'POST /local-seo',
+			'since'     => '3.21.0',
+		),
+		'local_seo.preview'        => array(
+			'available' => true,
+			'route'     => 'GET /local-seo/preview',
+			'since'     => '3.21.0',
+		),
+		'local_seo.location'       => array(
+			'available' => true,
+			'route'     => 'POST /local-seo/locations/{id}',
+			'since'     => '3.21.0',
 		),
 	);
 }

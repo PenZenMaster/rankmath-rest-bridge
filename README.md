@@ -638,6 +638,61 @@ curl -X POST "$BASE/llms-txt/regenerate" -u "$CRED" \
 
 ---
 
+### Local SEO (v3.21.0 Stage 1)
+
+#### `GET /local-seo` - read the stored settings
+#### `POST /local-seo` - validate and write `enabled`, `entity` and/or `locations`
+#### `GET /local-seo/preview` - show the JSON-LD a page would emit (optional `post_id`; default is the front page)
+#### `GET /local-seo/locations/{id}`, `POST /local-seo/locations/{id}`, `DELETE /local-seo/locations/{id}` - manage one location
+
+A structured Local SEO / Knowledge Graph object stored in the `rr_local_seo`
+option. It holds one **entity** (`Organization` or `Person`) and any number of
+**locations**. Every field is validated strictly (invalid input is rejected with
+`422` and a list of errors, never silently sanitized), and unknown fields are
+rejected.
+
+```bash
+curl -X POST "$BASE/local-seo" -u "$CRED" -H "Content-Type: application/json" -d '{
+  "entity": {"type": "Organization", "name": "Olson Recycling", "logo": "https://example.com/logo.png",
+             "same_as": ["https://www.facebook.com/example"]},
+  "locations": [{
+    "id": "seneca", "name": "Olson Recycling Seneca", "business_type": "RecyclingCenter",
+    "phone": "(815) 357-8625",
+    "address": {"street": "354 W. Jackson St.", "locality": "Seneca", "region": "IL", "postal_code": "61360", "country": "US"},
+    "geo": {"lat": 41.31, "lng": -88.61},
+    "opening_hours": [{"days": ["Monday", "Tuesday"], "opens": "08:00", "closes": "17:00"}]
+  }],
+  "dry_run": true
+}'
+```
+
+Only the keys you send (`enabled`, `entity`, `locations`) are replaced.
+Emission is **off by default**: set `"enabled": true` (this requires a valid
+entity) to print the JSON-LD in `<head>`.
+
+Entity fields: `type` (required), `name` (required), `legal_name` (Organization
+only), `job_title` (Person only), `url`, `logo` (https URL or attachment ID),
+`description`, `email`, `phone`, `same_as`.
+
+Location fields: `id` (required slug), `name` (required), `address` (required;
+`locality`, `region`, `country` always, `street` unless `service_area_only`),
+`business_type` (default `LocalBusiness`), `url`, `post_id`, `phone`, `email`,
+`image`, `price_range`, `geo`, `opening_hours`, `area_served`, `same_as`,
+`map_url`, `service_area_only`. Limits: 50 locations, 20 `same_as` URLs, 14
+opening-hours rows.
+
+Where it emits: the front page prints the entity plus every location; a page
+assigned to a location with `post_id` prints just that location. Node `@id`
+values are stable: `{home}/#organization` (or `#person`) and
+`{home}/#localbusiness-{id}`. A node is **skipped** when the page's stored
+schema graph or an applicable snippet already contains the same `@id`, or the
+same name within the same entity family. `GET /local-seo/preview` lists these
+under `skipped`.
+
+Writes are recorded in the `rrseo_action_log` option (not reversible).
+`GET /status` reports a `local_seo_rank_math_overlap` warning when emission is
+enabled while Rank Math is active.
+
 ### Status
 
 #### `GET /status` — plugin state snapshot

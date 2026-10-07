@@ -1,5 +1,38 @@
 # Changelog
 
+## v3.21.0
+
+New (issue #39, Stage 1): Local SEO settings, the first step toward replacing
+Rank Math Local SEO / Knowledge Graph. See
+`docs/rank-math-replacement-gap-report.md`.
+
+### Added
+
+- `rr_local_seo` option holding one entity (Organization or Person) and up to 50
+  locations (address, geo, opening hours, phone, area served, sameAs, business
+  type, optional assigned page).
+- REST: `GET/POST /local-seo`, `GET /local-seo/preview`,
+  `GET/POST/DELETE /local-seo/locations/{id}`. Strict validation that rejects
+  rather than sanitizes, `dry_run` on writes, capabilities `local_seo.*`.
+- Optional JSON-LD emission in `wp_head` (priority 6, inside the schema hygiene
+  markers). Off by default. Skips any node already present in the page's stored
+  schema graph or an applicable snippet (same `@id`, or same name within the
+  same entity family).
+- Site-level writes are recorded in `rrseo_action_log` (not reversible).
+- `GET /status` warning `local_seo_rank_math_overlap`.
+
+### Migration
+
+None. Nothing changes until `enabled` is set to `true`. Existing LocalBusiness
+snippets keep working and are never modified; matching nodes are skipped to
+avoid duplicates. Import-from-snippets and `business_facts` / entity-audit
+integration are Stage 2 (v3.22.0).
+
+### Tests
+
+New `tests/unit/LocalSeoTest.php`; bootstrap gains `is_front_page`,
+`trailingslashit` and `wp_get_attachment_url` stubs.
+
 ## v3.20.2
 
 Fix (issue #38): Elementor REST writes left WordPress modification dates, and
