@@ -4,7 +4,7 @@
 **Branch:** main
 **Version:** 3.20.2 (pushed; live sites still on 3.20.1 or older -- see Current
 State)
-**Last Commit:** 86f2927 -- chore: release v3.20.2 zip
+**Last Commit:** 0e639dd -- chore(checkpoint): 2026-10-06_1903
 (checkpoint commit follows)
 
 ---
@@ -16,7 +16,7 @@ State)
    dry run, validation failure or identical payload). 544 tests. #38 closed;
    not yet verified live. Meta/schema writes deliberately unchanged.
 
-2. **#37 MCP side written (uncommitted)** -- `set_post_status` added to the
+2. **#37 MCP side written and pushed (e7016bd, not deployed)** -- `set_post_status` added to the
    dry-run/execute enums in `rankrocket-mcp` (v0.14.0, 152 tests).
    `create_page` not added (already served by `rankrocket_pages*`).
 
@@ -29,7 +29,7 @@ State)
 1. **Deploy 3.20.2 to olsonsrecycling.com and verify #38** -- real set-data
    edit: expect `changed: true`, `post_modified_updated: true`, moved sitemap
    `lastmod`; identical re-submit: `changed: false`.
-2. **Finish #37** -- commit/push the rankrocket-mcp change, deploy and restart
+2. **Finish #37** -- deploy the pushed rankrocket-mcp v0.14.0 and restart
    the MCP on the remote host, test `set_post_status` on a staging fixture
    page (never production page 3646), close #37.
 3. **Verify #30 live** (`GET /aeo-geo/schema-audit?inspect_public=1&public_limit=10`
@@ -39,12 +39,12 @@ State)
 ## Current State
 
 **Git:**
-- Branch `main`, `86f2927` pushed; checkpoint commit follows.
-- `rankrocket-mcp` (`master`): uncommitted `set_post_status` enum change (v0.14.0).
+- Branch `main`, `0e639dd` pushed; checkpoint commit follows.
+- `rankrocket-mcp` (`master`): `e7016bd` pushed (v0.14.0, `set_post_status` enum); not deployed to the remote host.
 
 **Open GitHub issues (4):**
 - **#30** -- fixed in v3.19.0, awaiting live verification (see priority 1)
-- **#37** -- plugin fixed in v3.20.0; MCP enum change written, uncommitted/undeployed (priority 2)
+- **#37** -- plugin fixed in v3.20.0; MCP enum change pushed (e7016bd), undeployed (priority 2)
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
 - Closed this stretch: #28, #29, #31, #38 (fixed v3.20.2, not yet verified live). AUD-01..AUD-05 live in
