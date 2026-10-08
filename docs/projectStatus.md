@@ -53,6 +53,19 @@
   inventory; no activation-time scan). Local SEO left disabled on rankrocket.co.
 - Plugin reinstalled on trevoraspiranti.com and endlessenergyfitness.com
   (v3.20.2, `/status` clean).
+- **#39 Stage 2 built and shipped: v3.22.0.** Shared snippet matcher; passive
+  `schema_emitters` in `/status`; `preview?inspect_public=1`; enable gate
+  (422 `duplicate_schema_conflict` unless `acknowledge_duplicates`; unverified
+  scan only warns); business facts / entity audit / schema audit integration;
+  read-only `import-preview`. 625 tests, phpcs clean. Verified live on
+  rankrocket.co: HFCM `#organization` found as `same_id`, enable refused (also
+  for dry run), import-preview 0 candidates.
+- **MCP:** `rankrocket-mcp` v0.15.0 added `rankrocket_local_seo` and
+  `rankrocket_local_seo_write` (175 tests) and surfaces `data.conflicts` in
+  error messages; v0.15.1 (separate session) fixed serverInfo version and was
+  deployed. "MCP site enums" item closed as a stale client-side tool cache.
+- Open: Olson positive-path migration test, HFCM retirement decision on
+  rankrocket.co, #40-#43, #18, #19.
 
 ---
 

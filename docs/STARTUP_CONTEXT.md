@@ -2,63 +2,69 @@
 
 **Last Updated:** 2026-10-07
 **Branch:** main
-**Version:** 3.21.1 (Local SEO Stage 1; deployed to rankrocket.co only)
-**Last Commit:** ae88b1c -- chore: release v3.21.1 zip
+**Version:** 3.22.0 (Local SEO Stage 2; deployed to rankrocket.co only)
+**Last Commit:** 3d68a7a -- chore: release v3.22.0 zip
 (checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Local SEO Stage 1 shipped: v3.21.0 + v3.21.1 (#39, 2026-10-07)** -- new
-   `includes/class-rrseo-local.php`: `rr_local_seo` option (Organization or
-   Person entity + up to 50 locations), strict validating REST CRUD
-   (`/local-seo`, `/local-seo/preview`, `/local-seo/locations/{id}`),
-   opt-in `wp_head` emission (priority 6), duplicate skipping against stored
-   schema + snippets, action-log audit. 594 tests, phpcs clean. Verified live
-   on rankrocket.co (validation, dry run, 422, real write with
-   `enabled: false`, preview). #39 stays open for Stage 2.
+1. **Local SEO Stage 2 shipped: v3.22.0 (#39, 2026-10-07)** -- public-page scan
+   (`GET /local-seo/preview?inspect_public=1`), enable gate (422
+   `duplicate_schema_conflict` unless `acknowledge_duplicates`; warns
+   "unverified" if a page cannot be fetched), passive `schema_emitters` list in
+   `/status`, Local SEO feeds llms.txt business facts + `source: local_seo` in
+   the entity audit + a `local_seo` schema-audit source, read-only
+   `GET /local-seo/import-preview`, shared snippet matcher
+   (`rr_snippet_applies_to_post`). 625 tests, phpcs clean. **Verified live on
+   rankrocket.co:** scan found HFCM's `#organization` as `same_id`; enabling
+   was refused with 422 (dry run too); import-preview returned 0 candidates
+   (expected: only Service snippets there).
 
-2. **Two live findings fixed/recorded** -- (a) LiteSpeed page-cached the Local
-   SEO GETs, so a preview was stale after a write; fixed in 3.21.1 (no-store +
-   `X-LiteSpeed-Cache-Control: no-cache`, wider purge). (b) Dedupe cannot see
-   schema printed by other plugins: rankrocket.co's homepage Organization comes
-   from HFCM "Home Schema". Do NOT enable Local SEO there until HFCM's snippet
-   is retired. Stage 2 scope agreed (see priorities).
+2. **Local SEO Stage 1 + fixes: v3.21.0 / v3.21.1 (#39)** -- `rr_local_seo`
+   option, strict validating REST CRUD, opt-in emission, action-log audit;
+   3.21.1 fixed LiteSpeed page-caching of the GETs (no-store headers, wider
+   purge). Verified live on rankrocket.co (Local SEO stored, `enabled: false`).
 
-3. **#30, #37, #38 verified live and closed (2026-10-07)**; Rank Math gap
-   report written and #39-#43 filed; plugin reinstalled on trevoraspiranti.com
-   and endlessenergyfitness.com (v3.20.2, `/status` clean); `olson-recycling`
-   added to the MCP registry.
+3. **MCP tools for Local SEO shipped** -- `rankrocket-mcp` v0.15.0
+   (`rankrocket_local_seo`, `rankrocket_local_seo_write`, REST client now
+   surfaces `data.conflicts`) and v0.15.1 (serverInfo version fix, done by a
+   separate session). Per the MCP repo's own docs, 0.15.1 is deployed to cPanel
+   and the live server exposes 25 tools. The "MCP site enums" item turned out
+   to be a stale tool schema cached by the client, not a code bug -- reconnect
+   the client to refresh. Earlier today: #30/#37/#38 verified and closed, Rank
+   Math gap report + #39-#43 filed, plugin reinstalled on two sites.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Local SEO Stage 2 (v3.22.0; the #39/#40 comments have the agreed scope):**
-   `/status` `schema_emitters` passive inventory (informational);
-   `GET /local-seo/preview?inspect_public=1` (fetch real page, report nodes
-   other plugins print); gate on `enabled` false->true (422 listing conflicts
-   unless `acknowledge_duplicates`, warn-unverified if the scan cannot run);
-   `rr_resolve_business_facts()` step between manual `business_facts` and
-   `schema_source_post_id` (+ `local_seo` source label); readiness audit counts
-   Local SEO; read-only import-from-snippets preview; MCP tools in
-   `rankrocket-mcp`. No activation-time scan.
-2. **Fix MCP tool schema site enums** to include `olson-recycling` (runtime
-   works; schemas list only the original four sites). Optional: align
-   `reversible` between dry-run and execute for `set_post_status`.
-3. **Rest of the Rank Math backlog:** #40 auto schema (reuse the Stage 2 scan
-   and gate), #41, #42, #43. Optional: #18, #19, MCP tool for
-   `GET /aeo-geo/schema-audit`.
+1. **Exercise Local SEO through the MCP on a real site** (reconnect the client
+   first so it sees the new tools): `rankrocket_local_seo` `preview` with
+   `inspect_public: true` on rankrocket.co (expect the HFCM `#organization`
+   conflict), then `preview_set` with `enabled: true` (expect
+   `duplicate_schema_conflict` naming the node).
+2. **Olson Recycling is the real migration test** (3 LocalBusiness snippets):
+   deploy v3.22.0 there (currently 3.20.2), run `import-preview`, write the
+   entity + 3 locations with `enabled: false`, check `preview?inspect_public=1`
+   for conflicts, retire the old snippets, then enable. That is the only live
+   proof of the positive path (clean enable, emission, import mapping). After
+   it, decide whether to close #39.
+3. **Rest of the Rank Math backlog:** #40 auto schema (reuse the scan, gate and
+   `schema_emitters`; opt-in, default off), #41, #42, #43. Owner decision
+   pending: retire HFCM "Home Schema" on rankrocket.co before enabling Local SEO
+   there. Optional: #18, #19, `reversible` mismatch on `set_post_status`,
+   blog-style home (no `page_on_front`) cannot be public-scanned.
 
 ## Current State
 
 **Git:**
-- Branch `main`, `ae88b1c` pushed; checkpoint commit follows.
-- `rankrocket-mcp` (`master`): `e7016bd` (v0.14.0, `set_post_status` enum); deployed to the remote host and verified.
+- Branch `main`, `3d68a7a` pushed; checkpoint commit follows.
+- `rankrocket-mcp` (`master`): v0.15.1 (`c3b0723` at last look); Local SEO tools deployed per that repo's docs. Another session had uncommitted doc edits there at shutdown (`docs/STARTUP_CONTEXT.md`, `CheckPoint-2026-10-07_1752.md`); not touched from this session.
 
 **Open GitHub issues (7):**
-- **#39** -- Stage 1 shipped (v3.21.0/3.21.1); Stage 2 pending (priority 1)
+- **#39** -- Stages 1 and 2 shipped (v3.21.0, 3.21.1, 3.22.0) and MCP tools shipped; open only for the Olson positive-path verification (priority 2)
 - **#40-#43 (RMR-02..05)** -- Rank Math replacement gaps, filed 2026-10-07 from
   `docs/rank-math-replacement-gap-report.md`: #39 Local SEO settings, #40
   automatic baseline schema + BreadcrumbList, #41 image title write + auto
@@ -71,7 +77,7 @@
 
 **Live deployment status:**
 - `olsonsrecycling.com` -- v3.20.2 (2026-10-07), #38 verified; `/status` clean
-- `rankrocket.co` -- v3.21.1 (2026-10-07); Local SEO entity stored, `enabled:
+- `rankrocket.co` -- v3.22.0 (2026-10-07); Local SEO entity stored, `enabled:
   false`; 4 Service snippets; homepage 2604 has two empty `<h2>` headings and
   its Organization/WebSite/WebPage graph is printed by HFCM, not this plugin
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
@@ -84,7 +90,7 @@
 - The release hook commits the zip after the push starts, so confirm with
   `git status -sb` and push again if ahead. Only the `releases/v3.20.0/` and
   `v3.20.1/` zips exist for the v3.16.1-v3.20.1 batch; v3.20.2, v3.21.0 and
-  v3.21.1 zips also exist.
+  v3.21.1 and v3.22.0 zips also exist.
 
 **Blockers:**
 - None.
@@ -205,3 +211,14 @@
 18. **Editing repo files from Python on Windows writes CRLF** -- phpcs rejects
     it (`Generic.Files.LineEndings`). Open with `newline=''` for read and write,
     or convert with `sed -i 's/\r$//'`. Git's index stays LF either way.
+
+19. **MCP clients cache the tool list per session** -- after the MCP server is
+    restarted with a new `sites.json` or new tools, an already-connected client
+    keeps the old tool schemas (and old site enum) until it reconnects.
+    `rankrocket_sites` and the server itself reflect the live state.
+
+20. **Public scan limits** -- `inspect_public` / the enable gate use
+    `rr_observe_fetch_frontend_html()` (`wp_safe_remote_get`, same host only,
+    unauthenticated). It cannot scan a blog-style home with no `page_on_front`
+    post, loopback-blocked hosts, or pages behind a login; those come back
+    "unverified" and the write proceeds with a warning.
