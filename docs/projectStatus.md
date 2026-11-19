@@ -1,13 +1,23 @@
 # RankRocket SEO Control Layer — Project Status
 
-**Last Updated:** 2026-10-01
-**Current Version:** 3.20.1
+**Last Updated:** 2026-11-19
+**Current Version:** 3.22.0
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** c65c0de -- chore: release v3.20.1 zip
+**Last Commit:** c4f8bc6 -- chore(checkpoint): 2026-10-07_1753
 **Git Status:** shutdown checkpoint pending commit
 
 ---
+
+## 2026-11-19 Session -- stuarthale.com White-Label Install
+
+- Ran `RRSEO start`. Tree clean, v3.22.0, HEAD c4f8bc6.
+- Reviewed the white-label constants for a new install on stuarthale.com
+  ('AMS SEO', Adventure Marketing Solutions, `dashicons-shield`); all six are
+  valid per `includes/class-rrseo-white-label.php`. No code changes.
+- Next: confirm stuarthale.com `/status` + register in MCP `sites.json`; Olson
+  Local SEO migration test; Rank Math backlog #40-#43.
+- Checkpoint: `docs/archive/checkpoints/CheckPoint-2026-11-19_1213.md`.
 
 ## 2026-10-07 Session -- #38 Verified Live on olsonsrecycling.com
 

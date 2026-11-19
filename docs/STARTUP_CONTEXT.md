@@ -1,16 +1,22 @@
 # RankRocket SEO Control Layer -- Startup Context
 
-**Last Updated:** 2026-10-07
+**Last Updated:** 2026-11-19
 **Branch:** main
-**Version:** 3.22.0 (Local SEO Stage 2; deployed to rankrocket.co only)
-**Last Commit:** 3d68a7a -- chore: release v3.22.0 zip
+**Version:** 3.22.0 (Local SEO Stage 2; deployed to rankrocket.co, stuarthale.com install in progress)
+**Last Commit:** c4f8bc6 -- chore(checkpoint): 2026-10-07_1753
 (checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **Local SEO Stage 2 shipped: v3.22.0 (#39, 2026-10-07)** -- public-page scan
+1. **stuarthale.com white-label install (2026-11-19)** -- reviewed the six
+   `RRSEO_WL_*` constants ('AMS SEO', Adventure Marketing Solutions,
+   `dashicons-shield`, support URL); all valid. They must sit above
+   `/* That's all, stop editing! */` in wp-config.php. Install not yet
+   confirmed via `/status`; not in MCP `sites.json` yet. No code changes.
+
+2. **Local SEO Stage 2 shipped: v3.22.0 (#39, 2026-10-07)** -- public-page scan
    (`GET /local-seo/preview?inspect_public=1`), enable gate (422
    `duplicate_schema_conflict` unless `acknowledge_duplicates`; warns
    "unverified" if a page cannot be fetched), passive `schema_emitters` list in
@@ -22,29 +28,21 @@
    was refused with 422 (dry run too); import-preview returned 0 candidates
    (expected: only Service snippets there).
 
-2. **Local SEO Stage 1 + fixes: v3.21.0 / v3.21.1 (#39)** -- `rr_local_seo`
-   option, strict validating REST CRUD, opt-in emission, action-log audit;
-   3.21.1 fixed LiteSpeed page-caching of the GETs (no-store headers, wider
-   purge). Verified live on rankrocket.co (Local SEO stored, `enabled: false`).
-
-3. **MCP tools for Local SEO shipped** -- `rankrocket-mcp` v0.15.0
-   (`rankrocket_local_seo`, `rankrocket_local_seo_write`, REST client now
-   surfaces `data.conflicts`) and v0.15.1 (serverInfo version fix, done by a
-   separate session). Per the MCP repo's own docs, 0.15.1 is deployed to cPanel
-   and the live server exposes 25 tools. The "MCP site enums" item turned out
-   to be a stale tool schema cached by the client, not a code bug -- reconnect
-   the client to refresh. Earlier today: #30/#37/#38 verified and closed, Rank
-   Math gap report + #39-#43 filed, plugin reinstalled on two sites.
+3. **Local SEO Stage 1 (v3.21.0/3.21.1) + MCP tools (2026-10-07)** --
+   `rr_local_seo` option, strict REST CRUD, opt-in emission; 3.21.1 fixed
+   LiteSpeed caching of the GETs. `rankrocket-mcp` v0.15.1 deployed with
+   `rankrocket_local_seo` / `rankrocket_local_seo_write` (25 tools live);
+   reconnect the client to refresh its cached tool list.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Exercise Local SEO through the MCP on a real site** (reconnect the client
-   first so it sees the new tools): `rankrocket_local_seo` `preview` with
-   `inspect_public: true` on rankrocket.co (expect the HFCM `#organization`
-   conflict), then `preview_set` with `enabled: true` (expect
-   `duplicate_schema_conflict` naming the node).
+1. **Confirm stuarthale.com install** -- `/status` (expect 3.22.0; check
+   `schema_emitters` and any competing SEO plugin), create the Application
+   Password, add the site to the remote MCP `sites.json`, restart the server,
+   reconnect the client. Then exercise `rankrocket_local_seo` `preview` with
+   `inspect_public: true` on rankrocket.co (expect the HFCM conflict).
 2. **Olson Recycling is the real migration test** (3 LocalBusiness snippets):
    deploy v3.22.0 there (currently 3.20.2), run `import-preview`, write the
    entity + 3 locations with `enabled: false`, check `preview?inspect_public=1`
@@ -60,7 +58,7 @@
 ## Current State
 
 **Git:**
-- Branch `main`, `3d68a7a` pushed; checkpoint commit follows.
+- Branch `main`, `c4f8bc6` pushed; 2026-11-19 checkpoint commit follows.
 - `rankrocket-mcp` (`master`): v0.15.1 (`c3b0723` at last look); Local SEO tools deployed per that repo's docs. Another session had uncommitted doc edits there at shutdown (`docs/STARTUP_CONTEXT.md`, `CheckPoint-2026-10-07_1752.md`); not touched from this session.
 
 **Open GitHub issues (7):**
@@ -80,6 +78,8 @@
 - `rankrocket.co` -- v3.22.0 (2026-10-07); Local SEO entity stored, `enabled:
   false`; 4 Service snippets; homepage 2604 has two empty `<h2>` headings and
   its Organization/WebSite/WebPage graph is printed by HFCM, not this plugin
+- `stuarthale.com` -- new install 2026-11-19, white-labeled as "AMS SEO"
+  (Adventure Marketing Solutions); unverified, not in MCP yet
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
 - `trevoraspiranti.com`, `endlessenergyfitness.com` -- plugin reinstalled,
   v3.20.2, `/status` clean (2026-10-07); Rank Math active on both
@@ -222,3 +222,8 @@
     unauthenticated). It cannot scan a blog-style home with no `page_on_front`
     post, loopback-blocked hosts, or pages behind a login; those come back
     "unverified" and the write proceeds with a warning.
+
+21. **White-label (`RRSEO_WL_*`) is display-only** -- it renames the Plugins
+    row and admin menu, but the REST namespace (`rankrocket-seo/v1`) and the
+    plugin folder (`rankmath-rest-bridge`) stay unchanged. Constants must be
+    defined above `/* That's all, stop editing! */` in wp-config.php.
