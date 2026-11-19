@@ -5,7 +5,7 @@
  *               Manages title/meta, schema injection, image ALT text, llms.txt,
  *               XML sitemap, cache purge, and self-updates. Reads legacy rank_math_*
  *               post-meta as a migration fallback; RankMath is not required.
- * Version:      3.22.0
+ * Version:      3.22.1
  * Author:       AMS
  * Author URI:   https://adventuremarketingsolutions.com/
  * Requires PHP: 7.4
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RMB_VERSION', '3.22.0' );
+define( 'RMB_VERSION', '3.22.1' );
 define( 'RMB_PLUGIN_FILE', __FILE__ );
 define( 'RMB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RMB_SNIPPETS_KEY', 'rmb_managed_snippets' );
@@ -168,12 +168,16 @@ define( 'RR_ELEMENTOR_EDIT_MODE_META_KEY', '_elementor_edit_mode' );
 define( 'RR_ELEMENTOR_TEMPLATE_TYPE_META_KEY', '_elementor_template_type' );
 define( 'RR_ELEMENTOR_PAGE_SETTINGS_META_KEY', '_elementor_page_settings' );
 
-define( 'RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES', array( 'section', 'container' ) );
+// Top-level elType values accepted by /elementor/set-data. 'e-flexbox' and
+// 'e-div-block' are Elementor 4 atomic containers. Extend via the
+// rrseo_elementor_top_level_types filter.
+define( 'RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES', array( 'section', 'container', 'e-flexbox', 'e-div-block' ) );
 
 // Best-effort list of Elementor (free) core widgetType values, used only to
 // produce a non-blocking warning when a payload references a widget that
 // might require Elementor Pro or a third-party addon. Not authoritative --
-// override via the rrseo_elementor_core_widget_types filter.
+// override via the rrseo_elementor_core_widget_types filter. Elementor 4
+// atomic widgets (widgetType prefixed 'e-') are treated as core.
 define(
 	'RR_ELEMENTOR_CORE_WIDGET_TYPES',
 	array(
@@ -4555,7 +4559,9 @@ function rmb_media_list_placeholders( WP_REST_Request $request ) {
 // ── Elementor Set-Data Validation ─────────────────────────────────────────────
 /**
  * Validates an Elementor `_elementor_data` tree: the top level must be a
- * non-empty list of section/container nodes, each with `elType`, `elements`
+ * non-empty list of section/container nodes (including Elementor 4 atomic
+ * containers, see RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES and the
+ * rrseo_elementor_top_level_types filter), each with `elType`, `elements`
  * (array), `id`, and `settings` (array). Also walks the full tree to count
  * widgets and produce a best-effort, non-blocking warning for any
  * widgetType outside the known core (free) list — see
@@ -4581,15 +4587,16 @@ function rr_validate_elementor_data( $elementor_data ) {
 		);
 	}
 
-	$errors = array();
+	$errors            = array();
+	$allowed_top_level = (array) apply_filters( 'rrseo_elementor_top_level_types', RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES );
 
 	foreach ( $elementor_data as $index => $node ) {
 		if ( ! is_array( $node ) ) {
 			$errors[] = "elementor_data[{$index}]: must be a JSON object";
 			continue;
 		}
-		if ( empty( $node['elType'] ) || ! in_array( $node['elType'], RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES, true ) ) {
-			$errors[] = "elementor_data[{$index}]: elType must be one of " . implode( ', ', RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES );
+		if ( empty( $node['elType'] ) || ! in_array( $node['elType'], $allowed_top_level, true ) ) {
+			$errors[] = "elementor_data[{$index}]: elType must be one of " . implode( ', ', $allowed_top_level );
 			continue;
 		}
 		if ( ! isset( $node['elements'] ) || ! is_array( $node['elements'] ) ) {
@@ -4643,7 +4650,7 @@ function rr_elementor_walk_tree( array $elements, array $allowed_core_widgets, &
 		if ( isset( $node['elType'] ) && 'widget' === $node['elType'] ) {
 			++$widget_count;
 			$widget_type = isset( $node['widgetType'] ) ? $node['widgetType'] : '';
-			if ( $widget_type && ! in_array( $widget_type, $allowed_core_widgets, true ) ) {
+			if ( $widget_type && 0 !== strpos( $widget_type, 'e-' ) && ! in_array( $widget_type, $allowed_core_widgets, true ) ) {
 				$warnings[] = "widgetType '{$widget_type}' is not in the known Elementor core list -- may require Elementor Pro or a third-party addon";
 			}
 		}

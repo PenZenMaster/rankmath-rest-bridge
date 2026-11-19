@@ -161,6 +161,98 @@ class ElementorSetDataTest extends TestCase {
     }
 
     // ------------------------------------------------------------------
+    // Elementor 4 atomic elements (issue #44)
+    // ------------------------------------------------------------------
+
+    /**
+     * Shape of an Elementor 4.x atomic page as returned by GET /elementor/{id}
+     * on stuarthale.com: e-flexbox > e-div-block > e-heading / e-paragraph,
+     * with settings stored as $$type / value objects.
+     */
+    private function atomic_page(): array {
+        return [
+            [
+                'id'       => 'a1b2c3d',
+                'elType'   => 'e-flexbox',
+                'isInner'  => false,
+                'settings' => [ 'classes' => [ '$$type' => 'classes', 'value' => [] ] ],
+                'elements' => [
+                    [
+                        'id'       => 'b2c3d4e',
+                        'elType'   => 'e-div-block',
+                        'isInner'  => false,
+                        'settings' => [],
+                        'elements' => [
+                            [
+                                'id'         => 'c3d4e5f',
+                                'elType'     => 'widget',
+                                'widgetType' => 'e-heading',
+                                'settings'   => [
+                                    'tag'   => [ '$$type' => 'string', 'value' => 'h1' ],
+                                    'title' => [ '$$type' => 'escaped-html', 'value' => 'Stuart Hale' ],
+                                ],
+                                'elements'   => [],
+                            ],
+                            [
+                                'id'         => 'd4e5f6a',
+                                'elType'     => 'widget',
+                                'widgetType' => 'e-paragraph',
+                                'settings'   => [
+                                    'paragraph' => [ '$$type' => 'string', 'value' => 'Body copy.' ],
+                                ],
+                                'elements'   => [],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'id'       => 'e5f6a7b',
+                'elType'   => 'e-div-block',
+                'isInner'  => false,
+                'settings' => [],
+                'elements' => [],
+            ],
+        ];
+    }
+
+    public function test_atomic_page_passes_without_errors_or_warnings(): void {
+        $result = rr_validate_elementor_data( $this->atomic_page() );
+        $this->assertEmpty( $result['errors'] );
+        $this->assertEmpty( $result['warnings'] );
+        $this->assertEquals( 2, $result['widget_count'] );
+    }
+
+    public function test_atomic_page_round_trips_through_json(): void {
+        $decoded = json_decode( wp_json_encode( $this->atomic_page() ), true );
+        $result  = rr_validate_elementor_data( $decoded );
+        $this->assertEmpty( $result['errors'] );
+    }
+
+    public function test_top_level_types_filter_extends_allowlist(): void {
+        $node           = $this->section();
+        $node['elType'] = 'e-custom-container';
+        $this->assertNotEmpty( rr_validate_elementor_data( [ $node ] )['errors'] );
+
+        $GLOBALS['_test_filters']['rrseo_elementor_top_level_types'][] = function ( $types ) {
+            $types[] = 'e-custom-container';
+            return $types;
+        };
+        try {
+            $this->assertEmpty( rr_validate_elementor_data( [ $node ] )['errors'] );
+        } finally {
+            unset( $GLOBALS['_test_filters']['rrseo_elementor_top_level_types'] );
+        }
+    }
+
+    public function test_error_message_lists_atomic_types(): void {
+        $node           = $this->section();
+        $node['elType'] = 'column';
+        $result         = rr_validate_elementor_data( [ $node ] );
+        $this->assertStringContainsString( 'e-flexbox', $result['errors'][0] );
+    }
+
+    // ------------------------------------------------------------------
     // Return shape
     // ------------------------------------------------------------------
 

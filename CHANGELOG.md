@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.22.1
+
+Fix for issue #44: `POST /elementor/set-data` rejected every page built with
+Elementor 4 atomic containers. Seen on stuarthale.com (Elementor 4.4.1), where
+an unmodified `GET /elementor/{id}` payload failed with 422
+`elType must be one of section, container`, including with `dry_run`.
+
+### Fixed
+
+- `RR_ELEMENTOR_ALLOWED_TOP_LEVEL_TYPES` now includes the Elementor 4 atomic
+  containers `e-flexbox` and `e-div-block`.
+- New `rrseo_elementor_top_level_types` filter extends the top-level
+  allowlist; the validation error lists the filtered set.
+- Atomic widgets (widgetType prefixed `e-`, such as `e-heading` and
+  `e-paragraph`) no longer produce the non-blocking "not in the known
+  Elementor core list" warning.
+
+### Tests
+
+- `ElementorSetDataTest`: an Elementor 4.x atomic page fixture
+  (`e-flexbox` > `e-div-block` > `e-heading` / `e-paragraph` with
+  `$$type` / `value` settings) passes with no errors or warnings, including
+  after a JSON round trip; the filter extends the allowlist; the error message
+  lists the atomic types.
+
 ## v3.22.0
 
 Local SEO Stage 2 (issue #39). Closes the blind spot found live on
