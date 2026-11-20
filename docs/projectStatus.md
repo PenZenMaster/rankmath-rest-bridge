@@ -1,15 +1,15 @@
 # RankRocket SEO Control Layer — Project Status
 
 **Last Updated:** 2026-11-19
-**Current Version:** 3.22.0
+**Current Version:** 3.22.1
 **Working Directory:** `E:\projects\rank_rocket_seo_plugin\`
 **Branch:** main
-**Last Commit:** c4f8bc6 -- chore(checkpoint): 2026-10-07_1753
+**Last Commit:** 1ec57d2 -- chore: release v3.22.1 zip
 **Git Status:** shutdown checkpoint pending commit
 
 ---
 
-## 2026-11-19 Session -- stuarthale.com White-Label Install
+## 2026-11-19 Session -- stuarthale.com Install, #39 Closed, #44 Fixed (v3.22.1)
 
 - Ran `RRSEO start`. Tree clean, v3.22.0, HEAD c4f8bc6.
 - Reviewed the white-label constants for a new install on stuarthale.com
@@ -18,6 +18,12 @@
 - Next: confirm stuarthale.com `/status` + register in MCP `sites.json`; Olson
   Local SEO migration test; Rank Math backlog #40-#43.
 - Checkpoint: `docs/archive/checkpoints/CheckPoint-2026-11-19_1213.md`.
+- Later: stuarthale.com and the Olson Local SEO migration confirmed complete by
+  the user; #39 closed.
+- Filed and fixed #44 (Elementor 4 atomic containers rejected by
+  `elementor/set-data`) as **v3.22.1** (4b90a3d, zip 1ec57d2). 629 tests,
+  phpcs clean. Pending live verification on stuarthale.com page 236.
+- Checkpoint: `docs/archive/checkpoints/CheckPoint-2026-11-19_1649.md`.
 
 ## 2026-10-07 Session -- #38 Verified Live on olsonsrecycling.com
 

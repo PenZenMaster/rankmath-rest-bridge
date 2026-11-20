@@ -2,67 +2,54 @@
 
 **Last Updated:** 2026-11-19
 **Branch:** main
-**Version:** 3.22.0 (Local SEO Stage 2; deployed to rankrocket.co, stuarthale.com install in progress)
-**Last Commit:** c4f8bc6 -- chore(checkpoint): 2026-10-07_1753
+**Version:** 3.22.1 (Elementor 4 atomic fix #44; not yet deployed anywhere)
+**Last Commit:** 1ec57d2 -- chore: release v3.22.1 zip
 (checkpoint commit follows)
 
 ---
 
 ## Last 3 Accomplishments
 
-1. **stuarthale.com white-label install (2026-11-19)** -- reviewed the six
-   `RRSEO_WL_*` constants ('AMS SEO', Adventure Marketing Solutions,
-   `dashicons-shield`, support URL); all valid. They must sit above
-   `/* That's all, stop editing! */` in wp-config.php. Install not yet
-   confirmed via `/status`; not in MCP `sites.json` yet. No code changes.
+1. **#44 fixed: v3.22.1 (2026-11-19)** -- `POST /elementor/set-data` rejected
+   Elementor 4 atomic pages (top-level `e-flexbox`) with 422, even for an
+   unmodified GET round trip (found on stuarthale.com, Elementor 4.4.1).
+   Allowlist now includes `e-flexbox` / `e-div-block`, new
+   `rrseo_elementor_top_level_types` filter, `e-` atomic widgets skip the
+   unknown-widget warning. 4 new tests with an atomic page fixture; 629 tests,
+   phpcs clean. Commits 4b90a3d + zip 1ec57d2, pushed.
 
-2. **Local SEO Stage 2 shipped: v3.22.0 (#39, 2026-10-07)** -- public-page scan
-   (`GET /local-seo/preview?inspect_public=1`), enable gate (422
-   `duplicate_schema_conflict` unless `acknowledge_duplicates`; warns
-   "unverified" if a page cannot be fetched), passive `schema_emitters` list in
-   `/status`, Local SEO feeds llms.txt business facts + `source: local_seo` in
-   the entity audit + a `local_seo` schema-audit source, read-only
-   `GET /local-seo/import-preview`, shared snippet matcher
-   (`rr_snippet_applies_to_post`). 625 tests, phpcs clean. **Verified live on
-   rankrocket.co:** scan found HFCM's `#organization` as `same_id`; enabling
-   was refused with 422 (dry run too); import-preview returned 0 candidates
-   (expected: only Service snippets there).
+2. **#39 closed (2026-11-19)** -- Olson Recycling Local SEO migration done by
+   the user (positive path verified live). Local SEO Stage 1 + 2 (v3.21.x,
+   v3.22.0) and the MCP tools are all shipped.
 
-3. **Local SEO Stage 1 (v3.21.0/3.21.1) + MCP tools (2026-10-07)** --
-   `rr_local_seo` option, strict REST CRUD, opt-in emission; 3.21.1 fixed
-   LiteSpeed caching of the GETs. `rankrocket-mcp` v0.15.1 deployed with
-   `rankrocket_local_seo` / `rankrocket_local_seo_write` (25 tools live);
-   reconnect the client to refresh its cached tool list.
+3. **stuarthale.com onboarded (2026-11-19)** -- white-labeled "AMS SEO"
+   (Adventure Marketing Solutions); install confirmed complete by the user.
 
 ---
 
 ## Next 3 Priorities
 
-1. **Confirm stuarthale.com install** -- `/status` (expect 3.22.0; check
-   `schema_emitters` and any competing SEO plugin), create the Application
-   Password, add the site to the remote MCP `sites.json`, restart the server,
-   reconnect the client. Then exercise `rankrocket_local_seo` `preview` with
-   `inspect_public: true` on rankrocket.co (expect the HFCM conflict).
-2. **Olson Recycling is the real migration test** (3 LocalBusiness snippets):
-   deploy v3.22.0 there (currently 3.20.2), run `import-preview`, write the
-   entity + 3 locations with `enabled: false`, check `preview?inspect_public=1`
-   for conflicts, retire the old snippets, then enable. That is the only live
-   proof of the positive path (clean enable, emission, import mapping). After
-   it, decide whether to close #39.
-3. **Rest of the Rank Math backlog:** #40 auto schema (reuse the scan, gate and
-   `schema_emitters`; opt-in, default off), #41, #42, #43. Owner decision
-   pending: retire HFCM "Home Schema" on rankrocket.co before enabling Local SEO
-   there. Optional: #18, #19, `reversible` mismatch on `set_post_status`,
-   blog-style home (no `page_on_front`) cannot be public-scanned.
+1. **Verify #44 live** -- `POST /self-update` on stuarthale.com (wait 2-3 min
+   for the GitHub CDN), then `GET /elementor/236` and send it unchanged to
+   `POST /elementor/set-data` with `dry_run: true`. Expect a diff, not 422.
+   If it passes, close #44.
+2. **Rank Math backlog:** #40 auto schema + BreadcrumbList (reuse the scan,
+   gate and `schema_emitters`; opt-in, default off), then #41, #42, #43.
+   Optional: #18, #19, `reversible` mismatch on `set_post_status`, blog-style
+   home (no `page_on_front`) cannot be public-scanned.
+3. **Roll out v3.22.1** to Olson, tristate-hvac, trevoraspiranti,
+   endlessenergyfitness. Kilday Baxter and Higgins are still on 3.8.1.
+   Owner decision pending: retire HFCM "Home Schema" on rankrocket.co before
+   enabling Local SEO there.
 
 ## Current State
 
 **Git:**
-- Branch `main`, `c4f8bc6` pushed; 2026-11-19 checkpoint commit follows.
+- Branch `main`, `1ec57d2` pushed; 2026-11-19_1649 checkpoint commit follows.
 - `rankrocket-mcp` (`master`): v0.15.1 (`c3b0723` at last look); Local SEO tools deployed per that repo's docs. Another session had uncommitted doc edits there at shutdown (`docs/STARTUP_CONTEXT.md`, `CheckPoint-2026-10-07_1752.md`); not touched from this session.
 
 **Open GitHub issues (7):**
-- **#39** -- Stages 1 and 2 shipped (v3.21.0, 3.21.1, 3.22.0) and MCP tools shipped; open only for the Olson positive-path verification (priority 2)
+- **#44** -- Elementor 4 atomic containers rejected by `set-data`; fixed in v3.22.1, open only for live verification on stuarthale.com (priority 1)
 - **#40-#43 (RMR-02..05)** -- Rank Math replacement gaps, filed 2026-10-07 from
   `docs/rank-math-replacement-gap-report.md`: #39 Local SEO settings, #40
   automatic baseline schema + BreadcrumbList, #41 image title write + auto
@@ -70,16 +57,18 @@
   log. Open design questions are listed in the report.
 - **#18** -- `GET /capabilities` `since: null` backfill (low impact, optional)
 - **#19** -- `entity_clarity` README docs gap (low impact, optional)
-- Closed this stretch: #28, #29, #31, #30, #37, #38 (all verified live). AUD-01..AUD-05 live in
+- Closed this stretch: #39 (2026-11-19), #28, #29, #31, #30, #37, #38 (all verified live). AUD-01..AUD-05 live in
   workflow-portal #50-#54.
 
 **Live deployment status:**
-- `olsonsrecycling.com` -- v3.20.2 (2026-10-07), #38 verified; `/status` clean
+- `olsonsrecycling.com` -- v3.22.0 (2026-11-19); Local SEO migration complete
+  and enabled, old LocalBusiness snippets retired (per user)
 - `rankrocket.co` -- v3.22.0 (2026-10-07); Local SEO entity stored, `enabled:
   false`; 4 Service snippets; homepage 2604 has two empty `<h2>` headings and
   its Organization/WebSite/WebPage graph is printed by HFCM, not this plugin
-- `stuarthale.com` -- new install 2026-11-19, white-labeled as "AMS SEO"
-  (Adventure Marketing Solutions); unverified, not in MCP yet
+- `stuarthale.com` -- v3.22.0 (2026-11-19), white-labeled "AMS SEO"; install
+  complete (per user). SiteGround, Elementor 4.4.1 atomic layouts. Needs
+  v3.22.1 for `elementor/set-data` (#44).
 - `tristate-hvac.com` -- v3.20.1 (2026-10-01), `/status` clean
 - `trevoraspiranti.com`, `endlessenergyfitness.com` -- plugin reinstalled,
   v3.20.2, `/status` clean (2026-10-07); Rank Math active on both
@@ -227,3 +216,15 @@
     row and admin menu, but the REST namespace (`rankrocket-seo/v1`) and the
     plugin folder (`rankmath-rest-bridge`) stay unchanged. Constants must be
     defined above `/* That's all, stop editing! */` in wp-config.php.
+
+22. **Elementor 4 atomic shape** -- top-level `elType` is `e-flexbox` /
+    `e-div-block`; widgets are `elType: widget` with `widgetType` `e-heading`,
+    `e-paragraph`, etc., and settings are typed objects
+    (`{"$$type": "string", "value": "h1"}` for `tag`). Only
+    `rr_validate_elementor_data()` reads `_elementor_data` structure; heading
+    observation works on rendered HTML.
+
+23. **Claude Code's PowerShell tool failed every command on 2026-11-19** with
+    "pwsh exited with code 1: The command line is too long" (environment is
+    ~4.5 KB, so not PATH). Use the Bash tool (Git Bash) for git, `gh`,
+    `dev-vendor/bin/phpunit` and `dev-vendor/bin/phpcs` if it recurs.
